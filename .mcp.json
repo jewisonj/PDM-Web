@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "MCP_DOCKER": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "mcp",
+        "gateway",
+        "run"
+      ],
+      "env": {
+        "LOCALAPPDATA": "C:\\Users\\Jack Jewison\\AppData\\Local",
+        "ProgramData": "C:\\ProgramData",
+        "ProgramFiles": "C:\\Program Files"
+      }
+    },
+    "pdm-supabase": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--project-ref",
+        "lnytnxmmemdzwqburtgf",
+        "--access-token",
+        "sbp_87d6054e5934aadc56eff80416b4652c8d438a30"
+      ]
+    }
+  }
+}

@@ -48,8 +48,15 @@
       "Bash(del:*)",
       "Bash(type:*)",
       "mcp__MCP_DOCKER__mcp-find",
-      "mcp__MCP_DOCKER__mcp-add"
+      "mcp__MCP_DOCKER__mcp-add",
+      "WebSearch",
+      "mcp__pdm-supabase__get_project_url",
+      "mcp__pdm-supabase__list_tables"
     ],
     "deny": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "supabase"
+  ]
 }
