@@ -3,7 +3,7 @@
     "allow": [
       "Bash(sqlite3:*)",
       "Bash(dir /s \"D:\\\\Local_Creo_Files\")",
-      "Bash(dir \"D:\"\" /B /S)",
+      "Bash(dir \"D:\" /B /S)",
       "Bash(done)",
       "Bash(dir:*)",
       "Bash(ls:*)",
