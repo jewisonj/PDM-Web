@@ -29,20 +29,24 @@ pdm-web/
 │   ├── src/
 │   │   ├── views/          # Item browser, BOM viewer, file upload
 │   │   ├── components/     # Tables, forms, file viewers
-│   │   ├── stores/         # Pinia state (items, user)
-│   │   └── services/       # API client
+│   │   ├── stores/         # Pinia state (items, auth)
+│   │   └── services/       # Supabase client
 │   └── package.json
 ├── backend/                # FastAPI Python
 │   ├── app/
-│   │   ├── routes/         # items, files, bom, auth
-│   │   ├── models/         # SQLAlchemy models
+│   │   ├── routes/         # items, files, bom, auth, tasks
+│   │   ├── models/         # Pydantic schemas
+│   │   ├── services/       # Supabase client, business logic
 │   │   └── main.py
 │   └── requirements.txt
-├── worker/                 # Background task processor
-│   └── freecad/            # FreeCAD Docker scripts
-├── docker-compose.yml      # PostgreSQL + API + Worker
+├── worker/                 # FreeCAD Docker (cloud-ready)
+│   ├── Dockerfile
+│   └── scripts/
+├── docker-compose.yml      # Local dev (worker only)
 └── Documentation/          # Legacy docs for reference
 ```
+
+**Database:** Supabase (PostgreSQL + Auth + Storage) - no local DB needed
 
 ## FreeCAD Docker Integration
 
@@ -58,22 +62,25 @@ docker run -v /files:/data amrit3701/freecad-cli:latest \
   python /data/flatten_sheetmetal.py input.step output.dxf
 ```
 
-## Database Schema (PostgreSQL - Simplified)
+## Database Schema (Supabase PostgreSQL)
 
 ```sql
--- No organizations table needed (single org)
--- Simple users table
-users (id, username, email, password_hash, role, created_at)
+-- Simple users (linked to Supabase Auth)
+users (id UUID, username, email, role, created_at, updated_at)
   -- roles: 'admin', 'engineer', 'viewer'
 
--- Core tables (similar to legacy)
+-- Core tables
+projects (id, name, description, status, created_at, updated_at)
 items (id, item_number, name, revision, iteration, lifecycle_state,
-       project, material, mass, thickness, ...)
-files (id, item_id, file_type, file_path, revision, uploaded_at)
-bom (id, parent_item_id, child_item_id, quantity, source_file)
-work_queue (id, item_id, task_type, status, created_at, completed_at)
-lifecycle_history (id, item_id, old_state, new_state, changed_by, changed_at)
+       project_id, material, mass, thickness, cut_length, ...)
+files (id, item_id, file_type, file_name, file_path, revision, iteration, uploaded_by, created_at)
+bom (id, parent_item_id, child_item_id, quantity, source_file, created_at)
+work_queue (id, item_id, file_id, task_type, status, payload, error_message, created_at, ...)
+lifecycle_history (id, item_id, old_state, new_state, changed_by, changed_at, ...)
+checkouts (item_id, user_id, checked_out_at)
 ```
+
+Full schema in `Documentation/27-WEB-MIGRATION-PLAN.md`
 
 ## Legacy Reference
 
@@ -93,13 +100,13 @@ These folders contain the original system for reference during migration:
 ## Development Commands
 
 ```bash
-# Local development
-docker-compose up -d db        # Start PostgreSQL
+# Local development (Supabase handles DB, Auth, Storage)
 cd backend && uvicorn app.main:app --reload
 cd frontend && npm run dev
 
-# Run FreeCAD processing
-docker run -v $(pwd)/files:/data amrit3701/freecad-cli python script.py
+# FreeCAD worker (local Docker)
+docker-compose up -d freecad-worker
+docker exec pdm-freecad-worker python3 /scripts/worker/flatten_sheetmetal.py /data/files/part.stp
 ```
 
 ## Key Documents

@@ -1,26 +1,8 @@
 # PDM-Web Docker Compose Configuration
-# Services: PostgreSQL, FastAPI Backend, FreeCAD Worker
+# Database/Auth/Storage: Supabase (cloud)
+# Local services: FreeCAD Worker only
 
 services:
-  # PostgreSQL Database
-  db:
-    image: postgres:15-alpine
-    container_name: pdm-db
-    environment:
-      POSTGRES_USER: pdm
-      POSTGRES_PASSWORD: pdm_dev_password
-      POSTGRES_DB: pdm
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pdm"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   # FreeCAD Worker - processes CAD files (DXF flat patterns, SVG bend drawings)
   freecad-worker:
     build:
@@ -34,30 +16,10 @@ services:
       - ./FreeCAD/Tools:/scripts/tools:ro
       # Mount worker helper scripts (read-only)
       - ./worker/scripts:/scripts/worker:ro
-      # Mount SheetMetal addon for development
+      # Mount SheetMetal addon
       - ./FreeCAD/Mod/sheetmetal:/root/.FreeCAD/Mod/sheetmetal:ro
     environment:
-      # Add FreeCAD and SheetMetal to Python path
       - PYTHONPATH=/usr/local/lib:/root/.FreeCAD/Mod/sheetmetal:/scripts/worker
     working_dir: /data
     # Keep container running for job execution
     command: ["tail", "-f", "/dev/null"]
-
-  # FastAPI Backend (placeholder - to be built)
-  # api:
-  #   build:
-  #     context: ./backend
-  #     dockerfile: Dockerfile
-  #   container_name: pdm-api
-  #   environment:
-  #     DATABASE_URL: postgresql://pdm:pdm_dev_password@db:5432/pdm
-  #   volumes:
-  #     - ./files:/app/files
-  #   ports:
-  #     - "8000:8000"
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy
-
-volumes:
-  postgres_data:

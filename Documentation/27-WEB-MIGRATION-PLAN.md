@@ -2,58 +2,60 @@
 
 ## Overview
 
-This document outlines the migration plan for converting the current PowerShell/Windows-based PDM system to a modern web-based architecture similar to VetBox-Pro.
+Migrating the current PowerShell/Windows-based PDM system to a modern web-based architecture.
 
 **Current State:** Windows-native, PowerShell services, SQLite, Node.js simple web browser
-**Target State:** Web-based, Vue 3 frontend, FastAPI backend, PostgreSQL, multi-user capable
+**Target State:** Web-based, Vue 3 frontend, FastAPI backend, Supabase (PostgreSQL + Auth + Storage)
 
 ---
 
-## Technology Stack Comparison
+## Technology Stack
 
-| Component | Current (v2.0) | Target (v3.0+) |
-|-----------|---------------|----------------|
-| Frontend | Vanilla HTML/JS | Vue 3 + Vite |
-| Backend | Node.js (simple) + PowerShell | FastAPI (Python) |
-| Database | SQLite | PostgreSQL + Supabase |
-| File Watchers | PowerShell FileSystemWatcher | WebSocket + API polling |
-| Authentication | None | JWT + OAuth (Supabase Auth) |
-| Deployment | Windows Services (NSSM) | Docker + Fly.io |
-| Offline Support | N/A | PWA + IndexedDB (Dexie.js) |
-| State Management | None | Pinia |
+| Component | Target |
+|-----------|--------|
+| Frontend | Vue 3 + Vite |
+| Backend | FastAPI (Python) |
+| Database | Supabase (PostgreSQL) |
+| Auth | Supabase Auth (JWT) |
+| File Storage | Supabase Storage |
+| CAD Processing | FreeCAD Docker (cloud-ready) |
+| State Management | Pinia |
 
 ---
 
-## Architecture Vision
+## Scope & Constraints
 
-### Domain Model Mapping
+### Users (Simple - 3 users)
+- **Jack** (CAD Engineer) - Primary user, file uploads, BOM management
+- **Dan** (Project Manager) - View/track projects, approvals
+- **Shop** (Shared account) - View drawings, BOMs, work instructions
 
-| PDM Concept | VetBox Equivalent | Web Implementation |
-|-------------|-------------------|-------------------|
-| Organization | Clinic | Multi-tenant with RLS |
-| Project | Truck | Top-level container |
-| Assembly | Compartment (hierarchical) | Self-referencing FK |
-| Component/Part | Item | Core data entity |
-| Document/File | Stock Location | Versioned attachments |
-| User | User | Profiles with roles |
-| Team | Clinic Users | Organization membership |
+### NOT in Scope
+- Multi-organization/multi-tenancy
+- Mobile-first responsive design
+- Offline/PWA capabilities
+- Complex role-based permissions
 
-### Database Schema (PostgreSQL)
+---
+
+## Database Schema (Supabase PostgreSQL)
+
+Simplified single-organization schema:
 
 ```sql
--- Organizations (multi-tenant root)
-CREATE TABLE organizations (
+-- Users (simple roles)
+CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  owner_id UUID REFERENCES auth.users,
+  username TEXT UNIQUE NOT NULL,
+  email TEXT UNIQUE,
+  role TEXT DEFAULT 'viewer', -- 'admin', 'engineer', 'viewer'
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Projects (similar to VetBox Trucks)
+-- Projects
 CREATE TABLE projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id UUID REFERENCES organizations NOT NULL,
   name TEXT NOT NULL,
   description TEXT,
   status TEXT DEFAULT 'active', -- active, archived, completed
@@ -64,56 +66,56 @@ CREATE TABLE projects (
 -- Items (parts/components)
 CREATE TABLE items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id UUID REFERENCES organizations NOT NULL,
-  item_number TEXT NOT NULL,
+  item_number TEXT UNIQUE NOT NULL, -- e.g., 'csp0030'
   name TEXT,
   revision TEXT DEFAULT 'A',
   iteration INTEGER DEFAULT 1,
   lifecycle_state TEXT DEFAULT 'Design', -- Design, Released, Obsolete
   description TEXT,
-  project_id UUID REFERENCES projects,
+  project_id UUID REFERENCES projects(id),
   material TEXT,
   mass NUMERIC,
   thickness NUMERIC,
+  cut_length NUMERIC,
   is_supplier_part BOOLEAN DEFAULT false,
   supplier_name TEXT,
   supplier_pn TEXT,
   unit_price NUMERIC,
   created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(org_id, item_number)
+  updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Files/Documents (versioned)
-CREATE TABLE documents (
+-- Files/Documents
+CREATE TABLE files (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_id UUID REFERENCES items NOT NULL,
-  file_type TEXT NOT NULL, -- CAD, STEP, DXF, SVG, PDF
+  item_id UUID REFERENCES items(id) NOT NULL,
+  file_type TEXT NOT NULL, -- 'CAD', 'STEP', 'DXF', 'SVG', 'PDF'
   file_name TEXT NOT NULL,
-  file_url TEXT, -- Supabase Storage URL
+  file_path TEXT, -- Supabase Storage path
   file_size INTEGER,
   revision TEXT,
-  iteration INTEGER,
-  uploaded_by UUID REFERENCES auth.users,
+  iteration INTEGER DEFAULT 1,
+  uploaded_by UUID REFERENCES users(id),
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- BOM (Bill of Materials)
 CREATE TABLE bom (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  parent_item_id UUID REFERENCES items NOT NULL,
-  child_item_id UUID REFERENCES items NOT NULL,
+  parent_item_id UUID REFERENCES items(id) NOT NULL,
+  child_item_id UUID REFERENCES items(id) NOT NULL,
   quantity INTEGER DEFAULT 1,
-  created_at TIMESTAMPTZ DEFAULT now(),
   source_file TEXT, -- audit trail
+  created_at TIMESTAMPTZ DEFAULT now(),
   UNIQUE(parent_item_id, child_item_id)
 );
 
 -- Work Queue (task processing)
 CREATE TABLE work_queue (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_id UUID REFERENCES items,
-  task_type TEXT NOT NULL, -- GENERATE_DXF, GENERATE_SVG, SYNC
+  item_id UUID REFERENCES items(id),
+  file_id UUID REFERENCES files(id),
+  task_type TEXT NOT NULL, -- 'GENERATE_DXF', 'GENERATE_SVG'
   status TEXT DEFAULT 'pending', -- pending, processing, completed, failed
   payload JSONB,
   error_message TEXT,
@@ -125,351 +127,188 @@ CREATE TABLE work_queue (
 -- Lifecycle History (audit trail)
 CREATE TABLE lifecycle_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  item_id UUID REFERENCES items NOT NULL,
+  item_id UUID REFERENCES items(id) NOT NULL,
   old_state TEXT,
   new_state TEXT,
   old_revision TEXT,
   new_revision TEXT,
-  changed_by UUID REFERENCES auth.users,
+  old_iteration INTEGER,
+  new_iteration INTEGER,
+  changed_by UUID REFERENCES users(id),
   change_notes TEXT,
   changed_at TIMESTAMPTZ DEFAULT now()
 );
 
 -- Checkouts (file locking)
 CREATE TABLE checkouts (
-  item_id UUID REFERENCES items PRIMARY KEY,
-  user_id UUID REFERENCES auth.users NOT NULL,
+  item_id UUID REFERENCES items(id) PRIMARY KEY,
+  user_id UUID REFERENCES users(id) NOT NULL,
   checked_out_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Organization Memberships
-CREATE TABLE org_members (
-  org_id UUID REFERENCES organizations NOT NULL,
-  user_id UUID REFERENCES auth.users NOT NULL,
-  role TEXT DEFAULT 'member', -- owner, admin, engineer, viewer
-  joined_at TIMESTAMPTZ DEFAULT now(),
-  PRIMARY KEY (org_id, user_id)
-);
+-- Indexes for common queries
+CREATE INDEX idx_items_item_number ON items(item_number);
+CREATE INDEX idx_items_project ON items(project_id);
+CREATE INDEX idx_items_lifecycle ON items(lifecycle_state);
+CREATE INDEX idx_files_item ON files(item_id);
+CREATE INDEX idx_files_type ON files(file_type);
+CREATE INDEX idx_bom_parent ON bom(parent_item_id);
+CREATE INDEX idx_bom_child ON bom(child_item_id);
+CREATE INDEX idx_work_queue_status ON work_queue(status);
 ```
 
-### Row-Level Security (RLS)
+---
 
-```sql
--- Enable RLS on all tables
-ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
-ALTER TABLE items ENABLE ROW LEVEL SECURITY;
--- ... etc
+## Architecture
 
--- Users can only access their organization's data
-CREATE POLICY "org_member_access" ON items
-  FOR ALL USING (
-    org_id IN (
-      SELECT org_id FROM org_members
-      WHERE user_id = auth.uid()
-    )
-  );
+```
+pdm-web/
+├── frontend/               # Vue 3 + Vite (desktop-first UI)
+│   ├── src/
+│   │   ├── views/          # Item browser, BOM viewer, file upload
+│   │   ├── components/     # Tables, forms, file viewers
+│   │   ├── stores/         # Pinia state (items, auth)
+│   │   ├── services/       # Supabase client, API helpers
+│   │   └── router/
+│   └── package.json
+├── backend/                # FastAPI Python
+│   ├── app/
+│   │   ├── routes/         # items, files, bom, auth, tasks
+│   │   ├── models/         # Pydantic schemas
+│   │   ├── services/       # Business logic
+│   │   └── main.py
+│   └── requirements.txt
+├── worker/                 # FreeCAD Docker (cloud-ready)
+│   ├── Dockerfile
+│   └── scripts/
+├── docker-compose.yml      # Local dev (worker only)
+└── Documentation/
 ```
 
 ---
 
 ## Migration Phases
 
-### Phase 1: Infrastructure Setup (Week 1-2)
+### Phase 1: Database Setup
+- [x] Create Supabase project
+- [ ] Apply database migrations (schema above)
+- [ ] Set up Supabase Auth (email/password)
+- [ ] Create initial users (Jack, Dan, Shop)
+- [ ] Configure Supabase Storage buckets
 
-**Goals:** Set up new project, basic infrastructure, development environment
+### Phase 2: Backend API
+- [ ] Set up FastAPI project structure
+- [ ] Configure Supabase client
+- [ ] Implement CRUD routes:
+  - [ ] Items (create, read, update, search)
+  - [ ] Files (upload, download, list)
+  - [ ] BOM (create, read, tree query)
+  - [ ] Projects (CRUD)
+- [ ] Implement auth middleware (JWT validation)
+- [ ] Add work queue endpoints
 
-**Tasks:**
-- [ ] Create new Git repository (PDM-Web or similar name)
-- [ ] Set up Docker Compose for local development
-  - PostgreSQL 15
-  - FastAPI backend
-  - Vue 3 frontend (Vite dev server)
-- [ ] Configure Supabase project for auth and database
-- [ ] Create initial database migrations
-- [ ] Set up basic FastAPI app structure
-- [ ] Initialize Vue 3 + Vite frontend with Pinia
+### Phase 3: Frontend Core
+- [ ] Initialize Vue 3 + Vite project
+- [ ] Set up Pinia stores (auth, items, files)
+- [ ] Configure Supabase JS client
+- [ ] Build views:
+  - [ ] Login page
+  - [ ] Item browser (table with filters)
+  - [ ] Item detail (metadata, files, BOM, history)
+  - [ ] File upload interface
+  - [ ] BOM tree viewer
+- [ ] Add search functionality
 
-**Directory Structure:**
-```
-pdm-web/
-├── frontend/
-│   ├── src/
-│   │   ├── views/
-│   │   ├── components/
-│   │   ├── stores/
-│   │   ├── services/
-│   │   ├── router/
-│   │   └── lib/
-│   ├── public/
-│   ├── package.json
-│   └── vite.config.js
-├── backend/
-│   ├── app/
-│   │   ├── routes/
-│   │   ├── models/
-│   │   ├── services/
-│   │   ├── database.py
-│   │   └── main.py
-│   ├── requirements.txt
-│   └── Dockerfile
-├── migrations/
-├── docker-compose.yml
-├── fly.toml
-└── README.md
-```
+### Phase 4: File Processing
+- [ ] Verify FreeCAD Docker worker
+- [ ] Create API endpoint to trigger processing
+- [ ] Implement job status polling
+- [ ] Connect file uploads to work queue
+- [ ] Test DXF/SVG generation pipeline
 
-### Phase 2: Core Data Model (Week 2-3)
-
-**Goals:** Implement core entities and API endpoints
-
-**Tasks:**
-- [ ] Create SQLAlchemy models for all entities
-- [ ] Implement CRUD routes for:
-  - [ ] Organizations
-  - [ ] Projects
-  - [ ] Items
-  - [ ] Documents
-  - [ ] BOM
-- [ ] Write Supabase migrations
-- [ ] Set up RLS policies
-- [ ] Create Pydantic schemas for API validation
-- [ ] Write basic unit tests
-
-### Phase 3: Authentication & Authorization (Week 3-4)
-
-**Goals:** Secure multi-tenant access
-
-**Tasks:**
-- [ ] Integrate Supabase Auth
-- [ ] Implement JWT token validation in FastAPI
-- [ ] Create user registration flow
-- [ ] Implement organization creation/invitation
-- [ ] Add role-based access control
-- [ ] Create protected route middleware
-- [ ] Frontend auth store (Pinia)
-
-### Phase 4: Frontend Core (Week 4-6)
-
-**Goals:** Build main UI components
-
-**Tasks:**
-- [ ] Project/Item browser (table view with filters)
-- [ ] Item detail panel (metadata, files, BOM, history)
-- [ ] Search and filter components
-- [ ] File upload/download interface
-- [ ] BOM tree visualization
-- [ ] Lifecycle state management UI
-- [ ] Toast notifications (vue-sonner)
-
-### Phase 5: Data Migration (Week 6-7)
-
-**Goals:** Migrate existing SQLite data to PostgreSQL
-
-**Tasks:**
-- [ ] Write migration script (Python)
-- [ ] Map SQLite item_number to UUID + item_number
+### Phase 5: Data Migration
+- [ ] Write SQLite → Supabase migration script
 - [ ] Migrate items table
-- [ ] Migrate files/documents
+- [ ] Migrate files (upload to Supabase Storage)
 - [ ] Migrate BOM relationships
-- [ ] Migrate work_queue history
 - [ ] Verify data integrity
-- [ ] Document migration process
 
-### Phase 6: File Processing Services (Week 7-9)
-
-**Goals:** Replace PowerShell watchers with web services
-
-**Tasks:**
-- [ ] Design file upload workflow
-  - Frontend uploads to Supabase Storage
-  - Backend processes and classifies
-  - Creates database records
-- [ ] Implement task queue (Celery or background tasks)
-  - GENERATE_DXF tasks
-  - GENERATE_SVG tasks
-  - BOM parsing tasks
-- [ ] FreeCAD automation integration
-  - Option A: Keep local FreeCAD runner, API triggers
-  - Option B: FreeCAD in Docker container
-  - Option C: Cloud-based CAD conversion service
-- [ ] BOM file parsing (replace BOM-Watcher)
-- [ ] Webhook notifications for task completion
-
-### Phase 7: Offline & Sync (Week 9-10)
-
-**Goals:** PWA with offline capability (like VetBox)
-
-**Tasks:**
-- [ ] Set up Dexie.js for IndexedDB
-- [ ] Implement sync service pattern
-- [ ] Create offline store (Pinia)
-- [ ] Configure Service Worker (vite-plugin-pwa)
-- [ ] Handle conflict resolution
-- [ ] Offline indicator UI
-
-### Phase 8: Advanced Features (Week 10-12)
-
-**Goals:** Release workflows, approvals, advanced features
-
-**Tasks:**
-- [ ] Implement Release workflow
-  - Design review process
-  - Approval chain
-  - State transitions with validation
-- [ ] Implement Revision management
-  - Revision increment (A → B → C)
-  - Iteration reset
-  - Historical archive
-- [ ] Full-text search (PostgreSQL FTS)
-- [ ] PDF report generation (BOM, release notes)
+### Phase 6: Advanced Features
+- [ ] Lifecycle state transitions
+- [ ] Revision management (A → B → C)
 - [ ] Checkout/lock functionality
+- [ ] Release workflow
+- [ ] Search improvements (full-text)
 
-### Phase 9: Production Deployment (Week 12-14)
-
-**Goals:** Deploy to production environment
-
-**Tasks:**
-- [ ] Set up Fly.io deployment
+### Phase 7: Deployment
+- [ ] Deploy backend to cloud (Fly.io or similar)
+- [ ] Deploy frontend (Vercel/Netlify)
+- [ ] Set up FreeCAD worker in cloud
 - [ ] Configure production Supabase
-- [ ] Set up CI/CD pipeline (GitHub Actions)
-- [ ] Configure error tracking (Sentry)
-- [ ] Set up monitoring and alerts
-- [ ] SSL/TLS configuration
-- [ ] Performance testing
-- [ ] Security audit
-
-### Phase 10: Creo Integration (Ongoing)
-
-**Goals:** Maintain CAD integration capability
-
-**Options:**
-1. **Local Companion App** (Keep existing approach)
-   - Windows service on Creo machine
-   - Pushes files to web API
-   - Receives tasks via polling
-
-2. **Browser Extension**
-   - Creo has web integration capabilities
-   - Extension communicates with web API
-
-3. **File Drop Zone**
-   - Monitored folder synced to cloud
-   - Web service processes uploads
+- [ ] CI/CD pipeline
 
 ---
 
-## Key Decisions Required
+## FreeCAD Docker Worker
 
-### 1. FreeCAD Processing Location
+The worker processes STEP files to generate:
+- **DXF flat patterns** - For laser/plasma cutting
+- **SVG bend drawings** - For brake press operations
 
-**Option A: Keep Local** (Recommended for initial migration)
-- FreeCAD stays on Windows machine
-- API endpoint triggers processing
-- Results uploaded via API
-- Pros: Minimal change to CAD automation
-- Cons: Requires local Windows service
+### Cloud Deployment Strategy
 
-**Option B: Docker Container**
-- FreeCAD in headless Docker container
-- Pros: Fully cloud-native
-- Cons: Complex setup, GPU considerations
+The FreeCAD Docker container (`amrit3701/freecad-cli`) is cloud-ready:
 
-**Option C: Cloud CAD Service**
-- Use third-party CAD conversion API
-- Pros: No infrastructure to manage
-- Cons: Cost, dependency on external service
+```bash
+# Example cloud usage (Fly.io, Railway, etc.)
+docker run -v /files:/data amrit3701/freecad-cli \
+  python3 /scripts/flatten_sheetmetal.py input.step output.dxf
+```
 
-### 2. File Storage
+**Options for cloud worker:**
+1. **Fly.io Machine** - Spin up on-demand for jobs
+2. **Railway** - Always-on container with job queue
+3. **Cloud Run** - Serverless container execution
 
-**Option A: Supabase Storage** (Recommended)
-- Integrated with auth
-- CDN distribution
-- Direct uploads from frontend
-
-**Option B: S3/R2**
-- More control
-- Better for large files
-- Requires signed URL management
-
-### 3. Real-time Updates
-
-**Option A: Supabase Realtime** (Recommended)
-- Built-in with Supabase
-- WebSocket subscriptions
-
-**Option B: Custom WebSocket**
-- More control
-- More maintenance
+Files flow: Supabase Storage → Worker → Supabase Storage
 
 ---
 
-## Risk Assessment
+## Item Numbering (Preserved)
 
-| Risk | Probability | Impact | Mitigation |
-|------|-------------|--------|------------|
-| Data loss during migration | Low | High | Multiple backups, staged migration |
-| FreeCAD integration breaks | Medium | High | Keep parallel systems during transition |
-| Performance issues | Medium | Medium | Load testing, indexing, caching |
-| Authentication complexity | Low | Medium | Use proven Supabase Auth patterns |
-| Scope creep | High | Medium | Strict phase gates, MVP focus |
+- Format: `ABC####` (3 letters + 4-6 digits)
+- Examples: `csp0030`, `wma20120`
+- Lowercase normalized
+- Prefixes: `mmc` (McMaster), `spn` (supplier), `zzz` (reference)
 
 ---
 
-## Success Criteria
+## Key Decisions
 
-### Minimum Viable Product (MVP)
-
-- [ ] User can log in and see their organization's items
-- [ ] User can upload files and create items
-- [ ] User can view and edit BOM relationships
-- [ ] User can search and filter items
-- [ ] Basic lifecycle state management (Design → Released)
-- [ ] File download functionality
-- [ ] Mobile-responsive interface
-
-### Full Feature Parity
-
-- [ ] All current functionality migrated
-- [ ] Multi-user access with proper permissions
-- [ ] Release and revision workflows
-- [ ] Task queue for DXF/SVG generation
-- [ ] Offline capability
-- [ ] Creo integration maintained
+| Decision | Choice |
+|----------|--------|
+| Database | Supabase PostgreSQL |
+| Auth | Supabase Auth |
+| File Storage | Supabase Storage |
+| Multi-tenancy | No (single org) |
+| Offline/PWA | No |
+| CAD Processing | FreeCAD Docker (cloud) |
 
 ---
 
-## Timeline Summary
+## Success Criteria (MVP)
 
-| Phase | Duration | Milestone |
-|-------|----------|-----------|
-| 1. Infrastructure | 2 weeks | Dev environment running |
-| 2. Core Data Model | 1-2 weeks | CRUD API complete |
-| 3. Auth | 1 week | Multi-tenant access |
-| 4. Frontend Core | 2 weeks | Basic UI functional |
-| 5. Data Migration | 1 week | Data migrated |
-| 6. File Processing | 2 weeks | Upload/process working |
-| 7. Offline/Sync | 1 week | PWA functional |
-| 8. Advanced Features | 2 weeks | Full features |
-| 9. Production | 2 weeks | Deployed |
-| 10. Creo Integration | Ongoing | CAD workflow |
-
-**Total Estimated Duration:** 14-16 weeks for full migration
+- [ ] User can log in (Jack, Dan, Shop accounts)
+- [ ] User can view items list with search/filter
+- [ ] User can view item details (metadata, files, BOM)
+- [ ] User can upload STEP files
+- [ ] System generates DXF/SVG from STEP
+- [ ] User can download any file type
+- [ ] User can view/edit BOM relationships
+- [ ] Basic lifecycle state management
 
 ---
 
-## References
-
-- VetBox-Pro codebase (`J:\VetBox-Pro`) - Reference architecture
-- Current PDM Documentation (`D:\Documentation\`)
-- Supabase Docs: https://supabase.com/docs
-- FastAPI Docs: https://fastapi.tiangolo.com
-- Vue 3 Docs: https://vuejs.org/guide
-- Pinia Docs: https://pinia.vuejs.org
-
----
-
-**Document Version:** 1.0
-**Created:** 2026-01-26
-**Author:** Claude (AI Assistant)
-**Status:** Planning Draft
+**Document Version:** 2.0
+**Updated:** 2025-01-27
+**Status:** Ready for Implementation
