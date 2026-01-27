@@ -46,7 +46,9 @@
       "Bash(du:*)",
       "Bash(rm:*)",
       "Bash(del:*)",
-      "Bash(type:*)"
+      "Bash(type:*)",
+      "mcp__MCP_DOCKER__mcp-find",
+      "mcp__MCP_DOCKER__mcp-add"
     ],
     "deny": []
   }
