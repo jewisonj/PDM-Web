@@ -1,0 +1,18 @@
+.btn {
+    background-color: #4CAF50;
+    border: none;
+    color: white;
+    padding: 3px 6px 3px 6px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 16px;
+    margin: 4px 2px;
+    border-radius: 4px;
+  }
+
+  .btn:disabled {background-color: rgb(176, 183, 185);}
+  .btn-success {}
+  .btn-info {background-color: rgb(71, 186, 231);}
+  .btn-warning {background-color: rgb(233, 160, 76);}
+  .btn-danger {background-color: rgb(206, 58, 52);}

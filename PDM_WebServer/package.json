@@ -1,0 +1,25 @@
+{
+  "name": "pdm-browser",
+  "version": "1.0.0",
+  "description": "Web-based browser for PDM System - Item explorer with SQLite database integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "keywords": [
+    "pdm",
+    "product-data-management",
+    "sqlite",
+    "browser"
+  ],
+  "author": "Jack",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "sqlite3": "^5.1.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}

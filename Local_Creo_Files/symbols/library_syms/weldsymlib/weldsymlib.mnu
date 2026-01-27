@@ -1,0 +1,9 @@
+weldsymlib
+#
+#
+/ansi_weld
+Create welding, brazing and examination symbols according to ANSI/AWS A2.4-93.
+#
+/iso_weld
+Create welding and brazing symbols according to ISO 2553:1992(E). 
+#

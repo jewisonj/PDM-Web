@@ -1,0 +1,142 @@
+########################
+# Windows system folders
+########################
+System Volume Information/
+$RECYCLE.BIN/
+
+########################
+# Python
+########################
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+########################
+# FreeCAD (ignore everything except custom tools)
+########################
+FreeCAD/*
+!FreeCAD/Tools/
+!FreeCAD/Tools/*.py
+!FreeCAD/Tools/*.bat
+
+########################
+# PDM Vault - Runtime Data (ignore CAD files, but keep structure)
+########################
+PDM_Vault/CADData/
+PDM_Vault/Released/
+PDM_Vault/Transfer/
+PDM_Vault/logs/
+PDM_Vault/*.sqlite
+PDM_Vault/*.sqlite-*
+PDM_Vault/*.db
+
+# But keep the schema and empty folder structure
+!PDM_Vault/schema.sql
+!PDM_Vault/CADData/.gitkeep
+!PDM_Vault/Released/.gitkeep
+!PDM_Vault/Transfer/.gitkeep
+!PDM_Vault/logs/.gitkeep
+
+########################
+# Databases (don't version)
+########################
+*.sqlite
+*.sqlite3
+*.db
+
+########################
+# PDM PowerShell Scripts (TRACK THESE)
+########################
+# Nothing to ignore here - we want these tracked!
+
+########################
+# PDM Web Server (TRACK THESE)
+########################
+PDM_WebServer/node_modules/
+PDM_WebServer/npm-debug.log*
+
+########################
+# MRP System (similar pattern)
+########################
+MRP_System/node_modules/
+MRP_System/*.sqlite
+MRP_System/*.db
+
+########################
+# Node / Web general
+########################
+node_modules/
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+package-lock.json
+dist/
+build/
+.nuxt/
+.output/
+
+########################
+# Env / secrets
+########################
+.env
+.env.*
+.env.local
+.env.*.local
+*.pem
+*.key
+
+########################
+# Runtime / logs
+########################
+logs/
+*.log
+
+########################
+# CAD binaries (belt + suspenders)
+########################
+*.prt
+*.asm
+*.drw
+*.step
+*.stp
+*.iges
+*.igs
+*.dxf
+*.dwg
+*.pdf
+*.neu
+
+# Exceptions for documentation PDFs (if you have any)
+!docs/*.pdf
+!documentation/*.pdf
+
+########################
+# OS / editor
+########################
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+########################
+# Temporary files
+########################
+*.tmp
+~*
+
+########################
+# Future Web App (Vue/FastAPI)
+########################
+frontend/node_modules/
+frontend/dist/
+backend/__pycache__/
+backend/.venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/

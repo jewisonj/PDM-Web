@@ -1,0 +1,38 @@
+!
+! These options control text not subject to other options
+!
+drawing_text_color             LETTER_COLOR
+text_height                    0.156250
+text_thickness                 0.000000
+text_width_factor              0.800000
+!
+! These options control text and line fonts
+!
+default_annotation_font        font.ndx
+aux_font                       1 filled.ndx
+symbol_font                    ASME
+!
+! These options control leaders
+!
+draw_arrow_length              0.187500
+arrow_style                    FILLED
+draw_arrow_width               0.062500
+draw_attach_sym_height         DEFAULT
+draw_attach_sym_width          DEFAULT
+draw_dot_diameter              DEFAULT
+leader_elbow_length            0.250000
+default_note_leader_type       STD_ASME
+!
+! These options control tables, repeat regions, and BOM balloons
+!
+sort_method_in_region          DELIMITED
+!
+! Miscellaneous options
+!
+datum_target_outside_text      NEAR_ELBOW
+draft_scale                    1.000000
+!drawing_units                 INCH    NOTE: Cannot be modified
+line_style_standard            STD_ANSI
+node_radius                    DEFAULT
+sym_flip_rotated_text          NO
+yes_no_parameter_display       TRUE_FALSE

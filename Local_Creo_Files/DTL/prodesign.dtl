@@ -1,0 +1,90 @@
+!
+! These options control text not subject to other options
+!
+drawing_text_color             LETTER_COLOR
+text_height                    0.156250
+text_thickness                 0.000000
+text_width_factor              0.800000
+!
+! These options control dimensions
+!
+associative_dimensioning       NO
+default_chamf_dim_configuration LEADER
+default_chamfer_text            45xd
+default_angdim_text_orientation HORIZONTAL
+default_chamf_text_orientation  NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+default_cldim_text_orientation  NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+default_diadim_text_orientation NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+default_lindim_text_orientation HORIZONTAL
+default_orddim_text_orientation PARALLEL_TO_AND_CENTERED_ABOUT_LEADER
+default_raddim_text_orientation NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+default_tolerance_display_style STD_ASME
+default_tolerance_mode          NOMINAL
+dim_fraction_format            DEFAULT
+dim_leader_length              0.500000
+dim_text_break_witness_lines   YES
+dim_text_gap                   0.500000
+draft_scale                    1.000000
+draw_ang_units                 ANG_DEG
+ang_unit_trail_zeros           YES
+lead_trail_zeros               STD_DEFAULT
+lead_trail_zeros_scope         DIMS
+modify_driving_dim_by_precision YES
+exclude_affixes_from_basic_box  NO
+ord_dim_standard               STD_ANSI
+default_ansi_ord_dim_aligned   YES
+show_clipped_dimensions        NO
+basic_dim_to_leader_offset     NO
+
+shrinkage_value_display        FINAL_VALUE
+use_major_units                NO
+witness_line_delta             0.125000
+witness_line_offset            0.062500
+extension_line_offset          0.062500
+default_clean_dim_offset       0.500000
+default_clean_dim_increment    0.375000
+minimum_angle_dimension        1.00
+intersected_lines_delta        0.125000
+!
+! These options control text and line fonts
+!
+default_annotation_font        font.ndx
+aux_font                       1 filled.ndx
+symbol_font                    ASME
+!
+! These options control leaders
+!
+default_leader_arrow_style     AUTOMATIC
+dim_dot_box_style              DEFAULT
+draw_arrow_length              0.187500
+arrow_style                    FILLED
+draw_arrow_width               0.062500
+draw_attach_sym_height         DEFAULT
+draw_attach_sym_width          DEFAULT
+draw_dot_diameter              DEFAULT
+leader_elbow_length            0.250000
+default_note_leader_type       STD_ASME
+!
+! These options control axes
+!
+circle_axis_offset             0.100000
+!
+! These options control tables, repeat regions, and BOM balloons
+!
+sort_method_in_region          DELIMITED
+!
+! These options control dimension tolerances
+!
+display_tol_by_1000            NO
+!
+! Miscellaneous options
+!
+consider_drawing_scale_callout YES
+decimal_marker                 COMMA_FOR_METRIC_DUAL
+datum_target_outside_text      NEAR_ELBOW
+drawing_units                  INCH
+harn_tang_line_display         NO
+line_style_standard            STD_ANSI
+node_radius                    DEFAULT
+sym_flip_rotated_text          NO
+yes_no_parameter_display       TRUE_FALSE

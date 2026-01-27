@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Raw Materials Inventory - MRP System</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #020617;
+            color: #e5e7eb;
+            padding: 20px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        h1 { margin: 0; font-size: 24px; }
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+        .filter-bar select, .filter-bar input {
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #1f2937;
+            background: #0f172a;
+            color: #e5e7eb;
+            font-size: 14px;
+        }
+        .filter-bar input { flex: 1; min-width: 200px; }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .btn-primary { background: #1d4ed8; color: white; }
+        .btn-primary:hover { background: #1e40af; }
+        .btn-success { background: #065f46; color: #6ee7b7; }
+        .btn-success:hover { background: #064e3b; }
+        .material-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #0f172a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .material-table th {
+            background: #1e293b;
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #9ca3af;
+        }
+        .material-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 13px;
+        }
+        .material-table tr:hover { background: #020617; }
+        .material-table input[type="number"] {
+            width: 80px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid #1f2937;
+            background: #020617;
+            color: #e5e7eb;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .badge-sq { background: #1e3a8a; color: #93c5fd; }
+        .badge-ot { background: #065f46; color: #6ee7b7; }
+        .badge-sm { background: #713f12; color: #fde68a; }
+        .badge-ss { background: #4c1d95; color: #ddd6fe; }
+        .badge-cs { background: #7f1d1d; color: #fca5a5; }
+        .stock-low { color: #fca5a5; font-weight: 600; }
+        .stock-ok { color: #6ee7b7; }
+        .status-msg {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .status-msg.success { background: #065f46; color: #6ee7b7; opacity: 1; }
+        .status-msg.error { background: #7f1d1d; color: #fca5a5; opacity: 1; }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+            font-size: 14px;
+        }
+        .summary-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #0f172a;
+            border-radius: 8px;
+        }
+        .summary-item {
+            font-size: 13px;
+        }
+        .summary-item strong {
+            color: #38bdf8;
+        }
+        .has-changes { background: #1e3a5c !important; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📦 Raw Materials Inventory</h1>
+        <button class="btn btn-success" onclick="window.location.href='mrp_dashboard.html'">← Back to MRP</button>
+    </div>
+
+    <div class="summary-bar" id="summaryBar">
+        <div class="summary-item">Total: <strong id="totalCount">0</strong></div>
+        <div class="summary-item">Low Stock: <strong id="lowCount" style="color:#fca5a5">0</strong></div>
+        <div class="summary-item">Out of Stock: <strong id="outCount" style="color:#f87171">0</strong></div>
+        <div class="summary-item">Unsaved Changes: <strong id="changesCount" style="color:#fde68a">0</strong></div>
+    </div>
+
+    <div class="filter-bar">
+        <input type="text" id="searchInput" placeholder="Search by part number, material..." oninput="filterMaterials()">
+        <select id="typeFilter" onchange="filterMaterials()">
+            <option value="">All Types</option>
+            <option value="SQ">Square/Rect Tube</option>
+            <option value="OT">Round Tube</option>
+            <option value="SM">Sheet Metal</option>
+        </select>
+        <select id="materialFilter" onchange="filterMaterials()">
+            <option value="">All Materials</option>
+            <option value="SS">Stainless Steel</option>
+            <option value="CS">Carbon Steel</option>
+        </select>
+        <select id="stockFilter" onchange="filterMaterials()">
+            <option value="">All Stock Levels</option>
+            <option value="low">Low Stock</option>
+            <option value="out">Out of Stock</option>
+        </select>
+        <button class="btn btn-primary" onclick="saveAll()">💾 Save All Changes</button>
+    </div>
+
+    <div id="statusMsg" class="status-msg"></div>
+
+    <div id="tableContainer"></div>
+
+    <script>
+        // Use DATASERVER for network access
+        const API_BASE = 'http://DATASERVER:8086';
+        let allMaterials = [];
+        let displayedMaterials = [];
+        let changes = new Map();
+
+        async function loadMaterials() {
+            try {
+                const res = await fetch(`${API_BASE}/api/raw-materials`);
+                allMaterials = await res.json();
+                displayedMaterials = [...allMaterials];
+                updateSummary();
+                renderTable();
+            } catch (err) {
+                showStatus('Failed to load materials', 'error');
+                console.error(err);
+            }
+        }
+
+        function updateSummary() {
+            const total = allMaterials.length;
+            const low = allMaterials.filter(m => m.qty_on_hand > 0 && m.qty_on_hand <= m.reorder_point).length;
+            const out = allMaterials.filter(m => m.qty_on_hand === 0).length;
+            
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('lowCount').textContent = low;
+            document.getElementById('outCount').textContent = out;
+            document.getElementById('changesCount').textContent = changes.size;
+        }
+
+        function filterMaterials() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const type = document.getElementById('typeFilter').value;
+            const material = document.getElementById('materialFilter').value;
+            const stock = document.getElementById('stockFilter').value;
+
+            displayedMaterials = allMaterials.filter(m => {
+                const matchSearch = !search || 
+                    m.part_number.toLowerCase().includes(search) ||
+                    m.material.toLowerCase().includes(search) ||
+                    (m.profile || '').toLowerCase().includes(search);
+
+                const matchType = !type || m.type === type;
+                const matchMaterial = !material || m.material_code === material;
+
+                let matchStock = true;
+                if (stock === 'low') {
+                    matchStock = m.qty_on_hand > 0 && m.qty_on_hand <= m.reorder_point;
+                } else if (stock === 'out') {
+                    matchStock = m.qty_on_hand === 0;
+                }
+
+                return matchSearch && matchType && matchMaterial && matchStock;
+            });
+
+            renderTable();
+        }
+
+        function renderTable() {
+            const container = document.getElementById('tableContainer');
+            
+            if (displayedMaterials.length === 0) {
+                container.innerHTML = '<div class="empty-state">No materials found matching filters</div>';
+                return;
+            }
+
+            const rows = displayedMaterials.map(m => {
+                const dims = m.type === 'SM' ? 
+                    `${m.wall_or_thk_code} (${m.wall_or_thk_in}")` :
+                    m.dim2_in ? 
+                        `${m.dim1_in}" x ${m.dim2_in}" x ${m.wall_or_thk_in}"` :
+                        `${m.dim1_in}" OD x ${m.wall_or_thk_in}" wall`;
+
+                const stockClass = m.qty_on_hand === 0 ? 'stock-low' : 
+                                   m.qty_on_hand <= m.reorder_point ? 'stock-low' : 'stock-ok';
+
+                const hasChanges = changes.has(m.material_id);
+
+                return `
+                    <tr class="${hasChanges ? 'has-changes' : ''}">
+                        <td>${m.part_number}</td>
+                        <td>
+                            <span class="badge badge-${m.type.toLowerCase()}">${m.type}</span>
+                        </td>
+                        <td>${dims}</td>
+                        <td>
+                            <span class="badge badge-${m.material_code.toLowerCase()}">${m.material_code}</span>
+                            ${m.material}
+                        </td>
+                        <td>${m.stock_length_ft ? m.stock_length_ft + ' ft' : 'Sheet'}</td>
+                        <td class="${stockClass}">
+                            <input type="number" value="${m.qty_on_hand || 0}" 
+                                   onchange="trackChange(${m.material_id}, 'qty_on_hand', this.value)" />
+                        </td>
+                        <td>
+                            <input type="number" value="${m.qty_on_order || 0}" 
+                                   onchange="trackChange(${m.material_id}, 'qty_on_order', this.value)" />
+                        </td>
+                        <td>
+                            <input type="number" value="${m.reorder_point || 0}" 
+                                   onchange="trackChange(${m.material_id}, 'reorder_point', this.value)" />
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            container.innerHTML = `
+                <table class="material-table">
+                    <thead>
+                        <tr>
+                            <th>Part Number</th>
+                            <th>Type</th>
+                            <th>Dimensions</th>
+                            <th>Material</th>
+                            <th>Stock Length</th>
+                            <th>On Hand</th>
+                            <th>On Order</th>
+                            <th>Reorder Point</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        function trackChange(materialId, field, value) {
+            if (!changes.has(materialId)) {
+                changes.set(materialId, {});
+            }
+            changes.get(materialId)[field] = parseInt(value) || 0;
+            updateSummary();
+            renderTable();
+        }
+
+        async function saveAll() {
+            if (changes.size === 0) {
+                showStatus('No changes to save', 'error');
+                return;
+            }
+
+            let saved = 0;
+            for (const [materialId, updates] of changes.entries()) {
+                try {
+                    await fetch(`${API_BASE}/api/raw-materials/${materialId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updates)
+                    });
+                    
+                    // Update local data
+                    const material = allMaterials.find(m => m.material_id === materialId);
+                    if (material) {
+                        Object.assign(material, updates);
+                    }
+                    saved++;
+                } catch (err) {
+                    console.error(`Failed to save material ${materialId}:`, err);
+                }
+            }
+
+            changes.clear();
+            updateSummary();
+            renderTable();
+            showStatus(`Saved ${saved} material${saved !== 1 ? 's' : ''}`, 'success');
+        }
+
+        function showStatus(msg, type) {
+            const el = document.getElementById('statusMsg');
+            el.className = `status-msg ${type}`;
+            el.textContent = msg;
+            setTimeout(() => el.className = 'status-msg', 3000);
+        }
+
+        // Load on page load
+        loadMaterials();
+    </script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+﻿ND_RelParSet_K01 = {
+
+Name = VINYL_DECAL
+
+PARAMETERS =
+{
+  Name = PTC_MATERIAL_TYPE
+  Type = Integer
+  Default = 9
+  Access = Locked
+},
+{
+  Name = PTC_FAILURE_CRITERION_TYPE
+  Type = String
+  Default = 'NONE'
+  Access = Locked
+},
+{
+  Name = PTC_FATIGUE_TYPE
+  Type = String
+  Default = 'NONE'
+  Access = Locked
+},
+{
+  Name = PTC_MATERIAL_SUB_TYPE
+  Type = String
+  Default = 'LINEAR'
+  Access = Locked
+},
+{
+  Name = PTC_MATERIAL_DESCRIPTION
+  Type = String
+  Default = 'Sample materials data from ANSYS Granta
+See grantadesign.com/PTC for more'
+  Access = Full
+},
+{
+  Name = PTC_MASS_DENSITY
+  Type = Real
+  Default = 0.04804929836341 lbm / in^3
+  Access = Full
+},
+{
+  Name = PTC_YOUNG_MODULUS
+  Type = Real
+  Default = 1814316.23207195522264 lbm / (in sec^2)
+  Access = Full
+},
+{
+  Name = PTC_POISSON_RATIO
+  Type = Real
+  Default = 0.475
+  Access = Full
+},
+{
+  Name = PTC_THERMAL_CONDUCTIVITY
+  Type = Real
+  Default = 8.63139652528215 in lbm / (sec^3 F)
+  Access = Full
+},
+{
+  Name = PTC_THERMAL_EXPANSION_COEF
+  Type = Real
+  Default = 0.00005611111111 1 / F
+  Access = Full
+},
+{
+  Name = PTC_SPECIFIC_HEAT
+  Type = Real
+  Default = 1420836.17427803133614 in^2 / (sec^2 F)
+  Access = Full
+},
+{
+  Name = PTC_TENSILE_YIELD_STRESS
+  Type = Real
+  Default = 1091949.58411738043651 lbm / (in sec^2)
+  Access = Full
+},
+{
+  Name = TEMPERATURE
+  Type = Real
+  Default = 0.0 F
+  Access = Full
+},
+{
+  Name = PTC_INITIAL_BEND_Y_FACTOR
+  Type = Real
+  Default = 0.5
+  Access = Full
+},
+{
+  Name = PTC_BEND_TABLE
+  Type = String
+  Default = ''
+  Access = Full
+},
+{
+  Name = PTC_MTRL_FABRIC_ARCHITECTURE
+  Type = String
+  Default = 'UNIDIRECTIONAL'
+  Access = Full
+},
+{
+  Name = PRICE
+  Type = Real
+  Default = 10.0
+  Access = Full
+}
+
+}

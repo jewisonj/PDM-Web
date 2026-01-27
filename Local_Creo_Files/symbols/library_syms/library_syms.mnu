@@ -1,0 +1,18 @@
+symbols
+#
+#
+/weldsymlib
+Symbols for Welding, Brazing, and Examination per ANSI/AWS A2.4-86.
+#
+/elecsymlib
+Graphic Symbols for Electrical and Electronics Diagrams per ANSI Y32.2-1975.
+#
+/gensymlib
+Graphic Symbol Library for Heat and Power Applications.
+#
+/surftextsymlib
+Surface Texture Symbols per ANSI Y14.36-1978.
+#
+/isosurftext
+ISO Surface Texture Symbols per ISO 1302-1978(E).
+#

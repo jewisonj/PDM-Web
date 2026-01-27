@@ -1,0 +1,387 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Workspace Comparison</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+        
+        .input-section {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .input-group input {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .input-group button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .input-group button:hover {
+            transform: translateY(-2px);
+        }
+        
+        .input-group button:active {
+            transform: translateY(0);
+        }
+        
+        .results-section {
+            padding: 30px;
+        }
+        
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .summary-card {
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .summary-card.green { background: #d4edda; border-left: 4px solid #28a745; }
+        .summary-card.yellow { background: #fff3cd; border-left: 4px solid #ffc107; }
+        .summary-card.cyan { background: #d1ecf1; border-left: 4px solid #17a2b8; }
+        .summary-card.magenta { background: #f8d7da; border-left: 4px solid #dc3545; }
+        
+        .summary-card .count {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .summary-card .label {
+            font-size: 0.9em;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .file-section {
+            margin-bottom: 30px;
+        }
+        
+        .file-section h2 {
+            padding: 15px 20px;
+            background: #f8f9fa;
+            border-left: 4px solid;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+        
+        .file-section.checkin h2 { border-color: #ffc107; color: #856404; }
+        .file-section.update h2 { border-color: #17a2b8; color: #0c5460; }
+        .file-section.new h2 { border-color: #dc3545; color: #721c24; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #6c757d;
+            font-size: 1.2em;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 6px;
+            border-left: 4px solid #dc3545;
+            margin: 20px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .age-diff {
+            font-weight: 600;
+        }
+        
+        .age-diff.positive { color: #856404; }
+        .age-diff.negative { color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Workspace Comparison Tool</h1>
+            <p>Compare your local workspace against the PDM vault</p>
+        </div>
+        
+        <div class="input-section">
+            <div class="input-group">
+                <input type="text" id="workspacePath" placeholder="Enter workspace path (e.g., J:\Aethon\Mk2\R2)" value="J:\Aethon\">
+                <button onclick="compareWorkspace()">Compare</button>
+            </div>
+        </div>
+        
+        <div id="loadingDiv" class="loading hidden">
+            Analyzing workspace...
+        </div>
+        
+        <div id="errorDiv" class="error hidden"></div>
+        
+        <div id="resultsSection" class="results-section hidden">
+            <div class="summary">
+                <div class="summary-card green">
+                    <div class="count" id="upToDateCount">0</div>
+                    <div class="label">Up to Date</div>
+                </div>
+                <div class="summary-card yellow">
+                    <div class="count" id="checkInCount">0</div>
+                    <div class="label">Need Check-In</div>
+                </div>
+                <div class="summary-card cyan">
+                    <div class="count" id="updateCount">0</div>
+                    <div class="label">Need Update</div>
+                </div>
+                <div class="summary-card magenta">
+                    <div class="count" id="newCount">0</div>
+                    <div class="label">Not in Vault</div>
+                </div>
+            </div>
+            
+            <div id="checkInSection" class="file-section checkin hidden">
+                <h2>⚠️ Files Needing Check-In (Workspace Newer)</h2>
+                <table id="checkInTable">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Workspace Time</th>
+                            <th>Vault Time</th>
+                            <th>Hours Newer</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            
+            <div id="updateSection" class="file-section update hidden">
+                <h2>📥 Files Needing Update (Vault Newer)</h2>
+                <table id="updateTable">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Workspace Time</th>
+                            <th>Vault Time</th>
+                            <th>Hours Older</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            
+            <div id="newSection" class="file-section new hidden">
+                <h2>🆕 Files Not in Vault</h2>
+                <table id="newTable">
+                    <thead>
+                        <tr>
+                            <th>File</th>
+                            <th>Workspace Time</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        async function compareWorkspace() {
+            const workspacePath = document.getElementById('workspacePath').value.trim();
+            
+            if (!workspacePath) {
+                alert('Please enter a workspace path');
+                return;
+            }
+            
+            // Show loading, hide results
+            document.getElementById('loadingDiv').classList.remove('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+            document.getElementById('errorDiv').classList.add('hidden');
+            
+            try {
+                const response = await fetch('/api/compare', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ workspacePath: workspacePath })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+                
+                displayResults(data);
+                
+            } catch (error) {
+                showError('Error: ' + error.message);
+            } finally {
+                document.getElementById('loadingDiv').classList.add('hidden');
+            }
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorDiv');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+        
+        function displayResults(data) {
+            // Update summary counts
+            document.getElementById('upToDateCount').textContent = data.upToDate.length;
+            document.getElementById('checkInCount').textContent = data.needCheckIn.length;
+            document.getElementById('updateCount').textContent = data.needUpdate.length;
+            document.getElementById('newCount').textContent = data.notInVault.length;
+            
+            // Show results section
+            document.getElementById('resultsSection').classList.remove('hidden');
+            
+            // Display check-in files
+            if (data.needCheckIn.length > 0) {
+                displayTable('checkInSection', 'checkInTable', data.needCheckIn, true);
+            } else {
+                document.getElementById('checkInSection').classList.add('hidden');
+            }
+            
+            // Display update files
+            if (data.needUpdate.length > 0) {
+                displayTable('updateSection', 'updateTable', data.needUpdate, false);
+            } else {
+                document.getElementById('updateSection').classList.add('hidden');
+            }
+            
+            // Display new files
+            if (data.notInVault.length > 0) {
+                displayNewFiles('newSection', 'newTable', data.notInVault);
+            } else {
+                document.getElementById('newSection').classList.add('hidden');
+            }
+        }
+        
+        function displayTable(sectionId, tableId, files, isCheckIn) {
+            document.getElementById(sectionId).classList.remove('hidden');
+            const tbody = document.getElementById(tableId).querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            files.forEach(file => {
+                const row = tbody.insertRow();
+                row.insertCell(0).textContent = file.file;
+                row.insertCell(1).textContent = file.workspaceTime;
+                row.insertCell(2).textContent = file.vaultTime;
+                
+                const ageCell = row.insertCell(3);
+                const hours = Math.abs(file.ageDiffHours);
+                ageCell.textContent = hours.toFixed(1);
+                ageCell.className = 'age-diff ' + (isCheckIn ? 'positive' : 'negative');
+            });
+        }
+        
+        function displayNewFiles(sectionId, tableId, files) {
+            document.getElementById(sectionId).classList.remove('hidden');
+            const tbody = document.getElementById(tableId).querySelector('tbody');
+            tbody.innerHTML = '';
+            
+            files.forEach(file => {
+                const row = tbody.insertRow();
+                row.insertCell(0).textContent = file.file;
+                row.insertCell(1).textContent = file.workspaceTime;
+            });
+        }
+        
+        // Allow Enter key to trigger comparison
+        document.getElementById('workspacePath').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                compareWorkspace();
+            }
+        });
+    </script>
+</body>
+</html>

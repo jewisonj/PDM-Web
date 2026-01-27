@@ -1,0 +1,43 @@
+# Default: normalize text files to LF in the repo
+* text=auto eol=lf
+
+# Common text/code files
+*.md   text eol=lf
+*.txt  text eol=lf
+*.js   text eol=lf
+*.ts   text eol=lf
+*.vue  text eol=lf
+*.css  text eol=lf
+*.scss text eol=lf
+*.html text eol=lf
+*.json text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.py   text eol=lf
+*.sql  text eol=lf
+
+# Windows scripts (still store LF in repo; PowerShell handles LF fine)
+*.ps1  text eol=lf
+*.psm1 text eol=lf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# Treat these as binary if they ever enter the repo
+*.prt  binary
+*.asm  binary
+*.drw  binary
+*.step binary
+*.stp  binary
+*.iges binary
+*.igs  binary
+*.dxf  binary
+*.dwg  binary
+*.pdf  binary
+*.zip  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.woff binary
+*.woff2 binary

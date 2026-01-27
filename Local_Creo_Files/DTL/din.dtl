@@ -1,0 +1,246 @@
+!
+! These options control text not subject to other options
+!
+drawing_text_color             LETTER_COLOR
+text_height                                     3.500000
+text_thickness                                  0.000000
+text_width_factor                               0.700000
+!
+! These options control views and their annotations
+!
+broken_view_offset                              10.000000
+create_area_unfold_segmented                    YES
+def_view_text_height                            5.000000
+def_view_text_thickness                         0.500000
+def_view_text_height_scope                      VIEW_NAME_ONLY
+def_view_text_thickness_scope                   VIEW_NAME_ONLY
+default_view_label_placement                    TOP_CENTER
+detail_circle_line_style                        SOLIDFONT
+detail_circle_note_text                         DEFAULT
+detail_view_boundary_type      CIRCLE
+detail_view_circle                              ON
+default_detail_view_name_style                  letter
+default_view_note_orientation                   NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+detail_view_scale_factor       2.000000
+half_view_line                                  SYMMETRY
+model_display_for_new_views                     FOLLOW_ENVIRONMENT
+proj_view_note_format                           DEFAULT
+projection_type                                 FIRST_ANGLE
+tan_edge_display_for_new_views                  DEFAULT
+view_note                                       STD_DIN
+view_scale_denominator                          10
+view_scale_format                               RATIO_COLON
+!
+! These options control cross sections and their arrows
+!
+crossec_arrow_length                            5.250000
+crossec_arrow_style                             HEAD_ONLINE
+crossec_arrow_width                             1.500000
+crossec_text_place                              ABOVE_TAIL
+crossec_type                                    OLD_STYLE
+cutting_line                                    STD_ANSI
+cutting_line_adapt                              YES
+cutting_line_segment                            5.000000
+def_xhatch_break_around_text                    NO
+def_xhatch_break_margin_size                    0.150000
+default_show_2d_section_xhatch ASSEMBLY_AND_PART
+default_show_3d_section_xhatch YES
+draw_cosms_in_area_xsec                         YES
+half_section_line                               SOLID
+remove_cosms_from_xsecs                         ALL
+show_offset_section_seams                       ANGLED_ONLY
+show_quilts_in_total_xsecs                      NO
+show_total_unfold_seam                          YES
+clip_curves_in_local_full_xsecs                 YES
+!
+! These options control solids shown in views
+!
+datum_point_shape                               CROSS
+datum_point_size               0.312500
+hidden_tangent_edges                            DEFAULT
+hlr_for_datum_curves           YES
+hlr_for_pipe_solid_cl                           NO
+hlr_for_threads                                 YES
+location_radius                                 DEFAULT(2.)
+mesh_surface_lines             OFF
+hlr_multithreading             YES
+pipe_insulation_solid_xsec                      NO
+thread_standard                                 STD_ISO_IMP
+weld_light_xsec                                 NO
+weld_solid_xsec                                 NO
+!
+! These options control dimensions
+!
+allow_3d_dimensions                             YES
+associative_dimensioning                        YES
+default_chamf_dim_configuration                 LINEAR
+default_chamfer_text                            dx45
+clip_diam_dimensions                            YES
+clip_dimensions                                 NO
+clip_dim_arrow_style                            DOUBLE_ARROW
+common_ref_dim_offset_increment                 default_clean_dim_increment
+default_angdim_text_orientation                 PARALLEL_ABOVE
+default_chamf_text_orientation                  PARALLEL_TO_AND_ABOVE_LEADER
+default_cldim_text_orientation                  PARALLEL_TO_AND_ABOVE_LEADER
+default_diadim_text_orientation                 PARALLEL_TO_AND_ABOVE_LEADER
+default_diam_dim_arrow_state                    INSIDE
+default_dim_elbows                              YES
+default_dual_dim_position                       BELOW
+default_lindim_text_orientation                 PARALLEL_TO_AND_ABOVE_LEADER
+default_orddim_text_orientation                 PARALLEL_TO_AND_ABOVE_LEADER
+default_raddim_text_orientation                 PARALLEL_TO_AND_ABOVE_LEADER
+default_tolerance_display_style                 STD_ASME
+default_tolerance_mode                          NOMINAL
+dim_fraction_format                             DEFAULT
+dim_leader_length                               7.500000
+dim_text_break_witness_lines                    YES
+dim_text_gap                                    1.000000
+dim_trail_zero_max_places      same_as_dim
+draft_scale                                     1.000000
+draw_ang_units                                  ANG_DEG
+ang_unit_trail_zeros                            YES
+dual_digits_diff                                -1
+dual_dimensioning                               NO
+dual_dimension_brackets                         YES
+dual_metric_dim_show_fractions                  NO
+dual_secondary_units                            INCH
+iso_ordinate_delta                              YES
+lead_trail_zeros                                STD_DEFAULT
+lead_trail_zeros_scope                          DIMS
+ord_dim_standard                                STD_DIN
+ord_dim_origin_style                            EMPTY
+default_ansi_ord_dim_aligned                    YES
+radial_dimension_display                        STD_ISO
+show_clipped_dimensions                         NO
+basic_dim_to_leader_offset                      NO
+shrinkage_value_display                         PERCENT_SHRINK
+use_major_units                                 NO
+witness_line_delta                              2.000000
+witness_line_offset                             0.000000
+extension_line_offset                           0.000000
+default_clean_dim_offset                        10.000000
+default_clean_dim_increment                     5.000000
+minimum_angle_dimension                         1.00
+intersected_lines_delta                         2.500000
+!
+! These options control text and line fonts
+!
+default_annotation_font                         isofont.ndx
+aux_font                                        1 filled.ndx
+aux_font                                        2 leroy.ndx
+aux_font                                        3 cal_alf.ndx
+aux_font                                        4 cal_grek.ndx
+!
+! This option control symbol_font
+!
+symbol_font                                     ISO
+!
+! These options control leaders
+!
+default_leader_arrow_style                      AUTOMATIC
+dim_dot_box_style                               DEFAULT
+draw_arrow_length                               3.500000
+arrow_style                                     FILLED
+draw_arrow_width                                1.000000
+draw_attach_sym_height                          DEFAULT
+draw_attach_sym_width                           DEFAULT
+draw_dot_diameter                               1.000000
+leader_elbow_length                             5.000000
+leader_extension_font                           SOLIDFONT
+set_datum_leader_length        7.500000
+default_note_leader_type                        STD_ISO
+!
+! These options control axes
+!
+axis_interior_clipping                          YES
+axis_line_offset                                3.000000
+circle_axis_offset                              3.000000
+radial_pattern_axis_circle                      YES
+!
+! These options control geometric tolerancing information
+!
+asme_dtm_on_dia_dim_gtol                        ON_GTOL
+gtol_datum_placement_default   ON_BOTTOM
+gtol_datums                                     STD_DIN
+gtol_dim_placement                              UNDER_VALUE
+gtol_display_style             STD
+gtol_lead_trail_zeros          SAME_AS_LEAD_TRAIL_ZEROS
+new_iso_set_datums                              NO
+set_datum_triangle_display     FILLED
+stacked_gtol_align                              YES
+gtol_indicator_attached                         YES
+!
+! These options control tables, repeat regions, and BOM balloons
+!
+2d_region_columns_fit_text                      NO
+all_holes_in_hole_table                         YES
+dash_supp_dims_in_region                        NO
+def_bom_balloons_attachment                     EDGE
+def_bom_balloons_snap_lines                     NO
+def_bom_balloons_stagger                        NO
+def_bom_balloons_stagger_value                  15.240000
+def_bom_balloons_view_offset                    20.320000
+def_bom_balloons_edge_att_sym                   ARROWHEAD
+def_bom_balloons_surf_att_sym                   INTEGRAL
+default_bom_balloon_type                        SIMPLE_CIRCLE
+default_table_rows                              2
+default_table_columns                           4
+default_table_row_height                        1
+default_table_column_width                      10
+min_dist_between_bom_balloons                   20.320000
+model_digits_in_region                          YES
+reference_bom_balloon_text                      REF
+show_cbl_term_in_region                         YES
+show_dim_sign_in_tables                         YES
+sort_method_in_region                           DELIMITED
+substituted_comp_cparam_report                  ORIGINAL
+zero_quantity_cell_format                       EMPTY
+!
+! These options control layers
+!
+draw_layer_overrides_model                      YES
+ignore_model_layer_status                       YES
+show_hidden_quilt_sket_pnt_axes                 NO
+!
+! These options control model grids
+!
+model_grid_balloon_display                      YES
+model_grid_balloon_size                         0.000000
+model_grid_neg_prefix                           -
+model_grid_num_dig_display                      0
+model_grid_offset                               DEFAULT
+model_grid_text_orientation                     HORIZONTAL
+model_grid_text_position                        CENTERED
+!
+! These options control theoretical piping bend intersection
+!
+pipe_pt_line_style             DEFAULT
+pipe_pt_shape                                   CROSS
+pipe_pt_size                                    DEFAULT
+show_pipe_theor_cl_pts                          BEND_CL
+!
+! These options control dimension tolerances
+!
+blank_zero_tolerance           YES
+display_tol_by_1000            NO
+symmetric_tol_display_standard STD_ISO
+tol_display                    YES
+tol_text_height_factor         0.600000
+tol_text_width_factor          0.600000
+!
+! Miscellaneous options
+!
+consider_drawing_scale_callout                  YES
+decimal_marker                                  COMMA
+default_pipe_bend_note                          NO
+drawing_units                                   MM
+harn_tang_line_display                          NO
+line_style_standard                             STD_ANSI
+max_balloon_radius                              0.000000
+min_balloon_radius                              0.000000
+node_radius                                     DEFAULT
+pos_loc_format                                  %s%x%y, %r
+sym_flip_rotated_text                           YES
+weld_symbol_standard                            STD_ISO
+weld_spot_side_significant                      YES
+yes_no_parameter_display                        TRUE_FALSE

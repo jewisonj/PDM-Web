@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Routing Editor - MRP System</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #020617;
+            color: #e5e7eb;
+        }
+        .app {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .app.preview-open {
+            grid-template-columns: 280px 1fr var(--preview-width, 700px);
+        }
+        .sidebar {
+            background: #020617;
+            border-right: 1px solid #1e293b;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .sidebar h1 {
+            font-size: 18px;
+            margin: 0 0 10px;
+            color: #e5e7eb;
+            flex-shrink: 0;
+        }
+        .search-box {
+            margin-bottom: 8px;
+            flex-shrink: 0;
+        }
+        .search-box input {
+            width: 100%;
+            padding: 6px 8px;
+            border-radius: 6px;
+            border: 1px solid #1f2937;
+            background: #020617;
+            color: #e5e7eb;
+        }
+        .search-box input:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+        .filter-row {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 8px;
+            flex-shrink: 0;
+        }
+        .filter-row select {
+            flex: 1;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid #1f2937;
+            background: #0f172a;
+            color: #e5e7eb;
+            font-size: 11px;
+        }
+        .list {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        .list::-webkit-scrollbar { width: 8px; }
+        .list::-webkit-scrollbar-track { background: #0f172a; border-radius: 4px; }
+        .list::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        .list::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        .item-row {
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 2px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .item-row:hover { background: #0f172a; }
+        .item-row.active { background: #1d4ed8; }
+        .item-row-main { font-size: 12px; font-weight: 500; }
+        .item-row-sub { font-size: 10px; color: #9ca3af; }
+        .item-row.active .item-row-sub { color: #bfdbfe; }
+        .routing-badge {
+            font-size: 9px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background: #065f46;
+            color: #6ee7b7;
+        }
+        .routing-badge.none { background: #7f1d1d; color: #fca5a5; }
+        .content {
+            display: flex;
+            flex-direction: column;
+            padding: 16px;
+            overflow-y: auto;
+        }
+        .content h2 { margin: 0 0 4px; font-size: 20px; }
+        .item-meta { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin: 16px 0 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .routing-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .routing-table th {
+            text-align: left;
+            padding: 8px;
+            background: #0f172a;
+            border-bottom: 1px solid #1e293b;
+        }
+        .routing-table td { padding: 8px; border-bottom: 1px solid #1e293b; }
+        .routing-table tr:hover { background: #0f172a; }
+        .routing-table input {
+            width: 70px;
+            padding: 4px 6px;
+            border-radius: 4px;
+            border: 1px solid #1f2937;
+            background: #020617;
+            color: #e5e7eb;
+            font-size: 12px;
+        }
+        .routing-table input:focus { outline: none; border-color: #38bdf8; }
+        .btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-secondary { background: #374151; color: white; }
+        .btn-secondary:hover { background: #4b5563; }
+        .btn-sm { padding: 3px 8px; font-size: 11px; }
+        .add-station-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            align-items: center;
+        }
+        .add-station-row select {
+            padding: 6px 8px;
+            border-radius: 4px;
+            border: 1px solid #1f2937;
+            background: #0f172a;
+            color: #e5e7eb;
+            font-size: 12px;
+        }
+        .template-section {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 16px;
+        }
+        .template-section h4 { margin: 0 0 8px; font-size: 13px; }
+        .template-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+        .status-msg {
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 12px;
+        }
+        .status-msg.success { background: #065f46; color: #6ee7b7; }
+        .status-msg.error { background: #7f1d1d; color: #fca5a5; }
+        .empty-state { color: #6b7280; font-size: 13px; padding: 20px; text-align: center; }
+        .type-select {
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #1f2937;
+            background: #0f172a;
+            color: #e5e7eb;
+            font-size: 12px;
+        }
+        .action-bar { display: flex; gap: 8px; margin-top: 16px; }
+        .total-time { font-size: 13px; color: #9ca3af; margin-top: 12px; }
+        .total-time strong { color: #e5e7eb; }
+        
+        /* PDF Preview Panel */
+        .preview-panel {
+            background: #0f172a;
+            border-left: 1px solid #1e293b;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            position: relative;
+        }
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #1e293b;
+            flex-shrink: 0;
+        }
+        .preview-header h3 { margin: 0; font-size: 14px; color: #e5e7eb; }
+        .preview-controls { display: flex; gap: 8px; align-items: center; }
+        .preview-close {
+            background: none;
+            border: none;
+            color: #9ca3af;
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .preview-close:hover { background: #1e293b; color: #e5e7eb; }
+        .preview-content { flex: 1; padding: 0; overflow: hidden; }
+        .preview-content iframe { width: 100%; height: 100%; border: none; background: white; }
+        .preview-content .no-pdf {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #6b7280;
+            font-size: 13px;
+        }
+        .pdf-icon { font-size: 10px; color: #f87171; margin-left: 4px; }
+        
+        /* Resize handle */
+        .resize-handle {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 6px;
+            cursor: ew-resize;
+            background: transparent;
+        }
+        .resize-handle:hover { background: #38bdf8; }
+        
+        /* Reorder arrows */
+        .reorder-btns { display: flex; flex-direction: column; gap: 2px; }
+        .reorder-btn {
+            background: #374151;
+            border: none;
+            color: #9ca3af;
+            padding: 2px 6px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            line-height: 1;
+        }
+        .reorder-btn:hover { background: #4b5563; color: #e5e7eb; }
+        .reorder-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        
+        /* Cut time indicator */
+        .cut-time-hint {
+            font-size: 9px;
+            color: #6ee7b7;
+            margin-left: 4px;
+        }
+    </style>
+</head>
+<body>
+<div class="app" id="app">
+    <div class="sidebar">
+        <h1>Routing Editor</h1>
+        <div class="search-box">
+            <input id="searchBox" placeholder="Search parts..." />
+        </div>
+        <div class="filter-row">
+            <select id="filterType">
+                <option value="">All Types</option>
+            </select>
+            <select id="filterRouting">
+                <option value="">All</option>
+                <option value="has">Has Routing</option>
+                <option value="none">No Routing</option>
+            </select>
+        </div>
+        <div id="itemList" class="list"></div>
+    </div>
+    <div class="content" id="mainContent">
+        <div class="empty-state">Select a part to edit its routing</div>
+    </div>
+    <div class="preview-panel" id="previewPanel" style="display: none;">
+        <div class="resize-handle" id="resizeHandle"></div>
+        <div class="preview-header">
+            <h3 id="previewTitle">PDF Preview</h3>
+            <div class="preview-controls">
+                <button class="btn btn-sm btn-secondary" onclick="setPreviewWidth(500)">S</button>
+                <button class="btn btn-sm btn-secondary" onclick="setPreviewWidth(700)">M</button>
+                <button class="btn btn-sm btn-secondary" onclick="setPreviewWidth(900)">L</button>
+                <button class="preview-close" onclick="closePreview()">×</button>
+            </div>
+        </div>
+        <div class="preview-content" id="previewContent">
+            <div class="no-pdf">No PDF available</div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_BASE = 'http://DATASERVER:8086';
+
+let items = [];
+let files = [];
+let workstations = [];
+let partTypes = [];
+let currentItem = null;
+let currentRouting = [];
+let previewOpen = false;
+let previewWidth = 700;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadData();
+    renderItemList();
+    
+    document.getElementById('searchBox').addEventListener('input', renderItemList);
+    document.getElementById('filterType').addEventListener('change', renderItemList);
+    document.getElementById('filterRouting').addEventListener('change', renderItemList);
+    
+    setupResizeHandle();
+});
+
+async function loadData() {
+    try {
+        const [itemsRes, stationsRes, typesRes, filesRes] = await Promise.all([
+            fetch(`${API_BASE}/api/items`),
+            fetch(`${API_BASE}/api/workstations`),
+            fetch(`${API_BASE}/api/part-types`),
+            fetch(`${API_BASE}/api/files`)
+        ]);
+        
+        items = await itemsRes.json();
+        workstations = await stationsRes.json();
+        partTypes = await typesRes.json();
+        files = await filesRes.json();
+        
+        items.forEach(item => {
+            item.has_pdf = files.some(f => 
+                f.item_number === item.item_number && 
+                f.file_type === 'PDF'
+            );
+        });
+        
+        const filterType = document.getElementById('filterType');
+        partTypes.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.type_code;
+            opt.textContent = t.type_name;
+            filterType.appendChild(opt);
+        });
+    } catch (err) {
+        console.error('Failed to load data:', err);
+    }
+}
+
+function renderItemList() {
+    const search = document.getElementById('searchBox').value.toLowerCase();
+    const typeFilter = document.getElementById('filterType').value;
+    const routingFilter = document.getElementById('filterRouting').value;
+    
+    let filtered = items.filter(item => {
+        const matchSearch = item.item_number.toLowerCase().includes(search) ||
+                          (item.description || '').toLowerCase().includes(search);
+        const matchType = !typeFilter || item.part_type === typeFilter;
+        const matchRouting = !routingFilter || 
+            (routingFilter === 'has' && item.has_routing) ||
+            (routingFilter === 'none' && !item.has_routing);
+        return matchSearch && matchType && matchRouting;
+    });
+    
+    const listEl = document.getElementById('itemList');
+    listEl.innerHTML = filtered.map(item => `
+        <div class="item-row ${currentItem?.item_number === item.item_number ? 'active' : ''}" 
+             onclick="selectItem('${item.item_number}')">
+            <div>
+                <div class="item-row-main">
+                    ${item.item_number}
+                    ${item.has_pdf ? '<span class="pdf-icon">📄</span>' : ''}
+                </div>
+                <div class="item-row-sub">${item.description || item.part_type || 'No description'}</div>
+            </div>
+            <span class="routing-badge ${item.has_routing ? '' : 'none'}">
+                ${item.has_routing ? item.station_count + ' ops' : 'No routing'}
+            </span>
+        </div>
+    `).join('');
+}
+
+async function selectItem(itemNumber) {
+    currentItem = items.find(i => i.item_number === itemNumber);
+    
+    try {
+        const res = await fetch(`${API_BASE}/api/routing/${itemNumber}`);
+        currentRouting = await res.json();
+    } catch (err) {
+        currentRouting = [];
+    }
+    
+    renderItemList();
+    renderContent();
+    
+    if (currentItem.has_pdf) {
+        const pdfFile = files.find(f => 
+            f.item_number === itemNumber && 
+            f.file_type === 'PDF'
+        );
+        if (pdfFile) {
+            showPreview(pdfFile.file_path);
+        }
+    } else {
+        closePreview();
+    }
+}
+
+function showPreview(filePath) {
+    previewOpen = true;
+    document.getElementById('app').classList.add('preview-open');
+    document.getElementById('app').style.setProperty('--preview-width', previewWidth + 'px');
+    document.getElementById('previewPanel').style.display = 'flex';
+    document.getElementById('previewTitle').textContent = currentItem.item_number + ' - PDF';
+    
+    const pdfUrl = `${API_BASE}/api/pdf?path=${encodeURIComponent(filePath)}`;
+    
+    document.getElementById('previewContent').innerHTML = `
+        <iframe src="${pdfUrl}" type="application/pdf"></iframe>
+    `;
+}
+
+function closePreview() {
+    previewOpen = false;
+    document.getElementById('app').classList.remove('preview-open');
+    document.getElementById('previewPanel').style.display = 'none';
+}
+
+function setPreviewWidth(width) {
+    previewWidth = width;
+    document.getElementById('app').style.setProperty('--preview-width', width + 'px');
+}
+
+function setupResizeHandle() {
+    const handle = document.getElementById('resizeHandle');
+    let isResizing = false;
+    
+    handle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        const newWidth = window.innerWidth - e.clientX;
+        if (newWidth >= 300 && newWidth <= 1200) {
+            previewWidth = newWidth;
+            document.getElementById('app').style.setProperty('--preview-width', newWidth + 'px');
+        }
+    });
+    
+    document.addEventListener('mouseup', () => {
+        isResizing = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+    });
+}
+
+function calculateTotal() {
+    return currentRouting.reduce((sum, r) => sum + (r.est_time_min || 0), 0);
+}
+
+function updateTotalDisplay() {
+    const totalEl = document.getElementById('totalTime');
+    if (totalEl) {
+        totalEl.innerHTML = `Total estimated time: <strong>${calculateTotal().toFixed(1)} min</strong>`;
+    }
+}
+
+function renderContent() {
+    if (!currentItem) {
+        document.getElementById('mainContent').innerHTML = '<div class="empty-state">Select a part to edit its routing</div>';
+        return;
+    }
+    
+    const typeOptions = partTypes.map(t => 
+        `<option value="${t.type_code}" ${currentItem.part_type === t.type_code ? 'selected' : ''}>${t.type_name}</option>`
+    ).join('');
+    
+    const availableStations = workstations.filter(w => 
+        !currentRouting.some(r => r.station_code === w.station_code)
+    );
+    
+    const stationOptions = availableStations.map(w =>
+        `<option value="${w.station_code}">${w.station_code} - ${w.station_name}</option>`
+    ).join('');
+    
+    document.getElementById('mainContent').innerHTML = `
+        <div id="statusMsg"></div>
+        <h2>${currentItem.item_number}</h2>
+        <div class="item-meta">
+            ${currentItem.description || 'No description'} | 
+            Rev ${currentItem.revision}.${currentItem.iteration} | 
+            ${currentItem.lifecycle_state}
+            ${currentItem.material ? ' | ' + currentItem.material : ''}
+            ${currentItem.thickness ? ' | ' + currentItem.thickness + ' thick' : ''}
+            ${currentItem.cut_time ? ' | Cut time: ' + currentItem.cut_time + ' min' : ''}
+        </div>
+        
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 12px; color: #9ca3af;">Part Type:</label>
+            <select class="type-select" id="partTypeSelect" onchange="updatePartType()">
+                <option value="">-- Select Type --</option>
+                ${typeOptions}
+            </select>
+        </div>
+        
+        <div class="section-title">Routing Operations</div>
+        
+        ${currentRouting.length === 0 ? 
+            '<div class="empty-state">No routing defined. Add stations below or apply a template.</div>' :
+            `<table class="routing-table">
+                <thead>
+                    <tr>
+                        <th style="width:50px">Order</th>
+                        <th style="width:60px">Seq</th>
+                        <th style="width:80px">Station</th>
+                        <th>Name</th>
+                        <th style="width:120px">Est. Time (min)</th>
+                        <th style="width:60px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${currentRouting.map((r, idx) => `
+                        <tr>
+                            <td>
+                                <div class="reorder-btns">
+                                    <button class="reorder-btn" onclick="moveStation(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>▲</button>
+                                    <button class="reorder-btn" onclick="moveStation(${idx}, 1)" ${idx === currentRouting.length - 1 ? 'disabled' : ''}>▼</button>
+                                </div>
+                            </td>
+                            <td>${r.sequence}</td>
+                            <td>${r.station_code}</td>
+                            <td>${r.station_name}</td>
+                            <td>
+                                <input type="number" step="0.5" min="0" value="${r.est_time_min || 0}" 
+                                       onchange="updateTime('${r.station_code}', this.value)" 
+                                       oninput="updateTime('${r.station_code}', this.value)" />
+                                ${r.station_code === '012' && currentItem.cut_time ? '<span class="cut-time-hint">(from cut_time)</span>' : ''}
+                            </td>
+                            <td>
+                                <button class="btn btn-danger btn-sm" onclick="removeStation('${r.station_code}')">✕</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+            <div class="total-time" id="totalTime">Total estimated time: <strong>${calculateTotal().toFixed(1)} min</strong></div>`
+        }
+        
+        ${availableStations.length > 0 ? `
+            <div class="add-station-row">
+                <select id="addStationSelect">
+                    ${stationOptions}
+                </select>
+                <input type="number" id="addStationTime" placeholder="Est. min" step="0.5" min="0" style="width:80px; padding:6px; border-radius:4px; border:1px solid #1f2937; background:#0f172a; color:#e5e7eb;" />
+                <button class="btn btn-primary" onclick="addStation()">Add Station</button>
+            </div>
+        ` : ''}
+        
+        <div class="template-section">
+            <h4>Apply Routing Template</h4>
+            <div class="template-btns">
+                <button class="btn btn-secondary" onclick="applyTemplate('FORMED_SM')">Formed Sheetmetal</button>
+                <button class="btn btn-secondary" onclick="applyTemplate('FLAT_SM')">Flat Sheetmetal</button>
+                <button class="btn btn-secondary" onclick="applyTemplate('TUBE')">Tube</button>
+                <button class="btn btn-secondary" onclick="applyTemplate('WELD_ASM')">Welded Assembly</button>
+                <button class="btn btn-secondary" onclick="applyTemplate('MECH_ASM')">Mechanical Assembly</button>
+            </div>
+        </div>
+        
+        <div class="action-bar">
+            <button class="btn btn-primary" onclick="saveRouting()">Save Routing</button>
+            <button class="btn btn-danger" onclick="clearRouting()">Clear All</button>
+        </div>
+    `;
+}
+
+function moveStation(index, direction) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= currentRouting.length) return;
+    
+    const temp = currentRouting[index];
+    currentRouting[index] = currentRouting[newIndex];
+    currentRouting[newIndex] = temp;
+    
+    currentRouting.forEach((r, idx) => {
+        r.sequence = (idx + 1) * 10;
+    });
+    
+    renderContent();
+}
+
+async function updatePartType() {
+    const newType = document.getElementById('partTypeSelect').value;
+    try {
+        await fetch(`${API_BASE}/api/items/${currentItem.item_number}/type`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ part_type: newType })
+        });
+        currentItem.part_type = newType;
+        showStatus('Part type updated', 'success');
+    } catch (err) {
+        showStatus('Failed to update part type', 'error');
+    }
+}
+
+function addStation() {
+    const stationCode = document.getElementById('addStationSelect').value;
+    let estTime = parseFloat(document.getElementById('addStationTime').value) || 0;
+    
+    const station = workstations.find(w => w.station_code === stationCode);
+    if (!station) return;
+    
+    // Auto-fill cut_time for Waterjet (012)
+    if (stationCode === '012' && currentItem.cut_time && estTime === 0) {
+        estTime = currentItem.cut_time;
+    }
+    
+    const maxSeq = currentRouting.length > 0 ? 
+        Math.max(...currentRouting.map(r => r.sequence)) : 0;
+    
+    currentRouting.push({
+        station_code: stationCode,
+        station_name: station.station_name,
+        sequence: maxSeq + 10,
+        est_time_min: estTime
+    });
+    
+    currentRouting.sort((a, b) => a.sequence - b.sequence);
+    renderContent();
+}
+
+function removeStation(stationCode) {
+    currentRouting = currentRouting.filter(r => r.station_code !== stationCode);
+    currentRouting.forEach((r, idx) => {
+        r.sequence = (idx + 1) * 10;
+    });
+    renderContent();
+}
+
+function updateTime(stationCode, value) {
+    const route = currentRouting.find(r => r.station_code === stationCode);
+    if (route) {
+        route.est_time_min = parseFloat(value) || 0;
+        updateTotalDisplay();
+    }
+}
+
+function applyTemplate(templateType) {
+    const templates = {
+        'FORMED_SM': ['012', '013', '011', '050'],
+        'FLAT_SM': ['012', '011', '050'],
+        'TUBE': ['010', '011', '018', '050'],
+        'WELD_ASM': ['014', '015', '017', '050'],
+        'MECH_ASM': ['025', '050']
+    };
+    
+    const stationCodes = templates[templateType];
+    if (!stationCodes) return;
+    
+    currentRouting = [];
+    stationCodes.forEach((code, idx) => {
+        const station = workstations.find(w => w.station_code === code);
+        if (station) {
+            let estTime = 0;
+            if (code === '012' && currentItem.cut_time) {
+                estTime = currentItem.cut_time;
+            }
+            currentRouting.push({
+                station_code: code,
+                station_name: station.station_name,
+                sequence: (idx + 1) * 10,
+                est_time_min: estTime
+            });
+        }
+    });
+    
+    document.getElementById('partTypeSelect').value = templateType;
+    updatePartType();
+    
+    renderContent();
+    showStatus(`Applied ${templateType} template`, 'success');
+}
+
+async function saveRouting() {
+    try {
+        await fetch(`${API_BASE}/api/routing/${currentItem.item_number}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentRouting)
+        });
+        
+        const item = items.find(i => i.item_number === currentItem.item_number);
+        if (item) {
+            item.has_routing = currentRouting.length > 0;
+            item.station_count = currentRouting.length;
+        }
+        
+        renderItemList();
+        showStatus('Routing saved successfully', 'success');
+    } catch (err) {
+        showStatus('Failed to save routing', 'error');
+    }
+}
+
+async function clearRouting() {
+    if (!confirm('Clear all routing for this part?')) return;
+    currentRouting = [];
+    await saveRouting();
+    renderContent();
+}
+
+function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.className = `status-msg ${type}`;
+    el.textContent = msg;
+    setTimeout(() => el.textContent = '', 3000);
+}
+</script>
+</body>
+</html>

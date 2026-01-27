@@ -1,0 +1,105 @@
+!
+! These options control text not subject to other options
+!
+text_height                                     CALCULATED
+text_thickness                                  0.000000
+text_width_factor                               0.800000
+!
+! These options control cross sections and their arrows
+!
+show_clipped_annotations                        NO
+clip_curves_in_local_full_xsecs                 YES
+!
+! These options control dimensions
+!
+default_chamf_dim_configuration                 LEADER
+default_chamfer_text                            dx45
+default_angdim_text_orientation                 HORIZONTAL
+default_chamf_text_orientation                  NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+default_cldim_text_orientation                  NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+default_diadim_text_orientation                 NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+default_diam_dim_arrow_state                    INSIDE
+default_dim_elbows                              YES
+default_dual_dim_position                       BELOW
+default_lindim_text_orientation                 HORIZONTAL
+default_orddim_text_orientation                 PARALLEL_TO_AND_CENTERED_ABOUT_LEADER
+default_raddim_text_orientation                 NEXT_TO_AND_CENTERED_ABOUT_ELBOW
+default_tolerance_display_style                 STD_ASME
+default_tolerance_mode                          NOMINAL
+dim_text_gap                                    1.200000
+dim_trail_zero_max_places                       same_as_dim
+ang_unit_lead_zeros                             YES
+ang_unit_trail_zeros                            YES
+dual_digits_diff                                1
+dual_dimensioning                               NO
+dual_dimension_brackets                         YES
+dual_metric_dim_show_fractions                  NO
+dual_secondary_units                            INCH
+iso_ordinate_delta                              YES 
+lead_trail_zeros                                STD_METRIC
+lead_trail_zeros_scope                          DIMS
+modify_driving_dim_by_precision                 YES
+exclude_affixes_from_basic_box                  NO
+ord_dim_standard                                STD_ISO
+ord_dim_origin_style                            EMPTY
+default_ansi_ord_dim_aligned                    YES
+use_major_units                                 NO
+default_thickness_dim_prefix                    NONE
+default_thickness_dim_suffix                    THICK
+minimum_angle_dimension                         1.00
+!
+! These options control fonts
+!
+symbol_font                                     ISO
+!
+! These options control leaders
+!
+default_leader_arrow_style                      AUTOMATIC
+dim_dot_box_style                               DEFAULT
+arrow_style                                     FILLED
+leader_extension_font                           SOLIDFONT
+arrow_length_ratio                              0.600000
+arrow_width_ratio                               0.200000
+attach_sym_height_ratio                         0.600000
+attach_sym_width_ratio                          0.200000
+dim_leader_length_ratio                         1.500000
+dot_diameter_ratio                              0.200000
+leader_elbow_length_ratio                       1.500000
+set_datum_leader_length_ratio                   2.070000
+witness_line_delta_ratio                        0.600000
+witness_line_offset_ratio                       0.300000
+default_note_leader_type                        STD_ISO
+!
+! These options control geometric tolerancing information
+!
+asme_dtm_on_dia_dim_gtol                        ON_GTOL
+gtol_datum_placement_default                    ON_BOTTOM
+gtol_dim_placement                              ON_BOTTOM
+gtol_lead_trail_zeros                           SAME_AS_LEAD_TRAIL_ZEROS
+set_datum_triangle_display                      FILLED
+gtol_indicator_attached                         YES
+!
+! These options control dimension tolerances
+!
+display_tol_by_1000                             NO
+symmetric_tol_display_standard                  STD_ASME
+tol_text_height_factor                          STANDARD
+tol_text_width_factor                           STANDARD
+!
+! These options control layers
+!
+show_hidden_quilt_sket_pnt_axes                 NO
+!
+! These options control automatic exclusion of annotations
+!
+excl_annotations_of_deleted                     NO
+excl_annotations_of_excluded                    YES
+excl_annotations_of_section                     YES
+excl_annotations_of_suppressed                  NO
+!
+! Miscellaneous options
+!
+decimal_marker                                  COMMA
+datum_target_outside_text                       NEAR_ELBOW
+hole_note_param_translation                     NO
+default_sketcher_hatch_spacing                  relative

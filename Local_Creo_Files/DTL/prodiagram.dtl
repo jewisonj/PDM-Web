@@ -1,0 +1,86 @@
+!
+! These options control diagram-specific items
+!
+break_point_size               DEFAULT
+cable_cond_delimiter           "_"
+cable_default_increment        1
+cable_default_prefix           "CABLE"
+cable_default_suffix           "0001"
+cable_jacket_report_name       DEFAULT
+cable_node_report_name         "-"
+cable_shield_report_name       "SHIELD"
+cond_name_from_cable           NO
+def_cable_label                "&cbl_name"
+def_cond_label                 "&wire_name"
+def_highway_label              ""
+def_hway_break_label           ""
+def_rail_break_label           ""
+def_rail_label                 "&rail_name"
+def_wire_break_label           ""
+def_wire_label                 "&wire_name"
+def_para_conn_text_height      DEFAULT
+default_highway_label_style    ""
+default_highway_line_style     ""
+default_rail_label_style       ""
+default_rail_line_style        ""
+default_wire_label_style       ""
+default_wire_line_style        ""
+highway_default_increment      1
+highway_default_prefix         "HIGHWAY"
+highway_default_suffix         "0001"
+highway_notes_above            0.100000
+label_default_position         MIDDLE
+label_ends_gap                 DEFAULT
+label_parallel                 NO
+node_radius                    DEFAULT
+para_conn_mirror               NO
+pc_ident_label                 "&ref_des"
+pc_node_label                  "&node_name"
+rail_default_increment         1
+rail_default_prefix            "RAIL"
+rail_default_suffix            "0001"
+rail_node_radius               DEFAULT
+rail_notes_above               0.100000
+wire_default_increment         1
+wire_default_prefix            "WIRE"
+wire_default_suffix            "0001"
+wire_notes_above               0.100000
+!
+! These options control text not subject to other options
+!
+drawing_text_color             LETTER_COLOR
+text_height                    0.156250
+text_thickness                 0.000000
+text_width_factor              0.800000
+!
+! These options control text and line fonts
+!
+default_annotation_font        font.ndx
+aux_font                       1 filled.ndx
+symbol_font                    ASME
+!
+! These options control leaders
+!
+draw_arrow_length              0.187500
+arrow_style                    FILLED
+draw_arrow_width               0.062500
+draw_attach_sym_height         DEFAULT
+draw_attach_sym_width          DEFAULT
+draw_dot_diameter              DEFAULT
+leader_elbow_length            0.250000
+default_note_leader_type       STD_ASME
+!
+! These options control tables, repeat regions, and BOM balloons
+!
+sort_method_in_region          DELIMITED
+!
+! Miscellaneous options
+!
+decimal_marker                 COMMA_FOR_METRIC_DUAL
+datum_target_outside_text      NEAR_ELBOW
+drawing_units                  INCH
+line_style_standard            STD_ANSI
+max_balloon_radius             0.000000
+min_balloon_radius             0.000000
+pos_loc_format                 %s%x%y, %r
+sym_flip_rotated_text          NO

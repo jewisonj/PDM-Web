@@ -1,0 +1,109 @@
+﻿ND_RelParSet_K01 = {
+
+Name = ACRYLIC
+
+PARAMETERS =
+{
+  Name = PTC_MATERIAL_TYPE
+  Type = Integer
+  Default = 9
+  Access = Locked
+},
+{
+  Name = PTC_FAILURE_CRITERION_TYPE
+  Type = String
+  Default = 'NONE'
+  Access = Locked
+},
+{
+  Name = PTC_FATIGUE_TYPE
+  Type = String
+  Default = 'NONE'
+  Access = Locked
+},
+{
+  Name = PTC_MATERIAL_SUB_TYPE
+  Type = String
+  Default = 'LINEAR'
+  Access = Locked
+},
+{
+  Name = PTC_YOUNG_MODULUS
+  Type = Real
+  Default = 2999908.89805177506059 kPa
+  Access = Full
+},
+{
+  Name = PTC_POISSON_RATIO
+  Type = Real
+  Default = 0.4
+  Access = Full
+},
+{
+  Name = PTC_THERMAL_EXPANSION_COEF
+  Type = Real
+  Default = 0.00009 1 / C
+  Access = Full
+},
+{
+  Name = PTC_SPECIFIC_HEAT
+  Type = Real
+  Default = 1047597904.79999983310699 mm^2 / (sec^2 C)
+  Access = Full
+},
+{
+  Name = PTC_THERMAL_CONDUCTIVITY
+  Type = Real
+  Default = 144.28251630269253 mm kg / (sec^3 C)
+  Access = Full
+},
+{
+  Name = PTC_MASS_DENSITY
+  Type = Real
+  Default = 0.00000139998327 kg / mm^3
+  Access = Full
+},
+{
+  Name = PTC_BEND_TABLE
+  Type = String
+  Default = ''
+  Access = Full
+},
+{
+  Name = PTC_XHATCH_FILE
+  Type = String
+  Default = 'PVC'
+  Access = Full
+},
+{
+  Name = TEMPERATURE
+  Type = Real
+  Default = 0.0 F
+  Access = Full
+},
+{
+  Name = PTC_MATERIAL_DESCRIPTION
+  Type = String
+  Default = ''
+  Access = Full
+},
+{
+  Name = PTC_INITIAL_BEND_Y_FACTOR
+  Type = Real
+  Default = 0.5
+  Access = Full
+},
+{
+  Name = PTC_MTRL_FABRIC_ARCHITECTURE
+  Type = String
+  Default = 'UNIDIRECTIONAL'
+  Access = Full
+},
+{
+  Name = PRICE
+  Type = Real
+  Default = 5.0
+  Access = Full
+}
+
+}

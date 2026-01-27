@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Project Tracking</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, sans-serif; background: #020617; color: #e5e7eb; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; background: #0f172a; border-bottom: 1px solid #1e293b; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .header-actions { display: flex; gap: 12px; align-items: center; }
+        
+        .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
+        .btn-secondary { background: #374151; color: white; }
+        .btn-secondary:hover { background: #4b5563; }
+        
+        select { padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #e5e7eb; font-size: 13px; }
+        
+        .project-info { padding: 16px 24px; background: #0f172a; border-bottom: 1px solid #1e293b; display: flex; gap: 32px; }
+        .info-item { }
+        .info-label { font-size: 11px; color: #9ca3af; }
+        .info-value { font-size: 14px; font-weight: 500; }
+        
+        .legend { padding: 12px 24px; display: flex; gap: 20px; font-size: 12px; border-bottom: 1px solid #1e293b; }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-box { width: 16px; height: 16px; border-radius: 3px; }
+        .legend-box.complete { background: #059669; }
+        .legend-box.in-progress { background: #2563eb; }
+        .legend-box.not-started { background: #374151; }
+        
+        .gantt-container { padding: 16px 24px; overflow-x: auto; }
+        
+        .gantt { display: grid; grid-template-columns: 280px 1fr; min-width: 1000px; }
+        
+        .gantt-labels { border-right: 1px solid #1e293b; }
+        .gantt-label { height: 36px; display: flex; align-items: center; padding: 0 12px; border-bottom: 1px solid #1e293b; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .gantt-label.assembly { background: #1e293b; font-weight: 600; }
+        .gantt-label.sub-assembly { padding-left: 24px; background: #0f172a; }
+        .gantt-label.part { padding-left: 36px; color: #9ca3af; }
+        
+        .gantt-chart { position: relative; }
+        .gantt-header { display: flex; height: 36px; border-bottom: 1px solid #1e293b; background: #0f172a; }
+        .gantt-day { flex: 1; min-width: 30px; text-align: center; font-size: 10px; color: #9ca3af; display: flex; align-items: center; justify-content: center; border-right: 1px solid #1e293b; }
+        .gantt-day.weekend { background: #0c1222; }
+        .gantt-day.today { background: #1e3a5f; color: #38bdf8; font-weight: 600; }
+        
+        .gantt-row { height: 36px; display: flex; border-bottom: 1px solid #1e293b; position: relative; }
+        .gantt-cell { flex: 1; min-width: 30px; border-right: 1px solid #0f172a; }
+        .gantt-cell.weekend { background: #0c1222; }
+        
+        .gantt-bar { position: absolute; height: 20px; top: 8px; border-radius: 3px; min-width: 8px; }
+        .gantt-bar.complete { background: #059669; }
+        .gantt-bar.in-progress { background: linear-gradient(90deg, #059669 var(--progress), #2563eb var(--progress)); }
+        .gantt-bar.not-started { background: #374151; }
+        
+        .gantt-bar-text { position: absolute; left: 4px; top: 2px; font-size: 10px; color: white; white-space: nowrap; }
+        
+        .summary-bar { margin-top: 16px; padding: 16px 24px; background: #0f172a; border-radius: 8px; }
+        .summary-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+        .progress-bar-container { height: 24px; background: #1e293b; border-radius: 4px; overflow: hidden; display: flex; }
+        .progress-segment { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 500; }
+        .progress-segment.complete { background: #059669; }
+        .progress-segment.in-progress { background: #2563eb; }
+        .progress-segment.not-started { background: #374151; }
+        
+        .no-project { text-align: center; padding: 60px; color: #6b7280; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Project Tracking</h1>
+    <div class="header-actions">
+        <select id="projectSelect" onchange="loadProject()">
+            <option value="">-- Select Project --</option>
+        </select>
+        <button class="btn btn-secondary" onclick="window.location.href='mrp_dashboard.html'">← Dashboard</button>
+    </div>
+</div>
+
+<div id="projectInfo" class="project-info" style="display:none;">
+    <div class="info-item"><div class="info-label">Customer</div><div class="info-value" id="infoCustomer">-</div></div>
+    <div class="info-item"><div class="info-label">Due Date</div><div class="info-value" id="infoDue">-</div></div>
+    <div class="info-item"><div class="info-label">Start Date</div><div class="info-value" id="infoStart">-</div></div>
+    <div class="info-item"><div class="info-label">Total Parts</div><div class="info-value" id="infoPartCount">-</div></div>
+    <div class="info-item"><div class="info-label">Est. Hours</div><div class="info-value" id="infoHours">-</div></div>
+</div>
+
+<div class="legend">
+    <div class="legend-item"><div class="legend-box complete"></div> Complete</div>
+    <div class="legend-item"><div class="legend-box in-progress"></div> In Progress</div>
+    <div class="legend-item"><div class="legend-box not-started"></div> Not Started</div>
+</div>
+
+<div id="content">
+    <div class="no-project">Select a project to view tracking</div>
+</div>
+
+<script>
+const API = 'http://DATASERVER:8086';
+
+let projects = [];
+let currentProject = null;
+let parts = [];
+let completion = [];
+let workstations = [];
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadProjects();
+    await loadWorkstations();
+});
+
+async function loadProjects() {
+    const res = await fetch(`${API}/api/projects`);
+    projects = await res.json();
+    const select = document.getElementById('projectSelect');
+    select.innerHTML = '<option value="">-- Select Project --</option>' +
+        projects.map(p => `<option value="${p.project_code}">${p.project_code} - ${p.description || p.customer || ''}</option>`).join('');
+}
+
+async function loadWorkstations() {
+    const res = await fetch(`${API}/api/workstations`);
+    workstations = await res.json();
+}
+
+async function loadProject() {
+    const code = document.getElementById('projectSelect').value;
+    if (!code) {
+        document.getElementById('content').innerHTML = '<div class="no-project">Select a project to view tracking</div>';
+        document.getElementById('projectInfo').style.display = 'none';
+        return;
+    }
+    
+    currentProject = projects.find(p => p.project_code === code);
+    
+    // Load parts and completion data
+    const [partsRes, completionRes] = await Promise.all([
+        fetch(`${API}/api/projects/${code}/parts`),
+        fetch(`${API}/api/part-completion?project=${code}`)
+    ]);
+    
+    parts = await partsRes.json();
+    completion = await completionRes.json();
+    
+    // Load routing for each part
+    for (const part of parts) {
+        const routingRes = await fetch(`${API}/api/routing/${part.item_number}`);
+        part.routing = await routingRes.json();
+        if (!Array.isArray(part.routing)) part.routing = [];
+        
+        // Calculate completion status
+        part.completedStations = completion.filter(c => c.item_number === part.item_number).length;
+        part.totalStations = part.routing.length;
+        part.status = part.completedStations === 0 ? 'not-started' : 
+                      part.completedStations >= part.totalStations ? 'complete' : 'in-progress';
+        part.progress = part.totalStations > 0 ? (part.completedStations / part.totalStations * 100) : 0;
+    }
+    
+    renderProjectInfo();
+    renderGantt();
+}
+
+function renderProjectInfo() {
+    document.getElementById('projectInfo').style.display = 'flex';
+    document.getElementById('infoCustomer').textContent = currentProject.customer || '-';
+    document.getElementById('infoDue').textContent = currentProject.due_date || '-';
+    
+    // Calculate start date
+    const totalMinutes = parts.reduce((sum, p) => {
+        const routingTime = p.routing.reduce((t, r) => t + (r.est_time_min || 0), 0);
+        return sum + (routingTime * p.quantity);
+    }, 0);
+    
+    const workDays = Math.ceil(totalMinutes / 480);
+    let startDate = '-';
+    if (currentProject.due_date) {
+        const due = new Date(currentProject.due_date);
+        due.setDate(due.getDate() - workDays);
+        startDate = due.toISOString().split('T')[0];
+    }
+    
+    document.getElementById('infoStart').textContent = startDate;
+    document.getElementById('infoPartCount').textContent = parts.length;
+    document.getElementById('infoHours').textContent = (totalMinutes / 60).toFixed(1) + 'h';
+}
+
+function renderGantt() {
+    // Build hierarchy
+    const hierarchy = buildHierarchy();
+    
+    // Calculate date range (start date to due date + buffer)
+    const today = new Date();
+    let startDate = new Date();
+    let endDate = new Date();
+    
+    if (currentProject.due_date) {
+        endDate = new Date(currentProject.due_date);
+        endDate.setDate(endDate.getDate() + 7); // buffer
+        
+        const totalMinutes = parts.reduce((sum, p) => {
+            const routingTime = p.routing.reduce((t, r) => t + (r.est_time_min || 0), 0);
+            return sum + (routingTime * p.quantity);
+        }, 0);
+        const workDays = Math.ceil(totalMinutes / 480);
+        startDate = new Date(currentProject.due_date);
+        startDate.setDate(startDate.getDate() - workDays - 7); // buffer
+    } else {
+        startDate.setDate(startDate.getDate() - 7);
+        endDate.setDate(endDate.getDate() + 30);
+    }
+    
+    const days = [];
+    const d = new Date(startDate);
+    while (d <= endDate) {
+        days.push(new Date(d));
+        d.setDate(d.getDate() + 1);
+    }
+    
+    // Build HTML
+    let labelsHtml = '<div class="gantt-label assembly" style="font-weight:700;">Part / Assembly</div>';
+    let rowsHtml = '';
+    
+    hierarchy.forEach(item => {
+        const levelClass = item.level === 0 ? 'assembly' : item.level === 1 ? 'sub-assembly' : 'part';
+        labelsHtml += `<div class="gantt-label ${levelClass}" title="${item.item_number}">${item.item_number} ${item.description ? '- ' + item.description.substring(0,20) : ''}</div>`;
+        
+        // Calculate bar position
+        const part = parts.find(p => p.item_number === item.item_number);
+        const barHtml = part ? renderBar(part, days, startDate) : '';
+        
+        rowsHtml += `<div class="gantt-row">
+            ${days.map(day => `<div class="gantt-cell ${isWeekend(day) ? 'weekend' : ''}"></div>`).join('')}
+            ${barHtml}
+        </div>`;
+    });
+    
+    // Summary
+    const complete = parts.filter(p => p.status === 'complete').length;
+    const inProgress = parts.filter(p => p.status === 'in-progress').length;
+    const notStarted = parts.filter(p => p.status === 'not-started').length;
+    const total = parts.length || 1;
+    
+    document.getElementById('content').innerHTML = `
+        <div class="gantt-container">
+            <div class="gantt">
+                <div class="gantt-labels">
+                    ${labelsHtml}
+                </div>
+                <div class="gantt-chart">
+                    <div class="gantt-header">
+                        ${days.map(day => `<div class="gantt-day ${isWeekend(day) ? 'weekend' : ''} ${isToday(day) ? 'today' : ''}">${formatDay(day)}</div>`).join('')}
+                    </div>
+                    ${rowsHtml}
+                </div>
+            </div>
+            
+            <div class="summary-bar">
+                <div class="summary-title">Overall Progress</div>
+                <div class="progress-bar-container">
+                    <div class="progress-segment complete" style="width:${complete/total*100}%">${complete > 0 ? complete : ''}</div>
+                    <div class="progress-segment in-progress" style="width:${inProgress/total*100}%">${inProgress > 0 ? inProgress : ''}</div>
+                    <div class="progress-segment not-started" style="width:${notStarted/total*100}%">${notStarted > 0 ? notStarted : ''}</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function buildHierarchy() {
+    // Group by parent assembly
+    const result = [];
+    const topLevel = parts.filter(p => !p.parent_assembly || p.parent_assembly === currentProject.top_assembly);
+    
+    function addPart(part, level) {
+        result.push({ ...part, level });
+        const children = parts.filter(p => p.parent_assembly === part.item_number);
+        children.forEach(child => addPart(child, level + 1));
+    }
+    
+    // Sort: assemblies first
+    topLevel.sort((a, b) => {
+        const aIsAsm = a.part_type?.includes('ASM') ? 0 : 1;
+        const bIsAsm = b.part_type?.includes('ASM') ? 0 : 1;
+        return aIsAsm - bIsAsm || a.item_number.localeCompare(b.item_number);
+    });
+    
+    topLevel.forEach(p => addPart(p, 0));
+    return result;
+}
+
+function renderBar(part, days, startDate) {
+    if (!part.routing || part.routing.length === 0) return '';
+    
+    // Simple: bar spans based on routing time
+    const totalTime = part.routing.reduce((t, r) => t + (r.est_time_min || 0), 0) * part.quantity;
+    const barDays = Math.max(1, Math.ceil(totalTime / 480));
+    
+    // Position from start
+    const dayWidth = 100 / days.length;
+    const startOffset = 2; // start a couple days in
+    const left = (startOffset * dayWidth) + '%';
+    const width = (barDays * dayWidth) + '%';
+    
+    const progressStyle = part.status === 'in-progress' ? `--progress: ${part.progress}%` : '';
+    
+    return `<div class="gantt-bar ${part.status}" style="left:${left}; width:${width}; ${progressStyle}">
+        <span class="gantt-bar-text">${part.quantity}× ${Math.round(totalTime)}min</span>
+    </div>`;
+}
+
+function isWeekend(date) {
+    const day = date.getDay();
+    return day === 0 || day === 6;
+}
+
+function isToday(date) {
+    const today = new Date();
+    return date.toDateString() === today.toDateString();
+}
+
+function formatDay(date) {
+    return `${date.getMonth()+1}/${date.getDate()}`;
+}
+</script>
+</body>
+</html>

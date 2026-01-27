@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shop Floor Terminal</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, sans-serif; background: #020617; color: #e5e7eb; }
+        
+        .app { height: 100vh; overflow: hidden; }
+        .main-area { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        /* Station Selection Screen */
+        .station-select { 
+            display: flex; flex-direction: column; align-items: center; 
+            justify-content: center; height: 100vh; padding: 20px;
+        }
+        .station-select h1 { font-size: 32px; margin-bottom: 30px; }
+        .station-grid { 
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); 
+            gap: 16px; max-width: 900px; width: 100%;
+        }
+        .station-btn {
+            background: #1e293b; border: 2px solid #334155; border-radius: 12px;
+            padding: 24px 16px; text-align: center; cursor: pointer;
+            transition: all 0.2s;
+        }
+        .station-btn:hover { background: #334155; border-color: #38bdf8; }
+        .station-btn .code { font-size: 28px; font-weight: 700; color: #38bdf8; }
+        .station-btn .name { font-size: 14px; color: #9ca3af; margin-top: 4px; }
+        
+        /* Main Terminal View */
+        .terminal { display: none; height: 100vh; --panel-width: 500px; }
+        .terminal.active { display: grid; grid-template-columns: 1fr; }
+        .terminal.active.panel-open { grid-template-columns: 1fr var(--panel-width); }
+        
+        .terminal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px 24px; background: #0f172a; border-bottom: 1px solid #1e293b;
+        }
+        .terminal-header h1 { margin: 0; font-size: 24px; }
+        .terminal-header .station-name { color: #38bdf8; }
+        .header-actions { display: flex; gap: 12px; align-items: center; }
+        
+        .btn { 
+            padding: 12px 20px; border-radius: 8px; border: none; 
+            cursor: pointer; font-size: 14px; font-weight: 600;
+            touch-action: manipulation;
+        }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-secondary { background: #374151; color: white; }
+        .btn-secondary:hover { background: #4b5563; }
+        .btn-success { background: #059669; color: white; }
+        .btn-success:hover { background: #047857; }
+        .btn-warning { background: #d97706; color: white; }
+        .btn-warning:hover { background: #b45309; }
+        .btn-danger { background: #dc2626; color: white; }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-lg { padding: 16px 28px; font-size: 16px; }
+        
+        /* Project Selector */
+        .project-bar {
+            display: flex; gap: 12px; align-items: center;
+            padding: 12px 24px; background: #0f172a; border-bottom: 1px solid #1e293b;
+        }
+        .project-bar label { font-size: 14px; color: #9ca3af; }
+        .project-bar select {
+            padding: 10px 16px; border-radius: 6px; border: 1px solid #334155;
+            background: #1e293b; color: #e5e7eb; font-size: 14px; min-width: 200px;
+        }
+        
+        /* Parts Queue */
+        .parts-container { flex: 1; overflow-y: auto; padding: 16px 24px; }
+        .parts-container::-webkit-scrollbar { width: 8px; }
+        .parts-container::-webkit-scrollbar-track { background: #0f172a; }
+        .parts-container::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        .parts-container::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        
+        .queue-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 16px;
+        }
+        .queue-header h2 { margin: 0; font-size: 18px; }
+        .selection-info { font-size: 14px; color: #9ca3af; }
+        .selection-info strong { color: #38bdf8; }
+        
+        .parts-table { width: 100%; border-collapse: collapse; }
+        .parts-table th {
+            text-align: left; padding: 12px 16px; background: #1e293b;
+            font-size: 12px; color: #9ca3af; text-transform: uppercase;
+            position: sticky; top: 0;
+        }
+        .parts-table td { padding: 16px; border-bottom: 1px solid #1e293b; }
+        .parts-table tr { cursor: pointer; transition: background 0.1s; }
+        .parts-table tr:hover { background: #1e293b; }
+        .parts-table tr.selected { background: #1e3a5f; }
+        .parts-table tr.completed { opacity: 0.5; }
+        .parts-table tr.completed td { text-decoration: line-through; }
+        
+        .part-num { font-weight: 600; font-size: 16px; }
+        .part-desc { font-size: 13px; color: #9ca3af; }
+        .qty-badge { 
+            background: #374151; padding: 6px 12px; border-radius: 6px; 
+            font-weight: 600; font-size: 16px;
+        }
+        .status-complete { color: #6ee7b7; }
+        .status-pending { color: #fcd34d; }
+        
+        .pdf-icon { color: #f87171; margin-left: 8px; font-size: 14px; }
+        
+        /* Action Bar */
+        .action-bar {
+            display: flex; gap: 12px; padding: 16px 24px;
+            background: #0f172a; border-top: 1px solid #1e293b;
+            flex-wrap: wrap; align-items: center;
+        }
+        .action-bar .spacer { flex: 1; }
+        .time-input-group { display: flex; align-items: center; gap: 8px; }
+        .time-input-group label { font-size: 14px; color: #9ca3af; }
+        .time-input-group input {
+            width: 80px; padding: 12px; border-radius: 6px;
+            border: 1px solid #334155; background: #1e293b;
+            color: #e5e7eb; font-size: 16px; text-align: center;
+        }
+        
+        /* Slide-out Panel */
+        .panel {
+            background: #0f172a; border-left: 1px solid #1e293b;
+            display: flex; flex-direction: column; height: 100vh;
+            position: relative;
+        }
+        .panel-resize-handle {
+            position: absolute; left: 0; top: 0; bottom: 0; width: 6px;
+            cursor: ew-resize; background: transparent; z-index: 10;
+        }
+        .panel-resize-handle:hover, .panel-resize-handle.dragging {
+            background: #38bdf8;
+        }
+        .panel-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 16px; border-bottom: 1px solid #1e293b;
+        }
+        .panel-header h2 { margin: 0; font-size: 18px; }
+        .panel-close {
+            background: none; border: none; color: #9ca3af;
+            font-size: 28px; cursor: pointer; padding: 4px 12px;
+        }
+        .panel-close:hover { color: #e5e7eb; }
+        .panel-content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+        .panel-info { padding: 16px; border-bottom: 1px solid #1e293b; }
+        .panel-info .label { font-size: 11px; color: #9ca3af; }
+        .panel-info .value { font-size: 14px; margin-bottom: 8px; }
+        .pdf-viewer { flex: 1; background: #fff; }
+        .pdf-viewer iframe { width: 100%; height: 100%; border: none; }
+        .no-pdf { 
+            display: flex; align-items: center; justify-content: center;
+            height: 100%; color: #6b7280; font-size: 14px; background: #1e293b;
+        }
+        
+        /* Status Messages */
+        .status-msg {
+            position: fixed; top: 20px; right: 20px; padding: 12px 20px;
+            border-radius: 8px; font-size: 14px; z-index: 100;
+            animation: fadeIn 0.3s;
+        }
+        .status-msg.success { background: #065f46; color: #6ee7b7; }
+        .status-msg.error { background: #7f1d1d; color: #fca5a5; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } }
+        
+        .hidden { display: none !important; }
+        
+        /* Checkbox styling */
+        .select-check {
+            width: 24px; height: 24px; cursor: pointer;
+            accent-color: #2563eb;
+        }
+        
+        /* Worker input */
+        .worker-input {
+            padding: 10px 16px; border-radius: 6px; border: 1px solid #334155;
+            background: #1e293b; color: #e5e7eb; font-size: 14px; width: 150px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="statusMsg" class="status-msg hidden"></div>
+
+<!-- Station Selection Screen -->
+<div id="stationSelect" class="station-select">
+    <h1>Select Your Station</h1>
+    <div id="stationGrid" class="station-grid"></div>
+</div>
+
+<!-- Main Terminal -->
+<div id="terminal" class="app terminal">
+    <div class="main-area">
+        <div class="terminal-header">
+            <h1>Shop Floor Terminal - <span id="currentStationName" class="station-name"></span></h1>
+            <div class="header-actions">
+                <input type="text" id="workerName" class="worker-input" placeholder="Your name..." />
+                <button class="btn btn-secondary" onclick="changeStation()">Change Station</button>
+            </div>
+        </div>
+        
+        <div class="project-bar">
+            <label>Project:</label>
+            <select id="projectSelect" onchange="loadProjectParts()">
+                <option value="">-- Select Project --</option>
+            </select>
+            <span id="projectInfo" style="margin-left: 16px; color: #9ca3af;"></span>
+        </div>
+        
+        <div class="parts-container">
+            <div class="queue-header">
+                <h2>Parts Queue</h2>
+                <div class="selection-info">
+                    <span id="selectedCount">0</span> selected | 
+                    <strong id="selectedQty">0</strong> total qty
+                </div>
+            </div>
+            
+            <table class="parts-table">
+                <thead>
+                    <tr>
+                        <th style="width:50px">
+                            <input type="checkbox" class="select-check" id="selectAll" onchange="toggleSelectAll()" />
+                        </th>
+                        <th>Part Number</th>
+                        <th>Description</th>
+                        <th style="width:80px">Qty</th>
+                        <th style="width:90px">Est Time</th>
+                        <th style="width:100px">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="partsBody"></tbody>
+            </table>
+            
+            <div id="emptyState" class="hidden" style="text-align:center; padding:60px; color:#6b7280;">
+                Select a project to see parts for this station
+            </div>
+        </div>
+        
+        <div class="action-bar">
+            <div class="time-input-group">
+                <label>Time (min):</label>
+                <input type="number" id="timeInput" min="0" step="0.5" value="0" />
+            </div>
+            <button class="btn btn-lg btn-warning" onclick="logTime()">â± Log Time</button>
+            <button class="btn btn-lg btn-success" onclick="markComplete()">âœ“ Mark Complete</button>
+            <div class="spacer"></div>
+            <button class="btn btn-secondary" onclick="clearSelection()">Clear Selection</button>
+        </div>
+    </div>
+    
+    <!-- PDF Panel -->
+    <div id="pdfPanel" class="panel hidden">
+        <div class="panel-resize-handle" id="panelResizeHandle"></div>
+        <div class="panel-header">
+            <h2 id="panelPartNum">Part Details</h2>
+            <button class="panel-close" onclick="closePanel()">×</button>
+        </div>
+        <div class="panel-content">
+            <div class="panel-info">
+                <div class="label">Description</div>
+                <div class="value" id="panelDesc">-</div>
+                <div class="label">Project Qty</div>
+                <div class="value" id="panelQty">-</div>
+                <div class="label">Routing Time</div>
+                <div class="value" id="panelTime">-</div>
+            </div>
+            <div class="pdf-viewer" id="pdfViewer">
+                <div class="no-pdf">No PDF available</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = 'http://DATASERVER:8086';
+
+let workstations = [];
+let projects = [];
+let currentStation = null;
+let parts = [];
+let selectedParts = new Set();
+let files = [];
+
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadWorkstations();
+    await loadProjects();
+    await loadFiles();
+    renderStationSelect();
+});
+
+async function loadWorkstations() {
+    try {
+        const res = await fetch(`${API}/api/workstations`);
+        workstations = await res.json();
+    } catch (err) {
+        showStatus('Failed to load workstations', 'error');
+    }
+}
+
+async function loadProjects() {
+    try {
+        const res = await fetch(`${API}/api/projects`);
+        projects = await res.json();
+    } catch (err) {
+        showStatus('Failed to load projects', 'error');
+    }
+}
+
+async function loadFiles() {
+    try {
+        const res = await fetch(`${API}/api/files`);
+        files = await res.json();
+    } catch (err) {
+        console.error('Failed to load files');
+    }
+}
+
+function renderStationSelect() {
+    const grid = document.getElementById('stationGrid');
+    grid.innerHTML = workstations.map(w => `
+        <div class="station-btn" onclick="selectStation('${w.station_code}')">
+            <div class="code">${w.station_code}</div>
+            <div class="name">${w.station_name}</div>
+        </div>
+    `).join('');
+}
+
+function selectStation(code) {
+    currentStation = workstations.find(w => w.station_code === code);
+    document.getElementById('stationSelect').classList.add('hidden');
+    document.getElementById('terminal').classList.add('active');
+    document.getElementById('currentStationName').textContent = 
+        `${currentStation.station_code} - ${currentStation.station_name}`;
+    
+    // Populate project dropdown
+    const select = document.getElementById('projectSelect');
+    select.innerHTML = '<option value="">-- Select Project --</option>' +
+        projects.filter(p => p.status === 'Released' || p.status === 'Setup')
+            .map(p => `<option value="${p.project_code}">${p.project_code} - ${p.description || p.customer || ''}</option>`)
+            .join('');
+    
+    document.getElementById('emptyState').classList.remove('hidden');
+}
+
+function changeStation() {
+    document.getElementById('terminal').classList.remove('active');
+    document.getElementById('stationSelect').classList.remove('hidden');
+    currentStation = null;
+    parts = [];
+    selectedParts.clear();
+    closePanel();
+}
+
+async function loadProjectParts() {
+    const projectCode = document.getElementById('projectSelect').value;
+    if (!projectCode) {
+        parts = [];
+        renderParts();
+        document.getElementById('emptyState').classList.remove('hidden');
+        return;
+    }
+    
+    document.getElementById('emptyState').classList.add('hidden');
+    
+    try {
+        const res = await fetch(`${API}/api/projects/${projectCode}/parts`);
+        const allParts = await res.json();
+        
+        // Filter to parts that have this station in their routing
+        parts = [];
+        for (const part of allParts) {
+            try {
+                const routingRes = await fetch(`${API}/api/routing/${part.item_number}`);
+                const routing = await routingRes.json();
+                
+                if (Array.isArray(routing) && routing.some(r => r.station_code === currentStation.station_code)) {
+                    part.routing = routing;
+                    part.completed_qty = 0; // TODO: fetch from part_completion
+                    parts.push(part);
+                }
+            } catch (e) {
+                console.warn(`Failed to get routing for ${part.item_number}`);
+            }
+        }
+        
+        selectedParts.clear();
+        renderParts();
+        updateSelectionInfo();
+        
+        // Update project info
+        const proj = projects.find(p => p.project_code === projectCode);
+        document.getElementById('projectInfo').textContent = 
+            proj ? `Due: ${proj.due_date || 'N/A'} | Customer: ${proj.customer || 'N/A'}` : '';
+            
+    } catch (err) {
+        showStatus('Failed to load parts', 'error');
+    }
+}
+
+function renderParts() {
+    const tbody = document.getElementById('partsBody');
+    
+    if (parts.length === 0) {
+        tbody.innerHTML = '';
+        return;
+    }
+    
+    tbody.innerHTML = parts.map(p => {
+        const isComplete = p.completed_qty >= p.quantity;
+        const hasPdf = files.some(f => f.item_number === p.item_number && f.file_type === 'PDF');
+        
+        // Get station-specific time
+        const stationRouting = p.routing?.find(r => r.station_code === currentStation.station_code);
+        const stationTime = stationRouting?.est_time_min || 0;
+        const totalTime = stationTime * p.quantity;
+        
+        return `
+            <tr class="${selectedParts.has(p.item_number) ? 'selected' : ''} ${isComplete ? 'completed' : ''}"
+                onclick="toggleSelect('${p.item_number}', event)">
+                <td onclick="event.stopPropagation()">
+                    <input type="checkbox" class="select-check" 
+                           ${selectedParts.has(p.item_number) ? 'checked' : ''}
+                           onchange="toggleSelect('${p.item_number}', event)" />
+                </td>
+                <td>
+                    <div class="part-num">
+                        ${p.item_number}
+                        ${hasPdf ? '<span class="pdf-icon" onclick="event.stopPropagation(); showPdf(\'' + p.item_number + '\')">ðŸ“„</span>' : ''}
+                    </div>
+                    <div class="part-desc">${p.part_type || ''}</div>
+                </td>
+                <td>${p.description || '-'}</td>
+                <td><span class="qty-badge">${p.quantity}</span></td>
+                <td style="text-align:right;">${totalTime > 0 ? totalTime + ' min' : '-'}</td>
+                <td class="${isComplete ? 'status-complete' : 'status-pending'}">
+                    ${isComplete ? 'âœ“ Complete' : `${p.completed_qty || 0}/${p.quantity}`}
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function toggleSelect(itemNumber, event) {
+    if (event) event.stopPropagation();
+    
+    if (selectedParts.has(itemNumber)) {
+        selectedParts.delete(itemNumber);
+    } else {
+        selectedParts.add(itemNumber);
+    }
+    
+    renderParts();
+    updateSelectionInfo();
+}
+
+function toggleSelectAll() {
+    const allChecked = document.getElementById('selectAll').checked;
+    
+    if (allChecked) {
+        parts.forEach(p => selectedParts.add(p.item_number));
+    } else {
+        selectedParts.clear();
+    }
+    
+    renderParts();
+    updateSelectionInfo();
+}
+
+function clearSelection() {
+    selectedParts.clear();
+    document.getElementById('selectAll').checked = false;
+    renderParts();
+    updateSelectionInfo();
+}
+
+function updateSelectionInfo() {
+    const selectedPartsArray = parts.filter(p => selectedParts.has(p.item_number));
+    const totalQty = selectedPartsArray.reduce((sum, p) => sum + p.quantity, 0);
+    
+    document.getElementById('selectedCount').textContent = selectedParts.size;
+    document.getElementById('selectedQty').textContent = totalQty;
+}
+
+async function logTime() {
+    if (selectedParts.size === 0) {
+        showStatus('Select parts first', 'error');
+        return;
+    }
+    
+    const totalTime = parseFloat(document.getElementById('timeInput').value) || 0;
+    if (totalTime <= 0) {
+        showStatus('Enter time greater than 0', 'error');
+        return;
+    }
+    
+    const worker = document.getElementById('workerName').value || 'Unknown';
+    const projectCode = document.getElementById('projectSelect').value;
+    const timePerPart = totalTime / selectedParts.size;
+    
+    try {
+        for (const itemNumber of selectedParts) {
+            await fetch(`${API}/api/time-logs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_code: projectCode,
+                    item_number: itemNumber,
+                    station_code: currentStation.station_code,
+                    worker: worker,
+                    time_min: timePerPart
+                })
+            });
+        }
+        
+        showStatus(`Logged ${totalTime} min across ${selectedParts.size} parts`, 'success');
+        document.getElementById('timeInput').value = '0';
+    } catch (err) {
+        showStatus('Failed to log time', 'error');
+    }
+}
+
+async function markComplete() {
+    if (selectedParts.size === 0) {
+        showStatus('Select parts first', 'error');
+        return;
+    }
+    
+    const worker = document.getElementById('workerName').value || 'Unknown';
+    const projectCode = document.getElementById('projectSelect').value;
+    
+    try {
+        for (const itemNumber of selectedParts) {
+            const part = parts.find(p => p.item_number === itemNumber);
+            
+            await fetch(`${API}/api/part-completion`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_code: projectCode,
+                    item_number: itemNumber,
+                    station_code: currentStation.station_code,
+                    qty_complete: part.quantity,
+                    completed_by: worker
+                })
+            });
+            
+            // Update local state
+            part.completed_qty = part.quantity;
+        }
+        
+        showStatus(`Marked ${selectedParts.size} parts complete`, 'success');
+        clearSelection();
+        renderParts();
+    } catch (err) {
+        showStatus('Failed to mark complete', 'error');
+    }
+}
+
+function showPdf(itemNumber) {
+    const part = parts.find(p => p.item_number === itemNumber);
+    const pdfFile = files.find(f => f.item_number === itemNumber && f.file_type === 'PDF');
+    
+    document.getElementById('panelPartNum').textContent = itemNumber;
+    document.getElementById('panelDesc').textContent = part?.description || '-';
+    document.getElementById('panelQty').textContent = part?.quantity || '-';
+    document.getElementById('panelTime').textContent = part?.routing_time ? `${part.routing_time} min` : '-';
+    
+    const viewer = document.getElementById('pdfViewer');
+    if (pdfFile) {
+        viewer.innerHTML = `<iframe src="${API}/api/pdf?path=${encodeURIComponent(pdfFile.file_path)}"></iframe>`;
+    } else {
+        viewer.innerHTML = '<div class="no-pdf">No PDF available</div>';
+    }
+    
+    document.getElementById('terminal').classList.add('panel-open');
+    document.getElementById('pdfPanel').classList.remove('hidden');
+}
+
+function closePanel() {
+    document.getElementById('terminal').classList.remove('panel-open');
+    document.getElementById('pdfPanel').classList.add('hidden');
+}
+
+function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.className = `status-msg ${type}`;
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 3000);
+}
+
+// Panel resize functionality
+(function() {
+    const handle = document.getElementById('panelResizeHandle');
+    const terminal = document.getElementById('terminal');
+    let isResizing = false;
+    let startX, startWidth;
+    
+    handle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startX = e.clientX;
+        startWidth = parseInt(getComputedStyle(terminal).getPropertyValue('--panel-width')) || 500;
+        handle.classList.add('dragging');
+        document.body.style.cursor = 'ew-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        const diff = startX - e.clientX;
+        const newWidth = Math.min(Math.max(startWidth + diff, 300), window.innerWidth - 400);
+        terminal.style.setProperty('--panel-width', newWidth + 'px');
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            handle.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+    
+    // Touch support for tablets
+    handle.addEventListener('touchstart', (e) => {
+        isResizing = true;
+        startX = e.touches[0].clientX;
+        startWidth = parseInt(getComputedStyle(terminal).getPropertyValue('--panel-width')) || 500;
+        handle.classList.add('dragging');
+        e.preventDefault();
+    });
+    
+    document.addEventListener('touchmove', (e) => {
+        if (!isResizing) return;
+        const diff = startX - e.touches[0].clientX;
+        const newWidth = Math.min(Math.max(startWidth + diff, 300), window.innerWidth - 400);
+        terminal.style.setProperty('--panel-width', newWidth + 'px');
+    });
+    
+    document.addEventListener('touchend', () => {
+        if (isResizing) {
+            isResizing = false;
+            handle.classList.remove('dragging');
+        }
+    });
+})();
+</script>
+</body>
+</html>

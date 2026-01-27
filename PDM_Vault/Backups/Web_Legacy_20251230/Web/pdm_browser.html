@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDM Browser</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .controls {
+            padding: 20px 30px;
+            background: #fafafa;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .search-box {
+            flex: 1;
+            position: relative;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 10px 15px 10px 40px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .search-box::before {
+            content: "🔍";
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .filter-group label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .stats {
+            padding: 15px 30px;
+            background: #f9f9f9;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #f5f5f5;
+            padding: 12px 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: #555;
+            border-bottom: 2px solid #ddd;
+            position: sticky;
+            top: 0;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+        }
+
+        tr:hover {
+            background: #fafafa;
+        }
+
+        .item-row {
+            cursor: pointer;
+        }
+
+        .item-row:hover {
+            background: #f0f0ff;
+        }
+
+        .item-number {
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-design {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .badge-released {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .badge-revision {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+
+        .file-count {
+            color: #999;
+            font-size: 13px;
+        }
+
+        .files-row {
+            display: none;
+            background: #fafafa;
+        }
+
+        .files-row.show {
+            display: table-row;
+        }
+
+        .files-table {
+            margin: 10px 0;
+            width: 100%;
+            background: white;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .files-table th {
+            background: #f0f0f0;
+            padding: 8px 12px;
+            font-size: 12px;
+        }
+
+        .files-table td {
+            padding: 8px 12px;
+            font-size: 13px;
+        }
+
+        .file-link {
+            color: #667eea;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .file-link:hover {
+            text-decoration: underline;
+        }
+
+        .file-icon {
+            font-size: 16px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .iteration {
+            color: #999;
+            font-size: 12px;
+        }
+
+        .expand-icon {
+            display: inline-block;
+            margin-right: 8px;
+            transition: transform 0.2s;
+        }
+
+        .expand-icon.expanded {
+            transform: rotate(90deg);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>PDM Browser</h1>
+            <p>View items and attached files</p>
+        </div>
+
+        <div class="controls">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search items by number, name, or description...">
+            </div>
+            <div class="filter-group">
+                <label>Lifecycle:</label>
+                <select id="lifecycleFilter">
+                    <option value="">All</option>
+                    <option value="Design">Design</option>
+                    <option value="Released">Released</option>
+                    <option value="Revise">Revise</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Revision:</label>
+                <select id="revisionFilter">
+                    <option value="">All</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="stats">
+            <span id="itemCount">Loading...</span>
+        </div>
+
+        <div class="content">
+            <div class="loading" id="loading">Loading items...</div>
+            <table id="itemsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th style="width: 15%">Item Number</th>
+                        <th style="width: 25%">Name</th>
+                        <th style="width: 30%">Description</th>
+                        <th style="width: 10%">Revision</th>
+                        <th style="width: 10%">Lifecycle</th>
+                        <th style="width: 10%">Files</th>
+                    </tr>
+                </thead>
+                <tbody id="itemsBody">
+                </tbody>
+            </table>
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <h3>No items found</h3>
+                <p>Try adjusting your search or filters</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let allItems = [];
+        let allFiles = {};
+
+        // File type icons
+        const fileIcons = {
+            'CAD': '📐',
+            'STEP': '🔧',
+            'PDF': '📄',
+            'DXF': '📏',
+            'SVG': '🖼️',
+            'NEUTRAL_ASM': '📦',
+            'OTHER': '📎'
+        };
+
+        // Load data
+        async function loadData() {
+            try {
+                const response = await fetch('/api/items');
+                const data = await response.json();
+                
+                allItems = data.items;
+                allFiles = data.files;
+
+                populateFilters();
+                renderItems();
+                updateStats();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('loading').innerHTML = 
+                    '<p style="color: #d32f2f;">Error loading data. Make sure the server is running.</p>';
+            }
+        }
+
+        // Populate revision filter
+        function populateFilters() {
+            const revisions = [...new Set(allItems.map(item => item.revision))].sort();
+            const revisionFilter = document.getElementById('revisionFilter');
+            
+            revisions.forEach(rev => {
+                const option = document.createElement('option');
+                option.value = rev;
+                option.textContent = rev;
+                revisionFilter.appendChild(option);
+            });
+        }
+
+        // Render items
+        function renderItems() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const lifecycleFilter = document.getElementById('lifecycleFilter').value;
+            const revisionFilter = document.getElementById('revisionFilter').value;
+
+            let filtered = allItems.filter(item => {
+                const matchesSearch = !searchTerm || 
+                    item.item_number.toLowerCase().includes(searchTerm) ||
+                    (item.name && item.name.toLowerCase().includes(searchTerm)) ||
+                    (item.description && item.description.toLowerCase().includes(searchTerm));
+                
+                const matchesLifecycle = !lifecycleFilter || item.lifecycle_state === lifecycleFilter;
+                const matchesRevision = !revisionFilter || item.revision === revisionFilter;
+
+                return matchesSearch && matchesLifecycle && matchesRevision;
+            });
+
+            const tbody = document.getElementById('itemsBody');
+            tbody.innerHTML = '';
+
+            if (filtered.length === 0) {
+                document.getElementById('itemsTable').style.display = 'none';
+                document.getElementById('emptyState').style.display = 'block';
+                document.getElementById('loading').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('itemsTable').style.display = 'table';
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('loading').style.display = 'none';
+
+            filtered.forEach(item => {
+                const files = allFiles[item.item_number] || [];
+                
+                // Item row
+                const tr = document.createElement('tr');
+                tr.className = 'item-row';
+                tr.onclick = () => toggleFiles(item.item_number);
+                
+                const lifecycleBadgeClass = {
+                    'Design': 'badge-design',
+                    'Released': 'badge-released',
+                    'Revise': 'badge-revision'
+                }[item.lifecycle_state] || 'badge-design';
+
+                tr.innerHTML = `
+                    <td><span class="expand-icon" id="icon-${item.item_number}">▶</span><span class="item-number">${item.item_number}</span></td>
+                    <td>${item.name || '-'}</td>
+                    <td>${item.description || '-'}</td>
+                    <td>${item.revision}.${item.iteration}</td>
+                    <td><span class="badge ${lifecycleBadgeClass}">${item.lifecycle_state}</span></td>
+                    <td><span class="file-count">${files.length} file${files.length !== 1 ? 's' : ''}</span></td>
+                `;
+                tbody.appendChild(tr);
+
+                // Files row (hidden by default)
+                const filesTr = document.createElement('tr');
+                filesTr.className = 'files-row';
+                filesTr.id = `files-${item.item_number}`;
+                filesTr.innerHTML = `
+                    <td colspan="6">
+                        ${renderFilesTable(files)}
+                    </td>
+                `;
+                tbody.appendChild(filesTr);
+            });
+
+            updateStats(filtered.length);
+        }
+
+        // Render files table
+        function renderFilesTable(files) {
+            if (files.length === 0) {
+                return '<p style="padding: 20px; text-align: center; color: #999;">No files attached</p>';
+            }
+
+            let html = '<table class="files-table"><thead><tr>';
+            html += '<th style="width: 10%">Type</th>';
+            html += '<th style="width: 50%">File Name</th>';
+            html += '<th style="width: 10%">Revision</th>';
+            html += '<th style="width: 15%">Added</th>';
+            html += '<th style="width: 15%">Actions</th>';
+            html += '</tr></thead><tbody>';
+
+            files.forEach(file => {
+                const fileName = file.file_path.split('\\').pop();
+                const icon = fileIcons[file.file_type] || fileIcons['OTHER'];
+                const addedDate = new Date(file.added_at).toLocaleDateString();
+                
+                html += `<tr>
+                    <td>${icon} ${file.file_type}</td>
+                    <td>${fileName} <span class="iteration">(.${file.iteration})</span></td>
+                    <td>${file.revision}.${file.iteration}</td>
+                    <td>${addedDate}</td>
+                    <td><a href="/file/${encodeURIComponent(file.file_path)}" target="_blank" class="file-link">View</a></td>
+                </tr>`;
+            });
+
+            html += '</tbody></table>';
+            return html;
+        }
+
+        // Toggle files visibility
+        function toggleFiles(itemNumber) {
+            const filesRow = document.getElementById(`files-${itemNumber}`);
+            const icon = document.getElementById(`icon-${itemNumber}`);
+            
+            if (filesRow.classList.contains('show')) {
+                filesRow.classList.remove('show');
+                icon.classList.remove('expanded');
+            } else {
+                filesRow.classList.add('show');
+                icon.classList.add('expanded');
+            }
+        }
+
+        // Update stats
+        function updateStats(count) {
+            const total = count !== undefined ? count : allItems.length;
+            document.getElementById('itemCount').textContent = 
+                `Showing ${total} item${total !== 1 ? 's' : ''}`;
+        }
+
+        // Event listeners
+        document.getElementById('searchInput').addEventListener('input', renderItems);
+        document.getElementById('lifecycleFilter').addEventListener('change', renderItems);
+        document.getElementById('revisionFilter').addEventListener('change', renderItems);
+
+        // Load on page load
+        loadData();
+    </script>
+</body>
+</html>

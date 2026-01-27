@@ -1,0 +1,6 @@
+#!/bin/sh
+if git diff --cached --name-only | grep -iE '^PDM_Vault/' >/dev/null; then
+  echo "ERROR: PDM_Vault/ is blocked from commits."
+  exit 1
+fi
+exit 0

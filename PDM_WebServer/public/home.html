@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDM Tools - Homepage</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #e5e5e5;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            width: 100%;
+        }
+        
+        .header {
+            text-align: center;
+            color: #333;
+            margin-bottom: 40px;
+            padding: 30px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 48px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #1a1a1a;
+        }
+        
+        .header p {
+            font-size: 18px;
+            color: #666;
+        }
+
+        .section-title {
+            font-size: 28px;
+            font-weight: 600;
+            color: #333;
+            margin: 40px 0 20px 0;
+            padding-left: 10px;
+            border-left: 4px solid #666;
+        }
+        
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            margin-bottom: 30px;
+        }
+        
+        .tool-card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transition: transform 0.2s, box-shadow 0.2s;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        
+        .tool-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+        }
+        
+        .tool-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            display: block;
+        }
+        
+        .tool-card h2 {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .tool-card p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 15px;
+        }
+        
+        .tool-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        
+        .badge-creo {
+            background: #e0e0e0;
+            color: #555;
+        }
+        
+        .badge-web {
+            background: #b8b8b8;
+            color: #1a1a1a;
+        }
+
+        .badge-mrp {
+            background: #d4af37;
+            color: #1a1a1a;
+        }
+        
+        .features {
+            color: #666;
+            font-size: 14px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        
+        .features ul {
+            margin-left: 20px;
+            margin-top: 8px;
+        }
+        
+        .features li {
+            margin-bottom: 5px;
+        }
+        
+        .footer {
+            text-align: center;
+            color: #666;
+            font-size: 14px;
+            margin-top: 30px;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        
+        .status-connected {
+            background: #666;
+        }
+        
+        .status-browser {
+            background: #999;
+        }
+
+        .status-mrp {
+            background: #d4af37;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>PDM Tools</h1>
+            <p>Product Data Management & Manufacturing Resource Planning</p>
+        </div>
+        
+        <h2 class="section-title">PDM Tools</h2>
+        <div class="tools-grid">
+            <!-- PDM Browser -->
+            <a href="/pdm-browser.html" class="tool-card">
+                <span class="tool-icon">📁</span>
+                <h2>PDM Browser</h2>
+                <p>Browse and search all items in your PDM system with detailed views of files, BOMs, and lifecycle history.</p>
+                
+                <span class="tool-badge badge-web">
+                    <span class="status-indicator status-browser"></span>
+                    Web + Creo
+                </span>
+                
+                <div class="features">
+                    <strong>Features:</strong>
+                    <ul>
+                        <li>Search & filter items</li>
+                        <li>View files, BOMs, where-used</li>
+                        <li>Navigate assembly structures</li>
+                        <li>Lifecycle history tracking</li>
+                        <li>Open files in Creo (when in Creo)</li>
+                    </ul>
+                </div>
+            </a>
+            
+            <!-- Workspace Compare -->
+            <a href="file:///C:/PTC_Data/creowebjs_apps/workspace.html" class="tool-card">
+                <span class="tool-icon">📄</span>
+                <h2>Workspace</h2>
+                <p>Compare your Creo workspace against the PDM vault to identify differences and sync files.</p>
+                
+                <span class="tool-badge badge-creo">
+                    <span class="status-indicator status-connected"></span>
+                    Creo Only
+                </span>
+                
+                <div class="features">
+                    <strong>Features:</strong>
+                    <ul>
+                        <li>List workspace files</li>
+                        <li>Compare with PDM vault</li>
+                        <li>Show file status & differences</li>
+                        <li>Open files directly in Creo</li>
+                        <li>Bulk file operations</li>
+                    </ul>
+                </div>
+            </a>
+
+            <!-- Part Number Generator -->
+            <a href="/part-number-generator.html" class="tool-card">
+                <span class="tool-icon">🔢</span>
+                <h2>Part Number Generator</h2>
+                <p>Generate new available part numbers for each prefix. Click to copy for use in Creo.</p>
+                
+                <span class="tool-badge badge-web">
+                    <span class="status-indicator status-browser"></span>
+                    Web
+                </span>
+                
+                <div class="features">
+                    <strong>Features:</strong>
+                    <ul>
+                        <li>Shows next 50 available numbers</li>
+                        <li>All prefixes (CS, XX, WM, etc.)</li>
+                        <li>Click to copy to clipboard</li>
+                        <li>Increments by 10 from highest</li>
+                        <li>Real-time database sync</li>
+                    </ul>
+                </div>
+            </a>
+        </div>
+
+        <h2 class="section-title">MRP Tools</h2>
+        <div class="tools-grid">
+            <!-- MRP Dashboard -->
+            <a href="/mrp/mrp_dashboard.html" class="tool-card">
+                <span class="tool-icon">📋</span>
+                <h2>MRP Dashboard</h2>
+                <p>Overview of production orders, work packets, and shop floor status.</p>
+                
+                <span class="tool-badge badge-mrp">
+                    <span class="status-indicator status-mrp"></span>
+                    MRP
+                </span>
+                
+                <div class="features">
+                    <strong>Features:</strong>
+                    <ul>
+                        <li>Production order tracking</li>
+                        <li>Work packet status</li>
+                        <li>Shop floor overview</li>
+                        <li>Real-time updates</li>
+                    </ul>
+                </div>
+            </a>
+
+            <!-- Routing Editor -->
+            <a href="/mrp/routing_editor.html" class="tool-card">
+                <span class="tool-icon">🔧</span>
+                <h2>Routing Editor</h2>
+                <p>Define and manage production routings for parts and assemblies.</p>
+                
+                <span class="tool-badge badge-mrp">
+                    <span class="status-indicator status-mrp"></span>
+                    MRP
+                </span>
+                
+                <div class="features">
+                    <strong>Features:</strong>
+                    <ul>
+                        <li>Create/edit routings</li>
+                        <li>Routing templates</li>
+                        <li>Workstation assignment</li>
+                        <li>PDF preview</li>
+                        <li>Operation sequencing</li>
+                    </ul>
+                </div>
+            </a>
+
+            <!-- Shop Terminal -->
+            <a href="/mrp/shop_terminal.html" class="tool-card">
+                <span class="tool-icon">🏭</span>
+                <h2>Shop Terminal</h2>
+                <p>Shop floor interface for operators to view work packets and update job status.</p>
+                
+                <span class="tool-badge badge-mrp">
+                    <span class="status-indicator status-mrp"></span>
+                    MRP
+                </span>
+                
+                <div class="features">
+                    <strong>Features:</strong>
+                    <ul>
+                        <li>View assigned work</li>
+                        <li>Update job status</li>
+                        <li>Time tracking</li>
+                        <li>Quality checks</li>
+                        <li>Material requests</li>
+                    </ul>
+                </div>
+            </a>
+        </div>
+        
+        <div class="footer">
+            <p>Server running on Node.js • Database: SQLite</p>
+            <p style="margin-top: 5px; font-size: 12px;">
+                Access from Creo: Tools > Browser > http://localhost:3000
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Check if running in Creo
+        document.addEventListener('DOMContentLoaded', () => {
+            const isCreo = typeof CreoJS !== 'undefined' && CreoJS.isAvailable && CreoJS.isAvailable();
+            
+            if (isCreo) {
+                console.log('Running in Creo environment - all tools available');
+            } else {
+                console.log('Running in standard browser - PDM Browser fully functional, Workspace Compare limited');
+            }
+        });
+    </script>
+</body>
+</html>

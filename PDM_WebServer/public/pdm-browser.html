@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDM Browser</title>
+    
+    <!-- Three.js r128 (last version with easy global access) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/OBJLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/loaders/MTLLoader.js"></script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #e5e5e5;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0;
+            background: #f8f8f8;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Controls Bar */
+        .controls-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px;
+            background: #ffffff;
+            border-bottom: 2px solid #d0d0d0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .search-box {
+            flex: 1;
+            padding: 8px 12px;
+            border: 1px solid #bbb;
+            border-radius: 4px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .search-box:focus {
+            outline: none;
+            border-color: #666;
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+        }
+        
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .filter-select {
+            padding: 8px 12px;
+            border: 1px solid #bbb;
+            border-radius: 4px;
+            font-size: 13px;
+            background: white;
+            cursor: pointer;
+        }
+
+        .filter-select:focus {
+            outline: none;
+            border-color: #666;
+        }
+        
+        .stats {
+            font-size: 13px;
+            color: #666;
+            padding: 0 8px;
+        }
+        
+        /* Table Container */
+        .table-container {
+            flex: 1;
+            overflow: auto;
+            position: relative;
+        }
+        
+        /* Table Header - Fixed */
+        .table-header {
+            position: sticky;
+            top: 0;
+            background: #e8e8e8;
+            border-bottom: 2px solid #999;
+            z-index: 10;
+        }
+        
+        .table-header-row {
+            display: grid;
+            grid-template-columns: 120px 250px 150px 80px 120px 120px 150px 120px;
+            min-height: 40px;
+        }
+        
+        .table-header-cell {
+            padding: 12px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            border-right: 1px solid #e0e0e0;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+        }
+        
+        .table-header-cell:hover {
+            background: #eee;
+        }
+        
+        .sort-indicator {
+            margin-left: 4px;
+            font-size: 10px;
+            color: #555;
+        }
+        
+        /* Table Body */
+        .table-body {
+            position: relative;
+        }
+        
+        .table-row {
+            display: grid;
+            grid-template-columns: 120px 250px 150px 80px 120px 120px 150px 120px;
+            border-bottom: 1px solid #e8e8e8;
+            transition: background 0.1s;
+            cursor: pointer;
+            min-height: 40px;
+        }
+        
+        .table-row:hover {
+            background: #e8e8e8;
+        }
+
+        .table-row.selected {
+            background: #d0d0d0;
+        }
+        
+        .table-cell {
+            padding: 10px 8px;
+            font-size: 13px;
+            border-right: 1px solid #f0f0f0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+        }
+        
+        .item-number {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .lifecycle-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .lifecycle-badge.design {
+            background: #e0e0e0;
+            color: #555;
+        }
+
+        .lifecycle-badge.released {
+            background: #b8b8b8;
+            color: #1a1a1a;
+        }
+
+        .lifecycle-badge.obsolete {
+            background: #d8d8d8;
+            color: #666;
+        }
+        
+        /* Detail Panel */
+        .detail-panel {
+            position: fixed;
+            right: -600px;
+            top: 0;
+            width: 600px;
+            height: 100vh;
+            background: white;
+            box-shadow: -2px 0 8px rgba(0,0,0,0.1);
+            transition: right 0.3s ease;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .detail-panel.open {
+            right: 0;
+        }
+        
+        .detail-header {
+            background: #4a4a4a;
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .detail-header h2 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .close-btn {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        
+        .close-btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        
+        .detail-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .detail-section {
+            margin-bottom: 24px;
+        }
+        
+        .detail-section h3 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #d0d0d0;
+        }
+        
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 8px 16px;
+            font-size: 13px;
+        }
+        
+        .detail-label {
+            font-weight: 600;
+            color: #666;
+        }
+        
+        .detail-value {
+            color: #333;
+        }
+        
+        /* 3D Viewer */
+        .viewer-container {
+            width: 100%;
+            height: 400px;
+            background: #ffffff;
+            border: 1px solid #d0d0d0;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .viewer-controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            gap: 8px;
+            z-index: 10;
+        }
+        
+        .viewer-btn {
+            background: rgba(255,255,255,0.9);
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .viewer-btn:hover {
+            background: rgba(255,255,255,1);
+        }
+        
+        .viewer-btn.active {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .viewer-info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 11px;
+            z-index: 10;
+        }
+        
+        .no-viewer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #888;
+            font-size: 14px;
+        }
+        
+        .file-list, .bom-list, .history-list {
+            list-style: none;
+        }
+        
+        .file-item, .bom-item, .history-item {
+            padding: 10px;
+            border: 1px solid #d0d0d0;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .file-item {
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .file-item:hover {
+            background: #e8e8e8;
+            border-color: #999;
+        }
+
+        .bom-item {
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .bom-item:hover {
+            background: #e8e8e8;
+            border-color: #999;
+        }
+        
+        .file-type-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+        
+        .file-type-badge.step {
+            background: #c8c8c8;
+            color: #2a2a2a;
+        }
+
+        .file-type-badge.dxf {
+            background: #d8d8d8;
+            color: #3a3a3a;
+        }
+
+        .file-type-badge.svg {
+            background: #b8b8b8;
+            color: #1a1a1a;
+        }
+
+        .file-type-badge.pdf {
+            background: #e0e0e0;
+            color: #4a4a4a;
+        }
+
+        .file-type-badge.cad {
+            background: #d0d0d0;
+            color: #333;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 4px;
+            margin: 20px;
+            display: none;
+        }
+        
+        .error-message.active {
+            display: block;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            font-style: italic;
+        }
+        
+        .checkout-warning {
+            background: #fff3cd;
+            color: #856404;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+        
+        .checkout-warning strong {
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="controls-bar">
+            <input type="text" class="search-box" id="searchBox" placeholder="Search items by number, description, or project...">
+            
+            <div class="filter-group">
+                <label for="lifecycleFilter" style="font-size: 12px; color: #666;">State:</label>
+                <select class="filter-select" id="lifecycleFilter">
+                    <option value="">All States</option>
+                    <option value="Design">Design</option>
+                    <option value="Released">Released</option>
+                    <option value="Obsolete">Obsolete</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label for="projectFilter" style="font-size: 12px; color: #666;">Project:</label>
+                <select class="filter-select" id="projectFilter">
+                    <option value="">All Projects</option>
+                </select>
+            </div>
+            
+            <div class="stats" id="statsDisplay">
+                Loading...
+            </div>
+        </div>
+        
+        <div class="loading active" id="loadingIndicator">
+            <p>Loading PDM data...</p>
+        </div>
+        
+        <div class="error-message" id="errorMessage"></div>
+        
+        <div class="table-container">
+            <div class="table-header">
+                <div class="table-header-row">
+                    <div class="table-header-cell" onclick="sortTable('item_number')" data-sort="item_number">
+                        Item Number
+                        <span class="sort-indicator"></span>
+                    </div>
+                    <div class="table-header-cell" onclick="sortTable('description')" data-sort="description">
+                        Description
+                        <span class="sort-indicator"></span>
+                    </div>
+                    <div class="table-header-cell" onclick="sortTable('project')" data-sort="project">
+                        Project
+                        <span class="sort-indicator"></span>
+                    </div>
+                    <div class="table-header-cell" onclick="sortTable('revision')" data-sort="revision">
+                        Rev
+                        <span class="sort-indicator"></span>
+                    </div>
+                    <div class="table-header-cell" onclick="sortTable('lifecycle_state')" data-sort="lifecycle_state">
+                        State
+                        <span class="sort-indicator"></span>
+                    </div>
+                    <div class="table-header-cell" onclick="sortTable('material')" data-sort="material">
+                        Material
+                        <span class="sort-indicator"></span>
+                    </div>
+                    <div class="table-header-cell" onclick="sortTable('modified_at')" data-sort="modified_at">
+                        Modified
+                        <span class="sort-indicator"></span>
+                    </div>
+                    <div class="table-header-cell" onclick="sortTable('mass')" data-sort="mass">
+                        Mass
+                        <span class="sort-indicator"></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="table-body" id="tableBody">
+                <!-- Rows will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Detail Panel -->
+    <div class="detail-panel" id="detailPanel">
+        <div class="detail-header">
+            <h2 id="detailItemNumber">Loading...</h2>
+            <button class="close-btn" onclick="closeDetailPanel()">&times;</button>
+        </div>
+        
+        <div class="detail-content" id="detailContent">
+            <div class="loading active">Loading item details...</div>
+        </div>
+    </div>
+    
+    <script>
+        let allItems = [];
+        let filteredItems = [];
+        let sortState = { column: 'modified_at', ascending: false };
+        let selectedItemNumber = null;
+        
+        // Load items on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadItems();
+            
+            // Setup search
+            document.getElementById('searchBox').addEventListener('input', filterItems);
+            document.getElementById('lifecycleFilter').addEventListener('change', filterItems);
+            document.getElementById('projectFilter').addEventListener('change', filterItems);
+        });
+        
+        async function loadItems() {
+            try {
+                const response = await fetch('/api/items');
+                if (!response.ok) throw new Error('Failed to load items');
+                
+                allItems = await response.json();
+                filteredItems = [...allItems];
+                
+                // Populate project filter
+                populateProjectFilter();
+                
+                // Initial render
+                sortAndRender();
+                
+                // Hide loading, show table
+                document.getElementById('loadingIndicator').classList.remove('active');
+                updateStats();
+                
+            } catch (error) {
+                console.error('Error loading items:', error);
+                showError('Failed to load PDM data: ' + error.message);
+            }
+        }
+        
+        function populateProjectFilter() {
+            const projects = [...new Set(allItems.map(item => item.project).filter(p => p))].sort();
+            const select = document.getElementById('projectFilter');
+            
+            projects.forEach(project => {
+                const option = document.createElement('option');
+                option.value = project;
+                option.textContent = project;
+                select.appendChild(option);
+            });
+        }
+        
+        function filterItems() {
+            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
+            const lifecycleFilter = document.getElementById('lifecycleFilter').value;
+            const projectFilter = document.getElementById('projectFilter').value;
+            
+            filteredItems = allItems.filter(item => {
+                const matchesSearch = !searchTerm || 
+                    (item.item_number && item.item_number.toLowerCase().includes(searchTerm)) ||
+                    (item.description && item.description.toLowerCase().includes(searchTerm)) ||
+                    (item.project && item.project.toLowerCase().includes(searchTerm)) ||
+                    (item.name && item.name.toLowerCase().includes(searchTerm));
+                
+                const matchesLifecycle = !lifecycleFilter || item.lifecycle_state === lifecycleFilter;
+                const matchesProject = !projectFilter || item.project === projectFilter;
+                
+                return matchesSearch && matchesLifecycle && matchesProject;
+            });
+            
+            sortAndRender();
+            updateStats();
+        }
+        
+        function sortAndRender() {
+            filteredItems.sort((a, b) => {
+                let aVal = a[sortState.column] || '';
+                let bVal = b[sortState.column] || '';
+                
+                // Convert to strings for comparison
+                aVal = String(aVal).toLowerCase();
+                bVal = String(bVal).toLowerCase();
+                
+                if (aVal < bVal) return sortState.ascending ? -1 : 1;
+                if (aVal > bVal) return sortState.ascending ? 1 : -1;
+                return 0;
+            });
+            
+            renderTable();
+        }
+        
+        function sortTable(column) {
+            if (sortState.column === column) {
+                sortState.ascending = !sortState.ascending;
+            } else {
+                sortState.column = column;
+                sortState.ascending = true;
+            }
+            
+            // Update sort indicators
+            document.querySelectorAll('.sort-indicator').forEach(el => el.textContent = '');
+            const header = document.querySelector(`[data-sort="${column}"]`);
+            if (header) {
+                header.querySelector('.sort-indicator').textContent = sortState.ascending ? '▲' : '▼';
+            }
+            
+            sortAndRender();
+        }
+        
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            
+            if (filteredItems.length === 0) {
+                tbody.innerHTML = '<div class="empty-state">No items found matching your filters</div>';
+                return;
+            }
+            
+            filteredItems.forEach(item => {
+                const row = document.createElement('div');
+                row.className = 'table-row';
+                if (item.item_number === selectedItemNumber) {
+                    row.classList.add('selected');
+                }
+                row.onclick = () => openDetailPanel(item.item_number);
+                
+                row.innerHTML = `
+                    <div class="table-cell item-number">${escapeHtml(item.item_number || '')}</div>
+                    <div class="table-cell" title="${escapeHtml(item.description || '')}">${escapeHtml(item.description || '-')}</div>
+                    <div class="table-cell" title="${escapeHtml(item.project || '')}">${escapeHtml(item.project || '-')}</div>
+                    <div class="table-cell">${escapeHtml(item.revision || '')}.${item.iteration || 1}</div>
+                    <div class="table-cell">
+                        <span class="lifecycle-badge ${(item.lifecycle_state || '').toLowerCase()}">${escapeHtml(item.lifecycle_state || '-')}</span>
+                    </div>
+                    <div class="table-cell" title="${escapeHtml(item.material || '')}">${escapeHtml(item.material || '-')}</div>
+                    <div class="table-cell">${formatDate(item.modified_at)}</div>
+                    <div class="table-cell">${item.mass ? item.mass.toFixed(2) + ' kg' : '-'}</div>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        function updateStats() {
+            const total = filteredItems.length;
+            const allTotal = allItems.length;
+            const statsDisplay = document.getElementById('statsDisplay');
+            
+            if (total === allTotal) {
+                statsDisplay.textContent = `${total} items`;
+            } else {
+                statsDisplay.textContent = `${total} of ${allTotal} items`;
+            }
+        }
+        
+        async function openDetailPanel(itemNumber) {
+            selectedItemNumber = itemNumber;
+            
+            // Update selected row styling
+            document.querySelectorAll('.table-row').forEach(row => {
+                row.classList.remove('selected');
+            });
+            event.currentTarget.classList.add('selected');
+            
+            // Open panel
+            const panel = document.getElementById('detailPanel');
+            panel.classList.add('open');
+            
+            // Update header
+            document.getElementById('detailItemNumber').textContent = itemNumber.toUpperCase();
+            
+            // Show loading
+            const content = document.getElementById('detailContent');
+            content.innerHTML = '<div class="loading active">Loading item details...</div>';
+            
+            try {
+                const response = await fetch(`/api/items/${itemNumber}`);
+                if (!response.ok) throw new Error('Failed to load item details');
+                
+                const data = await response.json();
+                renderDetailPanel(data);
+                
+            } catch (error) {
+                console.error('Error loading item details:', error);
+                content.innerHTML = `<div class="error-message active">Failed to load details: ${error.message}</div>`;
+            }
+        }
+        
+        function renderDetailPanel(data) {
+            const content = document.getElementById('detailContent');
+            
+            let html = '';
+            
+            // Checkout warning
+            if (data.checkout) {
+                html += `
+                    <div class="checkout-warning">
+                        <strong>⚠️ Checked Out</strong><br>
+                        By: ${escapeHtml(data.checkout.username)}<br>
+                        Since: ${formatDateTime(data.checkout.checked_out_at)}
+                    </div>
+                `;
+            }
+            
+            // Item Information
+            html += `
+                <div class="detail-section">
+                    <h3>Item Information</h3>
+                    <div class="detail-grid">
+                        <div class="detail-label">Item Number:</div>
+                        <div class="detail-value">${escapeHtml(data.item.item_number || '-')}</div>
+                        
+                        <div class="detail-label">Name:</div>
+                        <div class="detail-value">${escapeHtml(data.item.name || '-')}</div>
+                        
+                        <div class="detail-label">Description:</div>
+                        <div class="detail-value">${escapeHtml(data.item.description || '-')}</div>
+                        
+                        <div class="detail-label">Revision:</div>
+                        <div class="detail-value">${escapeHtml(data.item.revision || '')}.${data.item.iteration || 1}</div>
+                        
+                        <div class="detail-label">Lifecycle State:</div>
+                        <div class="detail-value">
+                            <span class="lifecycle-badge ${(data.item.lifecycle_state || '').toLowerCase()}">${escapeHtml(data.item.lifecycle_state || '-')}</span>
+                        </div>
+                        
+                        <div class="detail-label">Project:</div>
+                        <div class="detail-value">${escapeHtml(data.item.project || '-')}</div>
+                        
+                        <div class="detail-label">Material:</div>
+                        <div class="detail-value">${escapeHtml(data.item.material || '-')}</div>
+                        
+                        <div class="detail-label">Mass:</div>
+                        <div class="detail-value">${data.item.mass ? data.item.mass.toFixed(3) + ' kg' : '-'}</div>
+                        
+                        <div class="detail-label">Thickness:</div>
+                        <div class="detail-value">${data.item.thickness ? data.item.thickness + ' mm' : '-'}</div>
+                        
+                        <div class="detail-label">Cut Length:</div>
+                        <div class="detail-value">${data.item.cut_length ? data.item.cut_length + ' mm' : '-'}</div>
+                        
+                        <div class="detail-label">Created:</div>
+                        <div class="detail-value">${formatDateTime(data.item.created_at)}</div>
+                        
+                        <div class="detail-label">Modified:</div>
+                        <div class="detail-value">${formatDateTime(data.item.modified_at)}</div>
+                    </div>
+                </div>
+            `;
+            
+            // Files
+            html += `
+                <div class="detail-section">
+                    <h3>Files (${data.files.length})</h3>
+            `;
+            
+            if (data.files.length === 0) {
+                html += '<div class="empty-state">No files registered</div>';
+            } else {
+                html += '<ul class="file-list">';
+                data.files.forEach(file => {
+                    const fileName = file.file_path.split('\\').pop();
+                    const fileUrl = `/api/files/view?path=${encodeURIComponent(file.file_path)}`;
+                    html += `
+                        <li class="file-item" data-file-url="${fileUrl}">
+                            <div>
+                                <span class="file-type-badge ${file.file_type.toLowerCase()}">${escapeHtml(file.file_type)}</span>
+                                <span title="${escapeHtml(file.file_path)}">${escapeHtml(fileName)}</span>
+                            </div>
+                            <div style="font-size: 11px; color: #999;">${formatDate(file.added_at)}</div>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+            }
+            html += '</div>';
+            
+            // 3D Viewer (if OBJ file exists)
+            const objFile = data.files.find(f => f.file_type === 'OBJ');
+            html += `
+                <div class="detail-section">
+                    <h3>3D Viewer</h3>
+            `;
+            
+            if (objFile) {
+                const objUrl = `/api/files/view?path=${encodeURIComponent(objFile.file_path)}`;
+                html += `
+                    <div class="viewer-container" id="viewer3d">
+                        <div class="viewer-controls">
+                            <button class="viewer-btn" id="resetViewBtn">Reset View</button>
+                            <button class="viewer-btn" id="wireframeBtn">Wireframe</button>
+                            <button class="viewer-btn" id="measureBtn">Measure</button>
+                        </div>
+                        <div class="viewer-info">
+                            Left: Rotate | Right: Pan | Scroll: Zoom
+                        </div>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="viewer-container">
+                        <div class="no-viewer">No 3D model available</div>
+                    </div>
+                `;
+            }
+            html += '</div>';
+            
+            // BOM (Children)
+            html += `
+                <div class="detail-section">
+                    <h3>Bill of Materials (${data.bom.length})</h3>
+            `;
+            
+            if (data.bom.length === 0) {
+                html += '<div class="empty-state">No child components</div>';
+            } else {
+                html += '<ul class="bom-list">';
+                data.bom.forEach(bom => {
+                    html += `
+                        <li class="bom-item" data-item-number="${escapeHtml(bom.child_item)}">
+                            <div>
+                                <strong>${escapeHtml(bom.child_item)}</strong>
+                                <span style="color: #999; margin-left: 8px;">Qty: ${bom.quantity}</span>
+                            </div>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+            }
+            html += '</div>';
+            
+            // Where Used
+            html += `
+                <div class="detail-section">
+                    <h3>Where Used (${data.whereUsed.length})</h3>
+            `;
+            
+            if (data.whereUsed.length === 0) {
+                html += '<div class="empty-state">Not used in any assemblies</div>';
+            } else {
+                html += '<ul class="bom-list">';
+                data.whereUsed.forEach(wu => {
+                    html += `
+                        <li class="bom-item" data-item-number="${escapeHtml(wu.parent_item)}">
+                            <div>
+                                <strong>${escapeHtml(wu.parent_item)}</strong>
+                                <span style="color: #999; margin-left: 8px;">Qty: ${wu.quantity}</span>
+                            </div>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+            }
+            html += '</div>';
+            
+            // Lifecycle History
+            html += `
+                <div class="detail-section">
+                    <h3>Lifecycle History (${data.history.length})</h3>
+            `;
+            
+            if (data.history.length === 0) {
+                html += '<div class="empty-state">No history</div>';
+            } else {
+                html += '<ul class="history-list">';
+                data.history.forEach(hist => {
+                    const revChange = hist.old_revision !== hist.new_revision 
+                        ? `${hist.old_revision || '?'}.${hist.old_iteration || '?'} → ${hist.new_revision || '?'}.${hist.new_iteration || '?'}`
+                        : '';
+                    const stateChange = hist.old_state !== hist.new_state 
+                        ? `${hist.old_state || '?'} → ${hist.new_state || '?'}`
+                        : '';
+                    
+                    html += `
+                        <li class="history-item">
+                            <div>
+                                <div>${stateChange} ${revChange}</div>
+                                <div style="font-size: 11px; color: #999; margin-top: 4px;">
+                                    ${formatDateTime(hist.changed_at)}
+                                    ${hist.changed_by ? ' by ' + escapeHtml(hist.changed_by) : ''}
+                                </div>
+                            </div>
+                        </li>
+                    `;
+                });
+                html += '</ul>';
+            }
+            html += '</div>';
+
+            content.innerHTML = html;
+
+            // Attach click handlers to BOM items
+            content.querySelectorAll('.bom-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const itemNumber = this.getAttribute('data-item-number');
+                    if (itemNumber) {
+                        openDetailPanel(itemNumber);
+                    }
+                });
+            });
+            
+            // Initialize 3D viewer if OBJ file exists (objFile already declared above)
+            if (objFile) {
+                const objUrl = `/api/files/view?path=${encodeURIComponent(objFile.file_path)}`;
+                init3DViewer(objUrl);
+            }
+
+            // Attach click handlers to file items
+            content.querySelectorAll('.file-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const fileUrl = this.getAttribute('data-file-url');
+                    if (fileUrl) {
+                        window.open(fileUrl, '_blank');
+                    }
+                });
+            });
+        }
+        
+        function closeDetailPanel() {
+            document.getElementById('detailPanel').classList.remove('open');
+            selectedItemNumber = null;
+            
+            // Remove selected styling from all rows
+            document.querySelectorAll('.table-row').forEach(row => {
+                row.classList.remove('selected');
+            });
+        }
+        
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString();
+        }
+        
+        function formatDateTime(dateStr) {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return date.toLocaleString();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('active');
+            document.getElementById('loadingIndicator').classList.remove('active');
+        }
+        
+        // Close detail panel when clicking outside
+        document.addEventListener('click', (e) => {
+            const panel = document.getElementById('detailPanel');
+            if (panel.classList.contains('open') && !panel.contains(e.target) && !e.target.closest('.table-row')) {
+                closeDetailPanel();
+            }
+        });
+        
+        // Close on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeDetailPanel();
+            }
+        });
+        
+        // ========================================
+        // 3D Viewer with Three.js
+        // ========================================
+        let viewer3D = null;
+        
+        function init3DViewer(objUrl) {
+            // Clean up existing viewer
+            if (viewer3D) {
+                viewer3D.cleanup();
+                viewer3D = null;
+            }
+            
+            const container = document.getElementById('viewer3d');
+            if (!container) return;
+            
+            // Wait a tick for container to be fully rendered
+            setTimeout(() => loadViewer(objUrl, container), 100);
+        }
+        
+        function loadViewer(objUrl, container) {
+            try {
+                if (typeof THREE === 'undefined') {
+                    console.error('Three.js not loaded');
+                    container.innerHTML = '<div class="no-viewer">3D viewer library not loaded</div>';
+                    return;
+                }
+                
+                // Simple OrbitControls implementation
+                class OrbitControls {
+                    constructor(camera, domElement) {
+                        this.camera = camera;
+                        this.domElement = domElement;
+                        this.target = new THREE.Vector3();
+                        this.enableDamping = false;
+                        this.dampingFactor = 0.05;
+                        
+                        this.rotateSpeed = 1.0;
+                        this.zoomSpeed = 1.0;
+                        this.panSpeed = 1.0;
+                        
+                        this.spherical = new THREE.Spherical();
+                        this.sphericalDelta = new THREE.Spherical();
+                        this.scale = 1;
+                        this.panOffset = new THREE.Vector3();
+                        
+                        this.rotateStart = new THREE.Vector2();
+                        this.rotateEnd = new THREE.Vector2();
+                        this.rotateDelta = new THREE.Vector2();
+                        
+                        this.panStart = new THREE.Vector2();
+                        this.panEnd = new THREE.Vector2();
+                        this.panDelta = new THREE.Vector2();
+                        
+                        this.state = 'NONE';
+                        
+                        this.domElement.addEventListener('mousedown', this.onMouseDown.bind(this));
+                        this.domElement.addEventListener('wheel', this.onMouseWheel.bind(this));
+                        this.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+                    }
+                    
+                    onMouseDown(event) {
+                        if (event.button === 0) {
+                            this.state = 'ROTATE';
+                            this.rotateStart.set(event.clientX, event.clientY);
+                        } else if (event.button === 2) {
+                            this.state = 'PAN';
+                            this.panStart.set(event.clientX, event.clientY);
+                        }
+                        
+                        this.domElement.addEventListener('mousemove', this.onMouseMove.bind(this));
+                        this.domElement.addEventListener('mouseup', this.onMouseUp.bind(this));
+                    }
+                    
+                    onMouseMove(event) {
+                        if (this.state === 'ROTATE') {
+                            this.rotateEnd.set(event.clientX, event.clientY);
+                            this.rotateDelta.subVectors(this.rotateEnd, this.rotateStart).multiplyScalar(this.rotateSpeed);
+                            
+                            this.sphericalDelta.theta -= 2 * Math.PI * this.rotateDelta.x / this.domElement.clientHeight;
+                            this.sphericalDelta.phi -= 2 * Math.PI * this.rotateDelta.y / this.domElement.clientHeight;
+                            
+                            this.rotateStart.copy(this.rotateEnd);
+                        } else if (this.state === 'PAN') {
+                            this.panEnd.set(event.clientX, event.clientY);
+                            this.panDelta.subVectors(this.panEnd, this.panStart).multiplyScalar(this.panSpeed);
+                            
+                            const offset = new THREE.Vector3();
+                            offset.copy(this.camera.position).sub(this.target);
+                            const targetDistance = offset.length();
+                            
+                            this.panOffset.x -= 2 * this.panDelta.x * targetDistance / this.domElement.clientHeight;
+                            this.panOffset.y += 2 * this.panDelta.y * targetDistance / this.domElement.clientHeight;
+                            
+                            this.panStart.copy(this.panEnd);
+                        }
+                    }
+                    
+                    onMouseUp() {
+                        this.state = 'NONE';
+                        this.domElement.removeEventListener('mousemove', this.onMouseMove.bind(this));
+                        this.domElement.removeEventListener('mouseup', this.onMouseUp.bind(this));
+                    }
+                    
+                    onMouseWheel(event) {
+                        event.preventDefault();
+                        if (event.deltaY < 0) {
+                            this.scale *= 0.95;
+                        } else {
+                            this.scale /= 0.95;
+                        }
+                    }
+                    
+                    update() {
+                        const offset = new THREE.Vector3();
+                        offset.copy(this.camera.position).sub(this.target);
+                        
+                        this.spherical.setFromVector3(offset);
+                        this.spherical.theta += this.sphericalDelta.theta;
+                        this.spherical.phi += this.sphericalDelta.phi;
+                        this.spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, this.spherical.phi));
+                        this.spherical.radius *= this.scale;
+                        
+                        offset.setFromSpherical(this.spherical);
+                        
+                        this.target.add(this.panOffset);
+                        this.camera.position.copy(this.target).add(offset);
+                        this.camera.lookAt(this.target);
+                        
+                        this.sphericalDelta.set(0, 0, 0);
+                        this.panOffset.set(0, 0, 0);
+                        this.scale = 1;
+                    }
+                    
+                    dispose() {
+                        this.domElement.removeEventListener('mousedown', this.onMouseDown.bind(this));
+                        this.domElement.removeEventListener('wheel', this.onMouseWheel.bind(this));
+                    }
+                }
+            
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            
+            // Scene
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+            
+            // Camera - Orthographic for technical viewing
+            const aspect = width / height;
+            const frustumSize = 10;
+            const camera = new THREE.OrthographicCamera(
+                frustumSize * aspect / -2,
+                frustumSize * aspect / 2,
+                frustumSize / 2,
+                frustumSize / -2,
+                0.1,
+                1000
+            );
+            camera.position.set(5, 5, 5);
+            camera.zoom = 1;
+            
+            // Renderer
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+            
+            // Controls
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight1.position.set(5, 10, 5);
+            scene.add(directionalLight1);
+            
+            const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
+            directionalLight2.position.set(-5, -10, -5);
+            scene.add(directionalLight2);
+            
+            // Grid removed for cleaner view
+            
+            let currentModel = null;
+            let wireframeMode = false;
+            
+            // Load OBJ with MTL support
+            const objLoader = new THREE.OBJLoader();
+            
+            // Try to load MTL file first (same name as OBJ but .mtl extension)
+            const mtlUrl = objUrl.replace('.obj', '.mtl');
+            
+            fetch(mtlUrl, { method: 'HEAD' })
+                .then(response => {
+                    if (response.ok) {
+                        // MTL file exists, load it first
+                        const mtlLoader = new THREE.MTLLoader();
+                        return fetch(mtlUrl)
+                            .then(r => r.text())
+                            .then(mtlText => {
+                                const materials = mtlLoader.parse(mtlText);
+                                materials.preload();
+                                objLoader.setMaterials(materials);
+                                return true;
+                            });
+                    }
+                    return false;
+                })
+                .catch(() => false)
+                .then(() => {
+                    // Now load OBJ (with or without materials)
+                    return fetch(objUrl);
+                })
+                .then(response => response.text())
+                .then(objText => {
+                const object = objLoader.parse(objText);
+                
+                object.traverse((child) => {
+                    if (child.isMesh) {
+                        // Only apply default material if mesh has no material
+                        if (!child.material) {
+                            child.material = new THREE.MeshStandardMaterial({
+                                color: 0xcccccc,
+                                metalness: 0.2,
+                                roughness: 0.7,
+                                side: THREE.DoubleSide
+                            });
+                        }
+                        // If material exists (from MTL), just ensure double-sided rendering
+                        else {
+                            child.material.side = THREE.DoubleSide;
+                        }
+                    }
+                });
+                
+                currentModel = object;
+                scene.add(currentModel);
+                
+                // Fit camera to model (orthographic)
+                const box = new THREE.Box3().setFromObject(currentModel);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                
+                // Set camera zoom to fit model
+                camera.zoom = frustumSize / (maxDim * 1.2);
+                camera.position.set(center.x + 20, center.y + 20, center.z + 20);
+                camera.updateProjectionMatrix();
+                
+                controls.target.copy(center);
+                controls.update();
+                
+            })
+            .catch(error => {
+                console.error('Error loading OBJ:', error);
+                container.innerHTML = '<div class="no-viewer">Failed to load 3D model</div>';
+            });
+            
+            // Button handlers
+            document.getElementById('resetViewBtn')?.addEventListener('click', () => {
+                if (currentModel) {
+                    const box = new THREE.Box3().setFromObject(currentModel);
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    
+                    camera.zoom = frustumSize / (maxDim * 1.2);
+                    camera.position.set(center.x + 20, center.y + 20, center.z + 20);
+                    camera.updateProjectionMatrix();
+                    
+                    controls.target.copy(center);
+                    controls.update();
+                }
+            });
+            
+            document.getElementById('wireframeBtn')?.addEventListener('click', function() {
+                wireframeMode = !wireframeMode;
+                if (currentModel) {
+                    currentModel.traverse((child) => {
+                        if (child.isMesh) {
+                            child.material.wireframe = wireframeMode;
+                        }
+                    });
+                }
+                this.classList.toggle('active', wireframeMode);
+            });
+            
+            // Animation loop
+            function animate() {
+                requestAnimationFrame(animate);
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+            
+            // Store viewer for cleanup
+            viewer3D = {
+                cleanup: () => {
+                    renderer.dispose();
+                    controls.dispose();
+                    if (container.contains(renderer.domElement)) {
+                        container.removeChild(renderer.domElement);
+                    }
+                }
+            };
+            
+            } catch (error) {
+                console.error('Error initializing 3D viewer:', error);
+                container.innerHTML = '<div class="no-viewer">Failed to initialize 3D viewer</div>';
+            }
+        }
+    </script>
+</body>
+</html>

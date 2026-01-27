@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Part Lookup</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, sans-serif; background: #020617; color: #e5e7eb; }
+        
+        /* Landing Page */
+        .landing { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 20px; }
+        .landing h1 { font-size: 28px; margin-bottom: 24px; }
+        
+        .project-select-large { 
+            width: 100%; max-width: 500px; padding: 16px 20px; font-size: 18px;
+            border-radius: 8px; border: 2px solid #334155; background: #1e293b; color: #e5e7eb;
+            margin-bottom: 24px;
+        }
+        
+        .search-box { 
+            width: 100%; max-width: 500px; padding: 12px 16px; font-size: 16px;
+            border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #e5e7eb;
+            margin-bottom: 16px;
+        }
+        
+        .parts-grid { 
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); 
+            gap: 12px; width: 100%; max-width: 900px; 
+        }
+        .part-card {
+            background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+            padding: 16px; cursor: pointer; transition: all 0.2s;
+        }
+        .part-card:hover { border-color: #38bdf8; background: #0f172a; }
+        .part-card .part-num { font-size: 18px; font-weight: 600; color: #38bdf8; }
+        .part-card .part-desc { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+        .part-card .part-qty { font-size: 14px; margin-top: 8px; }
+        .part-card .part-status { font-size: 11px; margin-top: 4px; padding: 3px 8px; border-radius: 4px; display: inline-block; }
+        .part-card .part-status.complete { background: #065f46; color: #6ee7b7; }
+        .part-card .part-status.in-progress { background: #1e3a8a; color: #93c5fd; }
+        .part-card .part-status.not-started { background: #374151; color: #9ca3af; }
+        
+        .back-link { color: #9ca3af; text-decoration: none; margin-bottom: 20px; font-size: 14px; }
+        .back-link:hover { color: #e5e7eb; }
+        
+        /* Part Detail Page */
+        .part-page { display: none; min-height: 100vh; }
+        .part-page.active { display: block; }
+        
+        .part-header { 
+            background: #0f172a; padding: 16px 24px; border-bottom: 1px solid #1e293b;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .part-header h1 { margin: 0; font-size: 24px; }
+        .part-header h1 span { color: #38bdf8; }
+        .part-meta { font-size: 13px; color: #9ca3af; }
+        
+        .btn { padding: 10px 20px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px; font-weight: 500; }
+        .btn-secondary { background: #374151; color: white; }
+        .btn-secondary:hover { background: #4b5563; }
+        .btn-success { background: #059669; color: white; }
+        .btn-success:hover { background: #047857; }
+        .btn-lg { padding: 14px 28px; font-size: 16px; }
+        
+        .routing-section { padding: 24px; }
+        .routing-section h2 { margin: 0 0 16px; font-size: 18px; }
+        
+        .routing-card {
+            background: #1e293b; border-radius: 8px; padding: 16px; margin-bottom: 12px;
+            display: grid; grid-template-columns: auto 1fr auto auto; gap: 16px; align-items: center;
+        }
+        .routing-card.completed { opacity: 0.6; }
+        .station-code { font-size: 24px; font-weight: 700; color: #38bdf8; width: 60px; text-align: center; }
+        .station-info h3 { margin: 0; font-size: 16px; }
+        .station-info .est-time { font-size: 12px; color: #9ca3af; margin-top: 2px; }
+        
+        .time-input-group { display: flex; align-items: center; gap: 8px; }
+        .time-input-group label { font-size: 12px; color: #9ca3af; }
+        .time-input-group input {
+            width: 80px; padding: 10px; border-radius: 6px; border: 1px solid #334155;
+            background: #0f172a; color: #e5e7eb; font-size: 16px; text-align: center;
+        }
+        
+        .station-status { text-align: center; }
+        .status-check { font-size: 28px; }
+        .status-check.done { color: #6ee7b7; }
+        .status-check.pending { color: #374151; }
+        
+        .worker-section { 
+            background: #0f172a; padding: 16px 24px; border-bottom: 1px solid #1e293b;
+            display: flex; gap: 16px; align-items: center;
+        }
+        .worker-section label { font-size: 14px; color: #9ca3af; }
+        .worker-section input {
+            padding: 10px 16px; border-radius: 6px; border: 1px solid #334155;
+            background: #1e293b; color: #e5e7eb; font-size: 14px; width: 200px;
+        }
+        
+        .save-bar {
+            background: #0f172a; padding: 16px 24px; border-top: 1px solid #1e293b;
+            position: sticky; bottom: 0; display: flex; gap: 12px; justify-content: center;
+        }
+        
+        .pdf-section { padding: 24px; border-top: 1px solid #1e293b; }
+        .pdf-section h2 { margin: 0 0 16px; font-size: 18px; }
+        .pdf-viewer { background: white; border-radius: 8px; overflow: hidden; height: 800px; }
+        .pdf-viewer iframe { width: 100%; height: 100%; border: none; }
+        .no-pdf { display: flex; align-items: center; justify-content: center; height: 200px; background: #1e293b; border-radius: 8px; color: #6b7280; }
+        
+        .status-msg { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 14px; z-index: 100; }
+        .status-msg.success { background: #065f46; color: #6ee7b7; }
+        .status-msg.error { background: #7f1d1d; color: #fca5a5; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="statusMsg" class="status-msg hidden"></div>
+
+<!-- Landing Page -->
+<div id="landing" class="landing">
+    <a href="mrp_dashboard.html" class="back-link">&#x2190; Back to Dashboard</a>
+    <h1>Part Lookup</h1>
+    
+    <select id="projectSelect" class="project-select-large" onchange="loadParts()">
+        <option value="">-- Select Project --</option>
+    </select>
+    
+    <input type="text" id="searchBox" class="search-box" placeholder="Search parts..." oninput="filterParts()" />
+    
+    <div id="partsGrid" class="parts-grid"></div>
+</div>
+
+<!-- Part Detail Page -->
+<div id="partPage" class="part-page">
+    <div class="part-header">
+        <div>
+            <h1><span id="partNumber"></span></h1>
+            <div class="part-meta"><span id="partDesc"></span> | Qty: <span id="partQty"></span></div>
+        </div>
+        <button class="btn btn-secondary" onclick="backToList()">&#x2190; Back to Parts</button>
+    </div>
+    
+    <div class="worker-section">
+        <label>Your Name:</label>
+        <input type="text" id="workerName" placeholder="Enter your name..." />
+    </div>
+    
+    <div class="routing-section">
+        <h2>Routing Operations</h2>
+        <div id="routingCards"></div>
+    </div>
+    
+    <div class="save-bar">
+        <button class="btn btn-lg btn-success" onclick="saveAllTime()">&#x1F4BE; Save Time Entries</button>
+        <button class="btn btn-lg btn-success" onclick="markAllComplete()">&#x2714; Mark All Complete</button>
+    </div>
+    
+    <div class="pdf-section">
+        <h2>Drawing / Documentation</h2>
+        <div id="pdfViewer" class="pdf-viewer"></div>
+    </div>
+</div>
+
+<script>
+const API = 'http://DATASERVER:8086';
+
+let projects = [];
+let parts = [];
+let filteredParts = [];
+let currentPart = null;
+let currentRouting = [];
+let completion = [];
+let files = [];
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadProjects();
+    await loadFiles();
+    
+    // Check URL params for direct linking
+    const params = new URLSearchParams(window.location.search);
+    const projectParam = params.get('project');
+    const partParam = params.get('part');
+    
+    if (projectParam) {
+        document.getElementById('projectSelect').value = projectParam;
+        await loadParts();
+        
+        if (partParam && parts.length > 0) {
+            // Find the part - try exact match first, then case-insensitive
+            const part = parts.find(p => p.item_number === partParam) ||
+                        parts.find(p => p.item_number.toLowerCase() === partParam.toLowerCase());
+            if (part) {
+                openPart(part.item_number);
+            }
+        }
+    }
+});
+
+async function loadProjects() {
+    const res = await fetch(`${API}/api/projects`);
+    projects = await res.json();
+    const select = document.getElementById('projectSelect');
+    select.innerHTML = '<option value="">-- Select Project --</option>' +
+        projects.filter(p => p.status === 'Released' || p.status === 'Setup')
+            .map(p => `<option value="${p.project_code}">${p.project_code} - ${p.description || p.customer || ''}</option>`)
+            .join('');
+}
+
+async function loadFiles() {
+    const res = await fetch(`${API}/api/files`);
+    files = await res.json();
+}
+
+async function loadParts() {
+    const code = document.getElementById('projectSelect').value;
+    if (!code) {
+        parts = [];
+        renderParts();
+        return;
+    }
+    
+    const [partsRes, completionRes] = await Promise.all([
+        fetch(`${API}/api/projects/${code}/parts`),
+        fetch(`${API}/api/part-completion?project=${code}`)
+    ]);
+    
+    parts = await partsRes.json();
+    completion = await completionRes.json();
+    
+    // Load routing for status calculation
+    for (const part of parts) {
+        const routingRes = await fetch(`${API}/api/routing/${part.item_number}`);
+        part.routing = await routingRes.json();
+        if (!Array.isArray(part.routing)) part.routing = [];
+        
+        part.completedStations = completion.filter(c => c.item_number === part.item_number).length;
+        part.status = part.completedStations === 0 ? 'not-started' : 
+                      part.completedStations >= part.routing.length ? 'complete' : 'in-progress';
+    }
+    
+    filteredParts = parts;
+    renderParts();
+}
+
+function filterParts() {
+    const search = document.getElementById('searchBox').value.toLowerCase();
+    filteredParts = parts.filter(p => 
+        p.item_number.toLowerCase().includes(search) ||
+        (p.description || '').toLowerCase().includes(search)
+    );
+    renderParts();
+}
+
+function renderParts() {
+    const grid = document.getElementById('partsGrid');
+    
+    if (filteredParts.length === 0) {
+        grid.innerHTML = '<div style="color:#6b7280; grid-column: 1/-1; text-align:center; padding:40px;">No parts found</div>';
+        return;
+    }
+    
+    grid.innerHTML = filteredParts.map(p => `
+        <div class="part-card" onclick="openPart('${p.item_number}')">
+            <div class="part-num">${p.item_number}</div>
+            <div class="part-desc">${p.description || '-'}</div>
+            <div class="part-qty">Qty: ${p.quantity}</div>
+            <div class="part-status ${p.status}">${p.status.replace('-', ' ')}</div>
+        </div>
+    `).join('');
+}
+
+async function openPart(itemNumber) {
+    currentPart = parts.find(p => p.item_number === itemNumber);
+    if (!currentPart) return;
+    
+    // Get routing
+    const routingRes = await fetch(`${API}/api/routing/${itemNumber}`);
+    currentRouting = await routingRes.json();
+    if (!Array.isArray(currentRouting)) currentRouting = [];
+    
+    // Get completion for this part
+    const partCompletion = completion.filter(c => c.item_number === itemNumber);
+    
+    document.getElementById('partNumber').textContent = currentPart.item_number;
+    document.getElementById('partDesc').textContent = currentPart.description || '-';
+    document.getElementById('partQty').textContent = currentPart.quantity;
+    
+    // Render routing cards
+    const cardsHtml = currentRouting.map(r => {
+        const isComplete = partCompletion.some(c => c.station_code === r.station_code);
+        const totalEst = (r.est_time_min || 0) * currentPart.quantity;
+        
+        return `
+            <div class="routing-card ${isComplete ? 'completed' : ''}" data-station="${r.station_code}">
+                <div class="station-code">${r.station_code}</div>
+                <div class="station-info">
+                    <h3>${r.station_name}</h3>
+                    <div class="est-time">Est: ${r.est_time_min || 0} min x ${currentPart.quantity} = ${totalEst} min total</div>
+                </div>
+                <div class="time-input-group">
+                    <label>Actual:</label>
+                    <input type="number" class="time-entry" data-station="${r.station_code}" 
+                           placeholder="min" min="0" step="0.5" ${isComplete ? 'disabled' : ''} />
+                </div>
+                <div class="station-status">
+                    <div class="status-check ${isComplete ? 'done' : 'pending'}">${isComplete ? '&#x2714;' : '&#x25CB;'}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    document.getElementById('routingCards').innerHTML = cardsHtml || '<div style="color:#6b7280;">No routing defined</div>';
+    
+    // Render PDF
+    const pdfFile = files.find(f => f.item_number === itemNumber && f.file_type === 'PDF');
+    const pdfViewer = document.getElementById('pdfViewer');
+    if (pdfFile) {
+        pdfViewer.innerHTML = `<iframe src="${API}/api/pdf?path=${encodeURIComponent(pdfFile.file_path)}"></iframe>`;
+    } else {
+        pdfViewer.innerHTML = '<div class="no-pdf">No PDF available for this part</div>';
+    }
+    
+    // Show part page
+    document.getElementById('landing').style.display = 'none';
+    document.getElementById('partPage').classList.add('active');
+}
+
+function backToList() {
+    document.getElementById('partPage').classList.remove('active');
+    document.getElementById('landing').style.display = 'flex';
+    currentPart = null;
+}
+
+async function saveAllTime() {
+    const worker = document.getElementById('workerName').value || 'Unknown';
+    const projectCode = document.getElementById('projectSelect').value;
+    const entries = document.querySelectorAll('.time-entry:not(:disabled)');
+    
+    let saved = 0;
+    for (const input of entries) {
+        const time = parseFloat(input.value);
+        if (time > 0) {
+            await fetch(`${API}/api/time-logs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    project_code: projectCode,
+                    item_number: currentPart.item_number,
+                    station_code: input.dataset.station,
+                    worker: worker,
+                    time_min: time
+                })
+            });
+            input.value = '';
+            saved++;
+        }
+    }
+    
+    if (saved > 0) {
+        showStatus(`Saved ${saved} time entries`, 'success');
+    } else {
+        showStatus('No time entries to save', 'error');
+    }
+}
+
+async function markAllComplete() {
+    const worker = document.getElementById('workerName').value || 'Unknown';
+    const projectCode = document.getElementById('projectSelect').value;
+    
+    // Get incomplete stations
+    const incompleteCards = document.querySelectorAll('.routing-card:not(.completed)');
+    
+    if (incompleteCards.length === 0) {
+        showStatus('All stations already complete', 'error');
+        return;
+    }
+    
+    for (const card of incompleteCards) {
+        const stationCode = card.dataset.station;
+        
+        await fetch(`${API}/api/part-completion`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_code: projectCode,
+                item_number: currentPart.item_number,
+                station_code: stationCode,
+                qty_complete: currentPart.quantity,
+                completed_by: worker
+            })
+        });
+    }
+    
+    showStatus(`Marked ${incompleteCards.length} stations complete`, 'success');
+    
+    // Refresh
+    await loadParts();
+    openPart(currentPart.item_number);
+}
+
+function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.className = `status-msg ${type}`;
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 3000);
+}
+</script>
+</body>
+</html>

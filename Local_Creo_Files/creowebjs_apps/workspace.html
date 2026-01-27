@@ -1,0 +1,1307 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Workspace Comparison</title>
+    <script src="creojs.js"></script>
+    <script type="text/creojs" src="browser.creojs"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 100%;
+            margin: 0;
+            background: white;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        /* Fixed Header Section */
+        .header-section {
+            position: sticky;
+            top: 0;
+            background: white;
+            z-index: 100;
+            border-bottom: 2px solid #e0e0e0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        /* Controls Bar */
+        .controls-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            background: #fafafa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .search-box {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        
+        .search-box:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+        
+        .action-dropdown {
+            padding: 6px 12px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 13px;
+            background: white;
+            cursor: pointer;
+            min-width: 120px;
+        }
+        
+        .action-dropdown:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+		
+		.pdm-browser-btn {
+            padding: 6px 12px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        
+        .pdm-browser-btn:hover {
+            background: #357abd;
+        }
+        
+        .pdm-browser-btn:active {
+            background: #2868a8;
+        }
+        
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .filter-label {
+            font-size: 12px;
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .filter-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .filter-checkbox input[type="checkbox"] {
+            cursor: pointer;
+        }
+        
+        .filter-checkbox .prt { color: #4a90e2; font-weight: 600; }
+        .filter-checkbox .asm { color: #ff8c00; font-weight: 600; }
+        .filter-checkbox .drw { color: #28a745; font-weight: 600; }
+        
+        /* Bulk Actions Bar */
+        .bulk-actions {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            background: #e3f2fd;
+            border-bottom: 1px solid #90caf9;
+        }
+        
+        .bulk-actions.visible {
+            display: flex;
+        }
+        
+        .selection-count {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1976d2;
+        }
+        
+        .bulk-btn {
+            padding: 5px 12px;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .bulk-btn:hover {
+            background: #1565c0;
+        }
+        
+        .bulk-btn.secondary {
+            background: #fff;
+            color: #666;
+            border: 1px solid #ccc;
+        }
+        
+        .bulk-btn.secondary:hover {
+            background: #f5f5f5;
+        }
+        
+        /* Table Header - Fixed */
+        .table-header {
+            background: #f8f8f8;
+            border-bottom: 2px solid #ccc;
+            position: sticky;
+            top: 0;
+        }
+        
+        .table-header-row {
+            display: grid;
+            grid-template-columns: 40px 40px 100px 200px 200px 100px 140px 140px;
+            align-items: center;
+            padding: 0;
+            min-height: 32px;
+        }
+        
+        .table-header-cell {
+            padding: 8px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            border-right: 1px solid #e0e0e0;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            height: 100%;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .table-header-cell:hover {
+            background: #eee;
+        }
+        
+        .table-header-cell .resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            height: 100%;
+            cursor: col-resize;
+            background: transparent;
+            z-index: 1;
+        }
+        
+        .table-header-cell .resizer:hover {
+            background: #4a90e2;
+        }
+        
+        .table-header-cell .sort-indicator {
+            margin-left: 4px;
+            font-size: 10px;
+            color: #4a90e2;
+        }
+        
+        .table-header-cell:last-child {
+            border-right: none;
+        }
+        
+        .table-header-cell.center {
+            justify-content: center;
+        }
+        
+        /* Scrollable Table Body */
+        .table-body {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        
+        .table-row {
+            display: grid;
+            grid-template-columns: 40px 40px 100px 200px 200px 100px 140px 140px;
+            align-items: center;
+            border-bottom: 1px solid #e8e8e8;
+            transition: background 0.1s;
+            min-height: 32px;
+        }
+        
+        .table-row:hover {
+            background: #f9f9f9;
+        }
+        
+        .table-cell {
+            padding: 6px 8px;
+            font-size: 12px;
+            border-right: 1px solid #f0f0f0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
+        
+        .table-cell:last-child {
+            border-right: none;
+        }
+        
+        .table-cell.center {
+            justify-content: center;
+        }
+        
+        .table-cell input[type="checkbox"] {
+            cursor: pointer;
+            margin: 0;
+        }
+        
+        .table-cell.filename {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-weight: 500;
+        }
+        
+        .table-cell.status {
+            font-weight: 600;
+            font-size: 11px;
+        }
+        
+        .table-cell.timestamp {
+            font-size: 11px;
+            color: #888;
+        }
+        
+        .table-cell.description {
+            color: #666;
+            font-size: 11px;
+        }
+        
+        /* Status Colors */
+        .status-up-to-date { color: #28a745; }
+        .status-modified { color: #dc3545; }
+        .status-newer { color: #ffc107; }
+        .status-not-in-vault { color: #6c757d; }
+        
+        /* Action Button */
+        .action-btn {
+            padding: 3px 10px;
+            background: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        
+        .action-btn:hover {
+            background: #357abd;
+        }
+        
+        .action-btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* Debug Console */
+        .debug-console {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 200px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+            overflow-y: auto;
+            padding: 8px;
+            border-top: 2px solid #333;
+            display: none;
+            z-index: 1000;
+        }
+        
+        .debug-console.visible {
+            display: block;
+        }
+        
+        .debug-line {
+            padding: 2px 0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+        
+        .debug-line .timestamp {
+            color: #858585;
+            margin-right: 8px;
+        }
+        
+        .debug-line.info { color: #4fc3f7; }
+        .debug-line.success { color: #81c784; }
+        .debug-line.warn { color: #ffb74d; }
+        .debug-line.error { color: #e57373; }
+        
+        .debug-toggle {
+            position: fixed;
+            bottom: 8px;
+            right: 8px;
+            padding: 6px 12px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            z-index: 1001;
+        }
+        
+        .debug-toggle:hover {
+            background: #444;
+        }
+        
+        /* Loading/Error States */
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #999;
+            font-size: 14px;
+        }
+        
+        .error {
+            background: #fee;
+            color: #c00;
+            padding: 16px;
+            margin: 16px;
+            border-radius: 4px;
+            border-left: 4px solid #c00;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- CreoJS functions that run in Creo context -->
+    <script type="text/creojs">
+        function getWorkspaceFiles() {
+            var session = pfcGetCurrentSession();
+            var workingDir = session.GetCurrentDirectory();
+            var results = {workingDir: workingDir, files: []};
+            
+            // List parts
+            var parts = session.ListFiles("*.prt", pfcFileListOpt.FILE_LIST_LATEST, workingDir);
+            if (parts != null) {
+                for (var i = 0; i < parts.length; i++) {
+                    var fullPath = parts[i];
+                    var basename = fullPath.split('\\').pop().split('/').pop();
+                    results.files.push({
+                        filename: basename,
+                        fullPath: fullPath,
+                        description: "",
+                        lastWriteTime: ""
+                    });
+                }
+            }
+            
+            // List assemblies
+            var asms = session.ListFiles("*.asm", pfcFileListOpt.FILE_LIST_LATEST, workingDir);
+            if (asms != null) {
+                for (var i = 0; i < asms.length; i++) {
+                    var fullPath = asms[i];
+                    var basename = fullPath.split('\\').pop().split('/').pop();
+                    results.files.push({
+                        filename: basename,
+                        fullPath: fullPath,
+                        description: "",
+                        lastWriteTime: ""
+                    });
+                }
+            }
+            
+            // List drawings
+            var drws = session.ListFiles("*.drw", pfcFileListOpt.FILE_LIST_LATEST, workingDir);
+            if (drws != null) {
+                for (var i = 0; i < drws.length; i++) {
+                    var fullPath = drws[i];
+                    var basename = fullPath.split('\\').pop().split('/').pop();
+                    results.files.push({
+                        filename: basename,
+                        fullPath: fullPath,
+                        description: "",
+                        lastWriteTime: ""
+                    });
+                }
+            }
+            
+            return results;
+        }
+        
+        function openFileInCreo(filename) {
+            try {
+                var session = pfcGetCurrentSession();
+                var fileType = filename.toLowerCase();
+                var modelType;
+                
+                if (fileType.endsWith('.prt')) {
+                    modelType = pfcModelType.MDL_PART;
+                } else if (fileType.endsWith('.asm')) {
+                    modelType = pfcModelType.MDL_ASSEMBLY;
+                } else if (fileType.endsWith('.drw')) {
+                    modelType = pfcModelType.MDL_DRAWING;
+                } else {
+                    return {success: false, error: "Unknown file type"};
+                }
+                
+                var descr = pfcModelDescriptor.Create(modelType, filename, "");
+                var model = session.RetrieveModel(descr);
+                
+                if (model != null) {
+                    // Create window but DON'T activate it to allow multiple files to stay open
+                    var window = session.GetModelWindow(model);
+                    if (window == null) {
+                        window = session.CreateModelWindow(model);
+                    }
+                    // Do NOT set session.CurrentModel - that closes other windows!
+                    // Just create the window and leave it alone
+                    return {success: true};
+                } else {
+                    return {success: false, error: "Could not retrieve model"};
+                }
+            } catch (e) {
+                return {success: false, error: e.toString()};
+            }
+        }
+    </script>
+    
+    <div class="container">
+        <!-- Fixed Header Section -->
+        <div class="header-section">
+            <div class="controls-bar">
+                <input type="text" class="search-box" id="searchBox" placeholder="Search files...">
+                
+                <button class="pdm-browser-btn" onclick="openPDMBrowser()">
+                    📊 PDM Browser
+                </button>
+                
+                <select class="action-dropdown" id="actionDropdown">
+                    <option value="open">Actions</option>
+                    <option value="open">Open</option>
+                    <option value="checkin">Check-In</option>
+                    <option value="download">Download</option>
+                </select>
+                
+                <div class="filter-group">
+                    <span class="filter-label">Filter:</span>
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="filterPRT" checked>
+                        <span class="prt">PRT</span>
+                    </label>
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="filterASM" checked>
+                        <span class="asm">ASM</span>
+                    </label>
+                    <label class="filter-checkbox">
+                        <input type="checkbox" id="filterDRW" checked>
+                        <span class="drw">DRW</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Bulk Actions Bar -->
+            <div class="bulk-actions" id="bulkActionsBar">
+                <span class="selection-count" id="selectedCount">0 selected</span>
+                <button class="bulk-btn" onclick="openSelected()">Open Selected</button>
+                <button class="bulk-btn secondary" onclick="clearSelection()">Clear Selection</button>
+            </div>
+            
+            <!-- Table Header -->
+            <div class="table-header">
+                <div class="table-header-row">
+                    <div class="table-header-cell center">
+                        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                    </div>
+                    <div class="table-header-cell center"></div>
+                    <div class="table-header-cell" data-sort="status" onclick="sortTable('status')">
+                        Status<span class="sort-indicator"></span>
+                        <div class="resizer" onmousedown="initResize(event, 2)"></div>
+                    </div>
+                    <div class="table-header-cell" data-sort="filename" onclick="sortTable('filename')">
+                        File<span class="sort-indicator"></span>
+                        <div class="resizer" onmousedown="initResize(event, 3)"></div>
+                    </div>
+                    <div class="table-header-cell" data-sort="description" onclick="sortTable('description')">
+                        Description<span class="sort-indicator"></span>
+                        <div class="resizer" onmousedown="initResize(event, 4)"></div>
+                    </div>
+                    <div class="table-header-cell center">
+                        Action
+                        <div class="resizer" onmousedown="initResize(event, 5)"></div>
+                    </div>
+                    <div class="table-header-cell" data-sort="timestamp" onclick="sortTable('timestamp')">
+                        Last Modified (Local)<span class="sort-indicator"></span>
+                        <div class="resizer" onmousedown="initResize(event, 6)"></div>
+                    </div>
+                    <div class="table-header-cell" data-sort="vaultTime" onclick="sortTable('vaultTime')">
+                        Last Modified (Vault)<span class="sort-indicator"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Scrollable Table Body -->
+        <div class="table-body" id="tableBody">
+            <div class="loading" id="loadingMessage">Loading workspace data...</div>
+        </div>
+    </div>
+    
+    <!-- Debug Console -->
+    <button class="debug-toggle" onclick="toggleDebug()">Debug Console</button>
+    <div class="debug-console" id="debugConsole"></div>
+    
+    <script>
+        // Debug logging
+        function debugLog(message, level = 'info') {
+            const console = document.getElementById('debugConsole');
+            const line = document.createElement('div');
+            line.className = `debug-line ${level}`;
+            
+            const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+            line.innerHTML = `<span class="timestamp">[${timestamp}]</span>${message}`;
+            
+            console.appendChild(line);
+            console.scrollTop = console.scrollHeight;
+        }
+        
+        function toggleDebug() {
+            const console = document.getElementById('debugConsole');
+            console.classList.toggle('visible');
+        }
+        
+        // File data map
+        const fileDataMap = {};
+		let currentWorkspaceDir = '';  // Global variable
+        
+        // Initialize on load
+        window.addEventListener('load', function() {
+            debugLog('Workspace Compare Tool Loaded', 'success');
+            
+            // Setup UI event listeners
+            document.getElementById('searchBox').addEventListener('input', applyFilters);
+            document.getElementById('filterPRT').addEventListener('change', applyFilters);
+            document.getElementById('filterASM').addEventListener('change', applyFilters);
+            document.getElementById('filterDRW').addEventListener('change', applyFilters);
+            document.getElementById('actionDropdown').addEventListener('change', handleAction);
+            
+            // Check if we're in Creo mode
+            if (typeof CreoJS !== 'undefined') {
+                debugLog('Running in Creo mode', 'info');
+                // Give CreoJS a moment to initialize, then load
+                setTimeout(loadWorkspaceData, 500);
+            } else {
+                debugLog('Running in standalone mode', 'warn');
+                loadMockData();
+            }
+        });
+        
+        async function loadWorkspaceData() {
+            try {
+                debugLog('Calling CreoJS.getWorkspaceFiles()...', 'info');
+                const result = await CreoJS.getWorkspaceFiles();
+                
+                if (!result || !result.files) {
+                    throw new Error('Invalid response from CreoJS.getWorkspaceFiles()');
+                }
+                
+                debugLog(`Got ${result.files.length} files from workspace: ${result.workingDir}`, 'success');
+                
+                const workingDir = result.workingDir;
+				currentWorkspaceDir = workingDir;  // Store globally
+                let files = result.files;
+				
+				debugLog('Storing files in fileDataMap...', 'info');
+				files.forEach(file => {
+					fileDataMap[file.filename] = {
+						filename: file.filename,
+						fullPath: file.fullPath,  // This is what we need to preserve!
+						description: file.description || '',
+						lastWriteTime: file.lastWriteTime || 'Unknown'
+					};
+				});
+				debugLog(`Stored ${files.length} files in fileDataMap`, 'success');
+                
+                if (files.length === 0) {
+                    debugLog('No CAD files found!', 'error');
+                    document.getElementById('tableBody').innerHTML = 
+                        '<div class="loading">No CAD files found in current working directory: ' + workingDir + '</div>';
+                    return;
+                }
+                
+                // Get timestamps using File API
+                debugLog('Getting file timestamps...', 'info');
+                for (let i = 0; i < files.length; i++) {
+                    try {
+                        const response = await fetch('file:///' + files[i].fullPath.replace(/\\/g, '/'), {method: 'HEAD'});
+                        const lastModified = response.headers.get('Last-Modified');
+                        if (lastModified) {
+                            files[i].lastWriteTime = new Date(lastModified).toLocaleString();
+                        } else {
+                            files[i].lastWriteTime = 'Unknown';
+                        }
+                    } catch (e) {
+                        files[i].lastWriteTime = 'Unknown';
+                    }
+                }
+                
+                // Send to PowerShell server for comparison
+                debugLog('Sending to server for vault comparison...', 'info');
+                const serverUrl = 'http://DATASERVER:8082/api/compare-filelist';
+                
+                const response = await fetch(serverUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        workspacePath: workingDir,
+                        files: files 
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                debugLog(`Vault comparison complete`, 'success');
+                
+                // Process the results
+                processServerResponse(data, files);
+                
+            } catch (error) {
+                debugLog(`Error loading workspace: ${error.message}`, 'error');
+                document.getElementById('tableBody').innerHTML = 
+                    `<div class="error">Error loading workspace data: ${error.message}<br><br>Make sure the PowerShell server is running on DATASERVER:8082</div>`;
+            }
+        }
+        
+        function processServerResponse(data, files) {
+			// Create file data map from server response
+			const fileMap = {};
+			
+			// Process each category
+			['upToDate', 'needCheckIn', 'needUpdate', 'notInVault'].forEach(category => {
+				const categoryFiles = data[category] || [];
+				categoryFiles.forEach(item => {
+					const filename = item.file;
+					
+					// Get existing file data (has fullPath from CreoJS)
+					const existingData = fileDataMap[filename] || {};
+					
+					// Merge server data WITH existing data (preserves fullPath!)
+					fileMap[filename] = {
+						filename: filename,
+						fullPath: existingData.fullPath || '',  // ← PRESERVE THIS!
+						status: item.status,
+						statusColor: getStatusColor(item.status),
+						description: item.description || '',
+						timestamp: item.workspaceTime || item.timestamp || 'Unknown',
+						vaultTime: item.vaultTime || 'Unknown'
+					};
+				});
+			});
+			
+			// Now merge without losing fullPath
+			Object.assign(fileDataMap, fileMap);
+            
+            // Render table
+            renderTable(Object.values(fileMap));
+        }
+        
+        function getStatusColor(status) {
+            if (!status) return '#999';
+            const lower = status.toLowerCase();
+            if (lower.includes('up to date') || lower.includes('in vault')) return '#28a745';
+            if (lower.includes('modified') || lower.includes('newer')) return '#dc3545';
+            if (lower.includes('new') || lower.includes('not in vault')) return '#6c757d';
+            if (lower.includes('out of date')) return '#ffc107';
+            return '#999';
+        }
+        
+        function loadMockData() {
+            // Mock data for standalone testing
+            debugLog('Loading mock data for testing', 'info');
+            
+            const mockFiles = [
+                { filename: 'mmc93337a110.prt', status: 'Up To Date', statusColor: '#28a745', description: 'M6 WELDNUT', timestamp: '12/29/2025, 3:04:25 PM', vaultTime: '12/29/2025, 3:04:25 PM' },
+                { filename: 'mmc93337a500.prt', status: 'Up To Date', statusColor: '#28a745', description: 'M4 WELDNUT', timestamp: '12/29/2025, 3:04:25 PM', vaultTime: '12/29/2025, 3:04:25 PM' },
+                { filename: 'xxa00010.asm', status: 'Modified Locally', statusColor: '#dc3545', description: 'COVER ASSEMBLY', timestamp: '12/29/2025, 5:51:48 PM', vaultTime: '12/29/2025, 5:51:48 PM' },
+                { filename: 'xxa00020.asm', status: 'Up To Date', statusColor: '#28a745', description: 'COVER ASSEMBLY', timestamp: '12/29/2025, 5:20:21 PM', vaultTime: '12/29/2025, 5:20:21 PM' },
+                { filename: 'xxa00790.asm', status: 'Modified Locally', statusColor: '#dc3545', description: 'MAIN GAURD', timestamp: '12/29/2025, 5:19:28 PM', vaultTime: '12/29/2025, 5:19:28 PM' },
+                { filename: 'abc12345.drw', status: 'Up To Date', statusColor: '#28a745', description: 'TEST DRAWING', timestamp: '12/29/2025, 4:30:00 PM', vaultTime: '12/29/2025, 4:30:00 PM' }
+            ];
+            
+            // Store in global map
+            mockFiles.forEach(file => {
+                fileDataMap[file.filename] = file;
+            });
+            
+            // Render table
+            renderTable(mockFiles);
+            
+            debugLog(`Rendered ${mockFiles.length} mock files`, 'success');
+        }
+
+        
+        function renderTable(files) {
+            const tableBody = document.getElementById('tableBody');
+            tableBody.innerHTML = '';
+            
+            if (files.length === 0) {
+                tableBody.innerHTML = '<div class="loading">No files found matching criteria</div>';
+                return;
+            }
+            
+            files.forEach(file => {
+                const row = document.createElement('div');
+                row.className = 'table-row';
+                
+                // Apply saved column widths if they exist
+                if (columnWidths) {
+                    row.style.gridTemplateColumns = columnWidths;
+                }
+                
+                // Get file extension
+                const fileExt = file.filename.split('.').pop().toLowerCase();
+                
+                // Checkbox
+                const checkboxCell = document.createElement('div');
+                checkboxCell.className = 'table-cell center';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'file-checkbox';
+                checkbox.setAttribute('data-filename', file.filename);
+                checkbox.onchange = updateBulkActionsBar;
+                checkboxCell.appendChild(checkbox);
+                row.appendChild(checkboxCell);
+                
+                // Type Icon
+                const typeCell = document.createElement('div');
+                typeCell.className = 'table-cell center';
+                let iconImg = '';
+                if (fileExt === 'prt') {
+                    iconImg = '<img src="data:image/webp;base64,UklGRsQDAABXRUJQVlA4WAoAAAAwAAAALwAALwAASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADZBTFBIXgAAAAFXoKBtG6b7nz/c0YiIwFuInoo22NS220ZHCCQMPiKQSqAjiPewEYOM5trS2xTR/wmAa+Rk46O0ysfpo4dW47VoNf4BuXotlZWcxZVUYB1ncSUV8M5L6oS+rEk1cI1WUDggcAEAAFAJAJ0BKjAAMAA+SR6JRCKhoRqsBqgoBISxAFv1m97Y4Y8A8XL1xejA6gDeh3Rkord0AJREt8XqSHGAqznCJzVkveiQzAT15877oS6RX05BxX/gAP7wCv1gCxRy1gesjfd99aWf7X5LWMLsV18xd2VEqOHJE2PS7EoemvQntk49MmPyb6u1bVVzJjM5sMfbXGqZ6A6Ob/5Q8Nd8RNQPvGr//zlmKC/90MwllxhwUGOpj45ry2dJd9JEKyj55OgmugHcwR9rH3wFQ9Oif0ZnsaRmzHJxlzJE7f5/g5O7ovg87j17zHytVKtN76OJ/bhiAdoU7lr+85C6jleoCd5sDzbLNaB8HS8p1I3/anOa/7EOvI1ouYqTyK9rbfMwd/NaJsjWbb4RWEh+dX4LdOTxATHo3X/+x9orfwM1q+1rZBEFCTLfW5YmjXFcCgndPLgwgGXJUX/kMAfXchZ8j5u9IDuOGGtt5n83u9zlAgngAAAA" style="width: 16px; height: 16px;">';
+                } else if (fileExt === 'asm') {
+                    iconImg = '<img src="data:image/webp;base64,UklGRsICAABXRUJQVlA4WAoAAAAwAAAADwAADwAASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADZBTFBIHQAAAAEPMP8REUIxI0lQmyzKoo323u9FiOh/QGh0Pz8DAFZQOCCuAAAA8AIAnQEqEAAQAAEAHCWwAnS6AH4Yj6Jd0AOvYsV/FIAA/v5E0sOWe36rl4W4VxKHYqg17PhPd+JqL+tnI+sv/hrngmzcIu3VcF6AoqlvZVMkz4bOxLsnrDPKdAyc2n/0mA09IK2126ng3dhxx51Aw+qDhEtRAxWnaA8Sfdds9HjD3bbESHCj+nrCX48Z/4nV2JRpgvfw4n9PZqf0moXASPyWZe+P5O/uZRFYAAAA" style="width: 16px; height: 16px;">';
+                } else if (fileExt === 'drw') {
+                    iconImg = '<img src="data:image/webp;base64,UklGRggDAABXRUJQVlA4WAoAAAAwAAAADwAADwAASUNDUMgBAAAAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADZBTFBIFAAAAAEPMP8REYJM2ibOK333HET0P1gPVlA4IP4AAABQBQCdASoQABAAAQAcJbACdLoA1AC+AOk3PZJp1f+A893+Z8Bj0L/9ZwHP63HVhVzMjSAA/vylKMQpJDhzA50t4QGaUsMSb76ph6v5D4q+cvHe8PfdSf/byqUwvCu8U+d//jt+cqv0Y4Lk3D+0dQsr1YS521HZ0Ns4opBd1/nF/bJmvf10/7bX5R+4bfVUapxvAWmQHSinAz+f0uA8iF7vxPkPn+LzNedgcectwmErHnMqpAtJqVqTPiRt5vVNT+NPUH+velnv8ipCd0I/jBBpYjPSX7PtaRWn4XOA3EIbiUOM//Bb5cEUQC4Dl+GfNRj0OP2+qunrr0WXPjgAAA==" style="width: 16px; height: 16px;">';
+                } else {
+                    iconImg = 'ðŸ“„';
+                }
+                typeCell.innerHTML = iconImg;
+                row.appendChild(typeCell);
+                
+                // Status
+                const statusCell = document.createElement('div');
+                statusCell.className = 'table-cell status';
+                statusCell.textContent = file.status;
+                statusCell.classList.add(`status-${file.status.toLowerCase().replace(/ /g, '-')}`);
+                row.appendChild(statusCell);
+                
+                // Filename
+                const fileCell = document.createElement('div');
+                fileCell.className = 'table-cell filename';
+                fileCell.textContent = file.filename;
+                fileCell.title = file.filename;
+                row.appendChild(fileCell);
+                
+                // Description
+                const descCell = document.createElement('div');
+                descCell.className = 'table-cell description';
+                descCell.textContent = file.description || '';
+                descCell.title = file.description || '';
+                row.appendChild(descCell);
+                
+                // Action
+                const actionCell = document.createElement('div');
+                actionCell.className = 'table-cell center';
+                if (typeof CreoJS !== 'undefined') {
+                    const openBtn = document.createElement('button');
+                    openBtn.textContent = 'Open';
+                    openBtn.className = 'action-btn';
+                    openBtn.onclick = () => openFile(file.filename);
+                    actionCell.appendChild(openBtn);
+                } else {
+                    actionCell.textContent = '-';
+                    actionCell.style.color = '#ccc';
+                }
+                row.appendChild(actionCell);
+                
+                // Local Timestamp
+                const timestampCell = document.createElement('div');
+                timestampCell.className = 'table-cell timestamp';
+                timestampCell.textContent = file.timestamp || '';
+                timestampCell.title = file.timestamp || '';
+                row.appendChild(timestampCell);
+                
+                // Vault Timestamp
+                const vaultTimeCell = document.createElement('div');
+                vaultTimeCell.className = 'table-cell timestamp';
+                vaultTimeCell.textContent = file.vaultTime || '';
+                vaultTimeCell.title = file.vaultTime || '';
+                row.appendChild(vaultTimeCell);
+                
+                tableBody.appendChild(row);
+            });
+            
+            // Reapply column widths to header if they exist
+            if (columnWidths) {
+                const headerRow = document.querySelector('.table-header-row');
+                if (headerRow) {
+                    headerRow.style.gridTemplateColumns = columnWidths;
+                }
+            }
+        }
+        
+        function applyFilters() {
+            const searchTerm = document.getElementById('searchBox').value.toLowerCase();
+            const filterPRT = document.getElementById('filterPRT').checked;
+            const filterASM = document.getElementById('filterASM').checked;
+            const filterDRW = document.getElementById('filterDRW').checked;
+            
+            const allFiles = Object.values(fileDataMap);
+            const filteredFiles = allFiles.filter(file => {
+                const filename = file.filename.toLowerCase();
+                const ext = filename.split('.').pop();
+                
+                // Search filter
+                if (searchTerm && !filename.includes(searchTerm) && 
+                    !(file.description || '').toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+                
+                // Type filter
+                if (ext === 'prt' && !filterPRT) return false;
+                if (ext === 'asm' && !filterASM) return false;
+                if (ext === 'drw' && !filterDRW) return false;
+                
+                return true;
+            });
+            
+            renderTable(filteredFiles);
+            debugLog(`Filtered to ${filteredFiles.length} files`, 'info');
+        }
+        
+		function handleAction() {
+			const action = document.getElementById('actionDropdown').value;
+			if (!action) return;
+			
+			// Get checked checkboxes and build file list with full data
+			const checkedBoxes = document.querySelectorAll('.file-checkbox:checked');
+			
+			if (checkedBoxes.length === 0) {
+				alert('Please select files first');
+				document.getElementById('actionDropdown').value = '';
+				return;
+			}
+			
+			// Build file list with full paths from fileDataMap
+			const selectedFiles = Array.from(checkedBoxes).map(cb => {
+				const filename = cb.getAttribute('data-filename');
+				const fileData = fileDataMap[filename];
+				if (fileData) {
+					return {
+						filename: filename,
+						fullPath: fileData.fullPath
+					};
+				}
+				return null;
+			}).filter(f => f !== null && f.fullPath);
+			
+			if (selectedFiles.length === 0) {
+				alert('Could not find file paths. Please refresh and try again.');
+				document.getElementById('actionDropdown').value = '';
+				return;
+			}
+			
+			debugLog(`Action: ${action} on ${selectedFiles.length} files`, 'info');
+			
+			switch(action) {
+				case 'open':
+					openSelected();
+					break;
+				case 'checkin':
+					checkInSelected(selectedFiles);
+					break;
+				case 'download':
+					if (currentWorkspaceDir) {
+						downloadSelected(selectedFiles, currentWorkspaceDir);
+					} else {
+						alert('Workspace directory not available. Please refresh.');
+					}
+					break;
+			}
+			
+			document.getElementById('actionDropdown').value = '';
+		}
+		
+
+		
+		async function checkInSelected(files) {
+            if (!files || files.length === 0) {
+                alert('No files selected');
+                return;
+            }
+            
+            const confirmMsg = `Copy ${files.length} file(s) to CheckIn folder?\n\n` +
+                               files.map(f => f.filename).join('\n') +
+                               `\n\nFiles will be copied (not moved) to:\nD:\\PDM_Vault\\CADData\\CheckIn`;
+            
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+            
+            debugLog(`Checking in ${files.length} files...`, 'info');
+            
+            try {
+                const response = await fetch('http://localhost:8083/api/checkin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ files: files })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Server responded with ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                const summary = data.summary;
+                let message = `Check-In Complete:\n\n`;
+                message += `✓ ${summary.succeeded} file(s) copied successfully\n`;
+                if (summary.failed > 0) {
+                    message += `✗ ${summary.failed} file(s) failed\n\n`;
+                    message += `Failed files:\n`;
+                    data.results.filter(r => !r.success).forEach(r => {
+                        message += `  - ${r.filename}: ${r.error}\n`;
+                    });
+                } else {
+                    message += `\nAll files copied to D:\\PDM_Vault\\CADData\\CheckIn`;
+                }
+                
+                alert(message);
+                debugLog(`Check-in complete: ${summary.succeeded} succeeded, ${summary.failed} failed`, 'success');
+                
+                // Clear selection after successful check-in
+                if (summary.succeeded > 0) {
+                    clearSelection();
+                }
+                
+            } catch (error) {
+                debugLog(`Check-in error: ${error.message}`, 'error');
+                alert(`Check-In Failed:\n\n${error.message}\n\nMake sure Local_PDM_Services is running on localhost:8083`);
+            }
+        }
+		
+		async function downloadSelected(files, workspaceDir) {
+			if (!files || files.length === 0) {
+				alert('No files selected');
+				return;
+			}
+			
+			const confirmMsg = `Download ${files.length} file(s) from vault to workspace?\n\n` +
+							   files.map(f => f.filename).join('\n') +
+							   `\n\nFiles will be copied to:\n${workspaceDir}`;
+			
+			if (!confirm(confirmMsg)) {
+				return;
+			}
+			
+			debugLog(`Downloading ${files.length} files...`, 'info');
+			
+			try {
+				const response = await fetch('http://localhost:8083/api/download', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ 
+						files: files,
+						workspaceDir: workspaceDir
+					})
+				});
+				
+				if (!response.ok) {
+					throw new Error(`Server responded with ${response.status}`);
+				}
+				
+				const data = await response.json();
+				
+				if (data.error) {
+					throw new Error(data.error);
+				}
+				
+				const summary = data.summary;
+				let message = `Download Complete:\n\n`;
+				message += `✓ ${summary.succeeded} file(s) downloaded successfully\n`;
+				if (summary.failed > 0) {
+					message += `✗ ${summary.failed} file(s) failed\n\n`;
+					message += `Failed files:\n`;
+					data.results.filter(r => !r.success).forEach(r => {
+						message += `  - ${r.filename}: ${r.error}\n`;
+					});
+				} else {
+					message += `\nAll files copied to ${workspaceDir}`;
+				}
+				
+				alert(message);
+				debugLog(`Download complete: ${summary.succeeded} succeeded, ${summary.failed} failed`, 'success');
+				
+				// Clear selection after successful download
+				if (summary.succeeded > 0) {
+					clearSelection();
+					// Optionally refresh the workspace to show updated files
+					// loadWorkspaceData();
+				}
+				
+			} catch (error) {
+				debugLog(`Download error: ${error.message}`, 'error');
+				alert(`Download Failed:\n\n${error.message}\n\nMake sure Local_PDM_Services is running on localhost:8083`);
+			}
+		}
+        
+        // Checkbox and bulk action functions
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.file-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateBulkActionsBar();
+        }
+        
+        function updateBulkActionsBar() {
+            const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+            const count = checkboxes.length;
+            const bar = document.getElementById('bulkActionsBar');
+            const countSpan = document.getElementById('selectedCount');
+            
+            if (count > 0) {
+                bar.classList.add('visible');
+                countSpan.textContent = count + ' selected';
+            } else {
+                bar.classList.remove('visible');
+            }
+            
+            // Update "select all" checkbox state
+            const allCheckboxes = document.querySelectorAll('.file-checkbox');
+            const selectAll = document.getElementById('selectAll');
+            selectAll.checked = (count === allCheckboxes.length && count > 0);
+        }
+        
+        function clearSelection() {
+            const checkboxes = document.querySelectorAll('.file-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = false;
+            });
+            document.getElementById('selectAll').checked = false;
+            updateBulkActionsBar();
+        }
+        
+        async function openSelected() {
+            if (typeof CreoJS === 'undefined') {
+                alert('Bulk file opening only works when running inside Creo.');
+                return;
+            }
+            
+            const checkboxes = document.querySelectorAll('.file-checkbox:checked');
+            if (checkboxes.length === 0) {
+                alert('No files selected');
+                return;
+            }
+            
+            debugLog(`Opening ${checkboxes.length} selected files...`, 'info');
+            
+            let opened = 0;
+            let failed = 0;
+            
+            for (const checkbox of checkboxes) {
+                const filename = checkbox.getAttribute('data-filename');
+                try {
+                    const result = await CreoJS.openFileInCreo(filename);
+                    if (result.success) {
+                        opened++;
+                        debugLog(`Opened ${filename}`, 'success');
+                    } else {
+                        failed++;
+                        debugLog(`Failed to open ${filename}: ${result.error}`, 'error');
+                    }
+                } catch (error) {
+                    failed++;
+                    debugLog(`Error opening ${filename}: ${error.message}`, 'error');
+                }
+                
+                // Small delay between opens
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            debugLog(`Complete: ${opened} opened, ${failed} failed`, 'info');
+        }
+        
+        async function openFile(filename) {
+            if (typeof CreoJS === 'undefined') {
+                debugLog(`Cannot open file in standalone mode: ${filename}`, 'warn');
+                alert('File opening only works when running inside Creo.\n\nFile: ' + filename);
+                return;
+            }
+            
+            debugLog(`Attempting to open: ${filename}`, 'info');
+            try {
+                const result = await CreoJS.openFileInCreo(filename);
+                debugLog(`CreoJS returned: ${JSON.stringify(result)}`, 'info');
+                
+                if (!result.success) {
+                    debugLog(`Failed: ${result.error}`, 'error');
+                    alert('Failed to open file: ' + (result.error || 'Unknown error'));
+                } else {
+                    debugLog(`Successfully opened ${filename}`, 'success');
+                }
+            } catch (error) {
+                debugLog(`Exception: ${error.message}`, 'error');
+                alert('Error opening file: ' + error.message);
+            }
+        }
+        
+        // Sorting functionality
+        let sortState = { column: null, ascending: true };
+        
+        function sortTable(column) {
+            // Toggle direction if same column, otherwise start ascending
+            if (sortState.column === column) {
+                sortState.ascending = !sortState.ascending;
+            } else {
+                sortState.column = column;
+                sortState.ascending = true;
+            }
+            
+            // Update sort indicators
+            document.querySelectorAll('.sort-indicator').forEach(el => el.textContent = '');
+            const header = document.querySelector(`[data-sort="${column}"]`);
+            if (header) {
+                header.querySelector('.sort-indicator').textContent = sortState.ascending ? 'â–²' : 'â–¼';
+            }
+            
+            // Sort the data
+            const allFiles = Object.values(fileDataMap);
+            allFiles.sort((a, b) => {
+                let aVal = a[column] || '';
+                let bVal = b[column] || '';
+                
+                // Convert to strings for comparison
+                aVal = String(aVal).toLowerCase();
+                bVal = String(bVal).toLowerCase();
+                
+                if (aVal < bVal) return sortState.ascending ? -1 : 1;
+                if (aVal > bVal) return sortState.ascending ? 1 : -1;
+                return 0;
+            });
+            
+            renderTable(allFiles);
+            debugLog(`Sorted by ${column} (${sortState.ascending ? 'ascending' : 'descending'})`, 'info');
+        }
+        
+        // Column resizing functionality
+        let resizeState = { isResizing: false, currentColumn: -1, startX: 0, startWidth: 0 };
+        let columnWidths = null; // Store custom column widths
+        
+        function initResize(e, columnIndex) {
+            e.stopPropagation(); // Prevent sorting when clicking resizer
+            resizeState.isResizing = true;
+            resizeState.currentColumn = columnIndex;
+            resizeState.startX = e.pageX;
+            
+            // Get current width
+            const headerRow = document.querySelector('.table-header-row');
+            const computedStyle = window.getComputedStyle(headerRow);
+            const templateColumns = computedStyle.gridTemplateColumns.split(' ');
+            resizeState.startWidth = parseFloat(templateColumns[columnIndex]);
+            
+            document.addEventListener('mousemove', doResize);
+            document.addEventListener('mouseup', stopResize);
+            
+            debugLog(`Started resizing column ${columnIndex}`, 'info');
+        }
+        
+        function doResize(e) {
+            if (!resizeState.isResizing) return;
+            
+            const diff = e.pageX - resizeState.startX;
+            const newWidth = Math.max(40, resizeState.startWidth + diff);
+            
+            // Update grid template for both header and body rows
+            const headerRow = document.querySelector('.table-header-row');
+            const computedStyle = window.getComputedStyle(headerRow);
+            const templateColumns = computedStyle.gridTemplateColumns.split(' ');
+            templateColumns[resizeState.currentColumn] = newWidth + 'px';
+            
+            const newTemplate = templateColumns.join(' ');
+            
+            // Store the custom widths
+            columnWidths = newTemplate;
+            
+            // Apply to header
+            headerRow.style.gridTemplateColumns = newTemplate;
+            
+            // Update all body rows
+            document.querySelectorAll('.table-row').forEach(row => {
+                row.style.gridTemplateColumns = newTemplate;
+            });
+        }
+        
+        function stopResize() {
+            if (resizeState.isResizing) {
+                debugLog(`Finished resizing column ${resizeState.currentColumn}`, 'info');
+            }
+            resizeState.isResizing = false;
+            document.removeEventListener('mousemove', doResize);
+            document.removeEventListener('mouseup', stopResize);
+        }
+		
+		function openPDMBrowser() {
+			window.location.href = 'http://dataserver:3000/pdm-browser.html';
+		}
+		
+		
+    </script>
+</body>
+</html>

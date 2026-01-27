@@ -1,0 +1,22 @@
+<html>
+    <head>
+        <script src="creojs.js"></script>
+        <script type="text/creojs" src="browser.creojs"></script>
+        <script type="text/creojs">
+            function getActiveModelName () {
+                return pfcGetCurrentSession ().GetActiveModel ().FileName;
+            }
+        </script>
+    </head>
+    <body onload="CreoJS.$ADD_ON_LOAD (initialize)">
+        <b>Active model:</b> <span id="MODELNAME"></span>
+        <script>
+            function initialize () {
+                CreoJS.getActiveModelName ()
+                    .then (function (name) {
+                        MODELNAME.innerHTML = name;
+                    })
+            }
+        </script>
+    </body>
+</html>

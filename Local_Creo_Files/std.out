@@ -1,0 +1,13 @@
+Connection restored with License Server(s)  1
+Lib: icuuc.dll
+Lib: icui18n.dll
+Lib: v8_libbase.dll
+Lib: v8_libplatform.dll
+Lib: zlib.dll
+Lib: v8.dll
+Successfully loaded DLL: C:\Program Files\PTC\Creo 10.0.0.0\Common Files\x86e_win64\obj\icuuc.dll
+Successfully loaded DLL: C:\Program Files\PTC\Creo 10.0.0.0\Common Files\x86e_win64\obj\icui18n.dll
+Successfully loaded DLL: C:\Program Files\PTC\Creo 10.0.0.0\Common Files\x86e_win64\obj\v8_libbase.dll
+Successfully loaded DLL: C:\Program Files\PTC\Creo 10.0.0.0\Common Files\x86e_win64\obj\v8_libplatform.dll
+Successfully loaded DLL: C:\Program Files\PTC\Creo 10.0.0.0\Common Files\x86e_win64\obj\zlib.dll
+Successfully loaded DLL: C:\Program Files\PTC\Creo 10.0.0.0\Common Files\x86e_win64\obj\v8.dll

@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>MRP Dashboard</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, sans-serif; background: #020617; color: #e5e7eb; }
+        .app { display: grid; grid-template-columns: 1fr; height: 100vh; overflow: hidden; }
+        .app.panel-open { grid-template-columns: 1fr 450px; }
+        
+        .main { padding: 20px; overflow-y: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 24px; }
+        
+        .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-secondary { background: #374151; color: white; }
+        .btn-secondary:hover { background: #4b5563; }
+        .btn-success { background: #059669; color: white; }
+        .btn-success:hover { background: #047857; }
+        .btn-sm { padding: 4px 10px; font-size: 11px; }
+        
+        .project-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .project-table th { text-align: left; padding: 12px; background: #0f172a; border-bottom: 1px solid #1e293b; }
+        .project-table td { padding: 12px; border-bottom: 1px solid #1e293b; }
+        .project-table tr { cursor: pointer; }
+        .project-table tr:hover { background: #0f172a; }
+        .project-table tr.active { background: #1e3a5f; }
+        
+        .status-badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+        .status-Setup { background: #7c3aed; color: white; }
+        .status-Released { background: #059669; color: white; }
+        .status-OnHold { background: #d97706; color: white; }
+        .status-Complete { background: #374151; color: #9ca3af; }
+        
+        .unrouted-badge { background: #dc2626; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 4px; }
+        
+        /* Slide-out Panel */
+        .panel { background: #0f172a; border-left: 1px solid #1e293b; display: flex; flex-direction: column; height: 100vh; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid #1e293b; }
+        .panel-header h2 { margin: 0; font-size: 18px; }
+        .panel-close { background: none; border: none; color: #9ca3af; font-size: 24px; cursor: pointer; }
+        .panel-close:hover { color: #e5e7eb; }
+        .panel-content { flex: 1; overflow-y: auto; padding: 16px; }
+        .panel-actions { padding: 16px; border-top: 1px solid #1e293b; display: flex; gap: 8px; }
+        
+        .detail-row { margin-bottom: 12px; }
+        .detail-label { font-size: 11px; color: #9ca3af; margin-bottom: 2px; }
+        .detail-value { font-size: 14px; }
+        
+        .section-title { font-size: 13px; font-weight: 600; margin: 20px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #1e293b; }
+        
+        .part-list { font-size: 12px; max-height: 200px; overflow-y: auto; background: #020617; border-radius: 6px; padding: 8px; }
+        .part-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #1e293b; }
+        .part-row:last-child { border-bottom: none; }
+        .part-row.no-routing { color: #fca5a5; }
+        
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+        .stat-box { background: #020617; border-radius: 6px; padding: 12px; text-align: center; }
+        .stat-value { font-size: 24px; font-weight: 600; }
+        .stat-label { font-size: 11px; color: #9ca3af; }
+        
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 11px; color: #9ca3af; margin-bottom: 4px; }
+        .form-group input, .form-group select { width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #1f2937; background: #020617; color: #e5e7eb; font-size: 13px; }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: #38bdf8; }
+        
+        .inline-form { display: flex; gap: 8px; align-items: flex-end; }
+        .inline-form .form-group { flex: 1; margin-bottom: 0; }
+        
+        /* Modal */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
+        .modal { background: #0f172a; border-radius: 8px; padding: 24px; width: 400px; max-width: 90%; }
+        .modal h3 { margin: 0 0 16px; }
+        .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+        
+        .status-msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 12px; }
+        .status-msg.success { background: #065f46; color: #6ee7b7; }
+        .status-msg.error { background: #7f1d1d; color: #fca5a5; }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+<div class="app" id="app">
+    <div class="main">
+        <div class="header">
+            <h1>MRP Dashboard</h1>
+            <div style="display:flex;gap:12px;">
+                <button class="btn btn-secondary" onclick="window.location.href='routing_editor.html'">&#x1F4CB; Routing Editor</button>
+                <button class="btn btn-secondary" onclick="window.location.href='shop_terminal.html'">&#x1F3ED; Shop Terminal</button>
+                <button class="btn btn-secondary" onclick="window.location.href='part_lookup.html'">ðŸ” Part Lookup</button>
+                <button class="btn btn-secondary" onclick="window.location.href='project_tracking.html'">ðŸ“Š Project Tracking</button>
+                <button class="btn btn-primary" onclick="showNewProjectModal()">+ New Project</button>
+            </div>
+        </div>
+        
+        <div id="statusMsg"></div>
+        
+        <table class="project-table">
+            <thead>
+                <tr>
+                    <th>Project Code</th>
+                    <th>Description</th>
+                    <th>Customer</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
+                    <th>Parts</th>
+                </tr>
+            </thead>
+            <tbody id="projectList"></tbody>
+        </table>
+    </div>
+    
+    <div class="panel hidden" id="detailPanel">
+        <div class="panel-header">
+            <h2 id="panelTitle">Project Details</h2>
+            <button class="panel-close" onclick="closePanel()">Ã—</button>
+        </div>
+        <div class="panel-content" id="panelContent"></div>
+        <div class="panel-actions">
+            <button class="btn btn-secondary" id="viewPacketBtn" onclick="viewPrintPacket()" style="display:none;">View Packet</button>
+            <button class="btn btn-success" onclick="generatePrintPacket()">Generate Print Packet</button>
+            <button class="btn btn-danger" onclick="deleteProject()" style="margin-left:auto;">Delete Project</button>
+        </div>
+    </div>
+</div>
+
+<!-- New Project Modal -->
+<div class="modal-overlay hidden" id="newProjectModal">
+    <div class="modal">
+        <h3>New Project</h3>
+        <div class="form-group">
+            <label>Project Code *</label>
+            <input id="newCode" placeholder="e.g., PRJ-2024-001" />
+        </div>
+        <div class="form-group">
+            <label>Description</label>
+            <input id="newDesc" placeholder="Project description" />
+        </div>
+        <div class="form-group">
+            <label>Customer</label>
+            <input id="newCustomer" placeholder="Customer name" />
+        </div>
+        <div class="form-group">
+            <label>Due Date</label>
+            <input id="newDueDate" type="date" />
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-secondary" onclick="hideNewProjectModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="createProject()">Create Project</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const API = 'http://DATASERVER:8086';
+
+let projects = [];
+let currentProject = null;
+let currentParts = [];
+
+document.addEventListener('DOMContentLoaded', loadProjects);
+
+async function loadProjects() {
+    try {
+        const res = await fetch(`${API}/api/projects`);
+        projects = await res.json();
+        renderProjectList();
+    } catch (err) {
+        showStatus('Failed to load projects', 'error');
+    }
+}
+
+function renderProjectList() {
+    const tbody = document.getElementById('projectList');
+    tbody.innerHTML = projects.map(p => `
+        <tr class="${currentProject?.project_code === p.project_code ? 'active' : ''}" onclick="selectProject('${p.project_code}')">
+            <td><strong>${p.project_code}</strong></td>
+            <td>${p.description || '-'}</td>
+            <td>${p.customer || '-'}</td>
+            <td>${p.due_date || '-'}</td>
+            <td><span class="status-badge status-${p.status?.replace(' ', '')}">${p.status}</span></td>
+            <td>
+                ${p.part_count || 0}
+                ${p.unrouted_count > 0 ? `<span class="unrouted-badge">${p.unrouted_count} unrouted</span>` : ''}
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function selectProject(code) {
+    try {
+        const [projRes, partsRes] = await Promise.all([
+            fetch(`${API}/api/projects/${code}`),
+            fetch(`${API}/api/projects/${code}/parts`)
+        ]);
+        
+        const projData = await projRes.json();
+        currentProject = Array.isArray(projData) ? projData[0] : projData;
+        currentParts = await partsRes.json();
+        
+        renderProjectList();
+        renderPanel();
+        document.getElementById('app').classList.add('panel-open');
+        document.getElementById('detailPanel').classList.remove('hidden');
+        
+        // Check if print packet exists
+        checkPrintPacket();
+    } catch (err) {
+        showStatus('Failed to load project details', 'error');
+    }
+}
+
+function closePanel() {
+    document.getElementById('app').classList.remove('panel-open');
+    document.getElementById('detailPanel').classList.add('hidden');
+    currentProject = null;
+    renderProjectList();
+}
+
+function renderPanel() {
+    if (!currentProject) return;
+    
+    document.getElementById('panelTitle').textContent = currentProject.project_code;
+    
+    const totalMinutes = currentProject.total_minutes || 0;
+    const totalHours = (totalMinutes / 60).toFixed(1);
+    const workDays = (totalMinutes / 480).toFixed(1); // 8hr days
+    
+    // Calculate start date
+    let startDate = '-';
+    if (currentProject.due_date && totalMinutes > 0) {
+        const due = new Date(currentProject.due_date);
+        due.setDate(due.getDate() - Math.ceil(totalMinutes / 480));
+        startDate = due.toISOString().split('T')[0];
+    }
+    
+    const assemblies = currentParts.filter(p => p.part_type?.includes('ASM'));
+    const parts = currentParts.filter(p => !p.part_type?.includes('ASM'));
+    const unrouted = currentParts.filter(p => !p.has_routing);
+    
+    document.getElementById('panelContent').innerHTML = `
+        <div class="detail-row">
+            <div class="detail-label">Description</div>
+            <div class="detail-value">${currentProject.description || '-'}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Customer</div>
+            <div class="detail-value">${currentProject.customer || '-'}</div>
+        </div>
+        <div class="detail-row">
+            <div class="detail-label">Top Assembly</div>
+            <div class="detail-value">${currentProject.top_assembly || '-'}</div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-box">
+                <div class="stat-value">${currentProject.due_date || '-'}</div>
+                <div class="stat-label">Due Date</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${startDate}</div>
+                <div class="stat-label">Start Date</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${currentParts.length}</div>
+                <div class="stat-label">Total Parts</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-value">${totalHours}h</div>
+                <div class="stat-label">Est. Hours</div>
+            </div>
+        </div>
+        
+        <div class="section-title">Status</div>
+        <div class="form-group">
+            <select id="statusSelect" onchange="updateStatus()">
+                <option value="Setup" ${currentProject.status === 'Setup' ? 'selected' : ''}>Setup</option>
+                <option value="Released" ${currentProject.status === 'Released' ? 'selected' : ''}>Released</option>
+                <option value="On Hold" ${currentProject.status === 'On Hold' ? 'selected' : ''}>On Hold</option>
+                <option value="Complete" ${currentProject.status === 'Complete' ? 'selected' : ''}>Complete</option>
+            </select>
+        </div>
+        
+        <div class="section-title">Add Top Assembly</div>
+        <div class="inline-form">
+            <div class="form-group">
+                <input id="addAssemblyInput" placeholder="e.g., wma20120" />
+            </div>
+            <button class="btn btn-primary" onclick="addAssembly()">Add & Explode BOM</button>
+        </div>
+        
+        ${unrouted.length > 0 ? `
+            <div class="section-title" style="color: #fca5a5;">âš  Unrouted Parts (${unrouted.length})</div>
+            <div class="part-list">
+                ${unrouted.map(p => `
+                    <div class="part-row no-routing" style="cursor:pointer" onclick="openRoutingEditor('${p.item_number}')">
+                        <span>${p.item_number} â†’</span>
+                        <span>Qty: ${p.quantity}</span>
+                    </div>
+                `).join('')}
+            </div>
+        ` : ''}
+        
+        <div class="section-title">Assemblies (${assemblies.length})</div>
+        <div class="part-list">
+            ${assemblies.length ? assemblies.map(p => `
+                <div class="part-row ${p.has_routing ? '' : 'no-routing'}">
+                    <span>${p.item_number} ${p.has_routing ? '' : 'âš '}</span>
+                    <span>Qty: ${p.quantity}</span>
+                </div>
+            `).join('') : '<div style="color:#6b7280;">No assemblies</div>'}
+        </div>
+        
+        <div class="section-title">Parts (${parts.length})</div>
+        <div class="part-list">
+            ${parts.length ? parts.map(p => `
+                <div class="part-row ${p.has_routing ? '' : 'no-routing'}">
+                    <span>${p.item_number} ${p.has_routing ? '' : 'âš '}</span>
+                    <span>Qty: ${p.quantity}</span>
+                </div>
+            `).join('') : '<div style="color:#6b7280;">No parts</div>'}
+        </div>
+    `;
+}
+
+async function updateStatus() {
+    const status = document.getElementById('statusSelect').value;
+    try {
+        await fetch(`${API}/api/projects/${currentProject.project_code}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        currentProject.status = status;
+        loadProjects();
+        showStatus('Status updated', 'success');
+    } catch (err) {
+        showStatus('Failed to update status', 'error');
+    }
+}
+
+async function addAssembly() {
+    const input = document.getElementById('addAssemblyInput');
+    const assembly = input.value.trim().toLowerCase();
+    if (!assembly) return;
+    
+    try {
+        await fetch(`${API}/api/projects/${currentProject.project_code}/assemblies`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ top_assembly: assembly })
+        });
+        input.value = '';
+        selectProject(currentProject.project_code);
+        loadProjects();
+        showStatus('BOM exploded successfully', 'success');
+    } catch (err) {
+        showStatus('Failed to add assembly', 'error');
+    }
+}
+
+async function generatePrintPacket() {
+    showStatus('Generating print packet... (this may take a minute)', 'success');
+    
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+    
+    try {
+        const res = await fetch(`${API}/api/projects/${currentProject.project_code}/print-packet`, {
+            method: 'POST',
+            signal: controller.signal
+        });
+        clearTimeout(timeout);
+        const data = await res.json();
+        if (data.success) {
+            showStatus(`Print packet generated!`, 'success');
+            checkPrintPacket(); // Update view button
+        } else {
+            showStatus(`Failed: ${data.error}`, 'error');
+        }
+    } catch (err) {
+        clearTimeout(timeout);
+        if (err.name === 'AbortError') {
+            showStatus('Print packet generation timed out - check server', 'error');
+        } else {
+            showStatus('Failed to generate print packet', 'error');
+        }
+    }
+}
+
+async function checkPrintPacket() {
+    if (!currentProject) return;
+    const btn = document.getElementById('viewPacketBtn');
+    try {
+        const res = await fetch(`${API}/api/projects/${currentProject.project_code}/print-packet`);
+        const data = await res.json();
+        if (data.exists) {
+            btn.style.display = 'inline-block';
+            btn.title = `Last generated: ${data.modified}`;
+        } else {
+            btn.style.display = 'none';
+        }
+    } catch (err) {
+        btn.style.display = 'none';
+    }
+}
+
+function viewPrintPacket() {
+    if (!currentProject) return;
+    window.open(`${API}/api/projects/${currentProject.project_code}/print-packet?serve=true`, '_blank');
+}
+
+function showNewProjectModal() {
+    document.getElementById('newProjectModal').classList.remove('hidden');
+}
+
+function hideNewProjectModal() {
+    document.getElementById('newProjectModal').classList.add('hidden');
+}
+
+async function createProject() {
+    const code = document.getElementById('newCode').value.trim();
+    if (!code) { showStatus('Project code required', 'error'); return; }
+    
+    try {
+        await fetch(`${API}/api/projects`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_code: code,
+                description: document.getElementById('newDesc').value,
+                customer: document.getElementById('newCustomer').value,
+                due_date: document.getElementById('newDueDate').value
+            })
+        });
+        hideNewProjectModal();
+        loadProjects();
+        showStatus('Project created', 'success');
+    } catch (err) {
+        showStatus('Failed to create project', 'error');
+    }
+}
+
+function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    el.className = `status-msg ${type}`;
+    el.textContent = msg;
+    setTimeout(() => el.textContent = '', 5000);
+}
+
+function openRoutingEditor(itemNumber) {
+    window.location.href = `routing_editor.html?item=${itemNumber}`;
+}
+
+async function deleteProject() {
+    if (!currentProject) return;
+    if (!confirm(`Delete project "${currentProject.project_code}"? This will remove all project parts and cannot be undone.`)) return;
+    
+    try {
+        await fetch(`${API}/api/projects/${currentProject.project_code}`, {
+            method: 'DELETE'
+        });
+        closePanel();
+        loadProjects();
+        showStatus('Project deleted', 'success');
+    } catch (err) {
+        showStatus('Failed to delete project', 'error');
+    }
+}
+</script>
+</body>
+</html>

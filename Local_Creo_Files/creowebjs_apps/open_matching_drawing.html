@@ -1,0 +1,36 @@
+<html>
+<head>
+<script>
+function openDrawing() {
+    try {
+        var session = pfcGetCurrentSession();
+        var model = session.GetActiveModel();
+
+        if (!model) {
+            alert("No active model.");
+            return;
+        }
+
+        var name = model.FileName;
+        var base = name.replace(/\.[^.]+$/, "");
+        var drw = base + ".drw";
+
+        try {
+            session.OpenFile(drw);
+            window.close();
+        }
+        catch (e) {
+            alert("Drawing not found:\n" + drw);
+        }
+
+    } catch (err) {
+        alert("Error:\n" + err);
+    }
+}
+</script>
+</head>
+
+<body onload="openDrawing()">
+Opening drawing…
+</body>
+</html>

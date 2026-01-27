@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlite3:*)",
+      "Bash(dir /s \"D:\\\\Local_Creo_Files\")",
+      "Bash(dir \"D:\"\" /B /S)",
+      "Bash(done)",
+      "Bash(dir:*)",
+      "Bash(ls:*)",
+      "Bash(cd:*)",
+      "Bash(cat:*)",
+      "Bash(git -C /d log --oneline)",
+      "Bash(git -C /d branch:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(du:*)",
+      "Bash(git config:*)",
+      "Bash(git init:*)"
+    ]
+  }
+}

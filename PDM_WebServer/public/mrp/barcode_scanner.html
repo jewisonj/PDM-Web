@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Scanner - Shop Floor</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; background: #020617; color: #e5e7eb; }
+        
+        .header {
+            background: #0f172a; border-bottom: 1px solid #1e293b;
+            padding: 16px 24px; display: flex; justify-content: space-between; align-items: center;
+        }
+        .header h1 { font-size: 24px; }
+        .header-actions { display: flex; gap: 12px; }
+        
+        .controls-bar {
+            background: #0f172a; border-bottom: 1px solid #1e293b;
+            padding: 12px 24px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+        }
+        .controls-bar label { font-size: 14px; color: #9ca3af; }
+        .controls-bar select, .controls-bar input {
+            padding: 8px 12px; border-radius: 6px; border: 1px solid #334155;
+            background: #1e293b; color: #e5e7eb; font-size: 14px;
+        }
+        
+        .btn {
+            padding: 10px 20px; border-radius: 8px; border: none;
+            cursor: pointer; font-size: 14px; font-weight: 600;
+        }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-secondary { background: #374151; color: white; }
+        .btn-secondary:hover { background: #4b5563; }
+        .btn-success { background: #059669; color: white; }
+        .btn-success:hover { background: #047857; }
+        .btn-warning { background: #d97706; color: white; }
+        .btn-warning:hover { background: #b45309; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        
+        .main-container {
+            display: grid; grid-template-columns: 1fr;
+            height: calc(100vh - 120px);
+        }
+        .main-container.part-loaded {
+            grid-template-columns: 1fr 400px;
+        }
+        
+        .scanner-area {
+            padding: 40px; overflow-y: auto;
+            display: flex; align-items: center; justify-content: center;
+        }
+        
+        .scanner-card {
+            background: #0f172a; border: 1px solid #1e293b;
+            border-radius: 12px; padding: 40px; max-width: 600px; width: 100%;
+        }
+        .scanner-icon { text-align: center; font-size: 80px; margin-bottom: 20px; }
+        .scanner-card h2 { text-align: center; font-size: 28px; margin-bottom: 12px; }
+        .scanner-card p { text-align: center; color: #9ca3af; margin-bottom: 30px; }
+        
+        .scan-input {
+            width: 100%; padding: 16px; border-radius: 8px;
+            border: 2px solid #334155; background: #1e293b;
+            color: #e5e7eb; font-size: 18px; margin-bottom: 16px;
+        }
+        .scan-input:focus { outline: none; border-color: #2563eb; }
+        
+        .part-info-card {
+            background: #0f172a; border: 1px solid #1e293b;
+            border-radius: 12px; padding: 24px; margin-top: 30px;
+        }
+        .part-number {
+            font-size: 28px; font-weight: 700; color: #38bdf8; margin-bottom: 8px;
+        }
+        .part-desc { color: #9ca3af; margin-bottom: 20px; }
+        .part-grid {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 16px; margin-bottom: 20px;
+        }
+        .part-field label { display: block; font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+        .part-field value { font-size: 16px; font-weight: 500; }
+        
+        .guide-box {
+            background: #1e293b; border-radius: 8px; padding: 20px; margin-top: 30px;
+        }
+        .guide-box h3 { font-size: 16px; margin-bottom: 12px; }
+        .guide-box ul { list-style: none; color: #9ca3af; }
+        .guide-box li { padding: 4px 0; }
+        
+        .operations-panel {
+            background: #0f172a; border-left: 1px solid #1e293b;
+            padding: 24px; overflow-y: auto;
+        }
+        .operations-panel h3 { font-size: 18px; margin-bottom: 20px; }
+        
+        .operation-card {
+            background: #1e293b; border: 1px solid #334155;
+            border-radius: 8px; padding: 16px; margin-bottom: 12px;
+        }
+        .operation-card.complete {
+            background: rgba(5, 150, 105, 0.1); border-color: #047857;
+        }
+        .operation-header {
+            display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;
+        }
+        .operation-code { font-size: 20px; font-weight: 700; color: #38bdf8; }
+        .operation-name { font-size: 13px; color: #9ca3af; }
+        .complete-badge { font-size: 24px; color: #6ee7b7; }
+        .operation-time { font-size: 12px; color: #9ca3af; margin-bottom: 12px; }
+        
+        .time-input-row {
+            display: flex; gap: 8px; margin-bottom: 8px;
+        }
+        .time-input-row input {
+            flex: 1; padding: 10px; border-radius: 6px;
+            border: 1px solid #334155; background: #0f172a; color: #e5e7eb;
+        }
+        
+        .pdf-viewer {
+            margin-top: 20px; border: 1px solid #334155; border-radius: 8px; overflow: hidden;
+        }
+        .pdf-viewer iframe { width: 100%; height: 500px; background: white; border: none; }
+        
+        .status-msg {
+            position: fixed; top: 20px; right: 20px; padding: 12px 20px;
+            border-radius: 8px; font-size: 14px; z-index: 100;
+            opacity: 0; transition: opacity 0.3s;
+        }
+        .status-msg.success { background: #065f46; color: #6ee7b7; opacity: 1; }
+        .status-msg.error { background: #7f1d1d; color: #fca5a5; opacity: 1; }
+        
+        .empty-state { text-align: center; color: #6b7280; padding: 60px; }
+        
+        .camera-view {
+            text-align: center; padding: 40px;
+        }
+        .camera-view video {
+            max-width: 100%; border-radius: 12px; margin-bottom: 20px;
+            border: 3px solid #334155;
+        }
+        .camera-view canvas {
+            display: none;
+        }
+        .scan-overlay {
+            position: relative; display: inline-block;
+        }
+        .scan-line {
+            position: absolute; top: 50%; left: 0; right: 0;
+            height: 2px; background: #22c55e;
+            animation: scan 2s ease-in-out infinite;
+        }
+        @keyframes scan {
+            0%, 100% { top: 20%; }
+            50% { top: 80%; }
+        }
+        .scan-corners {
+            position: absolute; inset: 20px;
+            border: 2px solid #22c55e; border-radius: 12px;
+            pointer-events: none;
+        }
+        .scan-corners::before,
+        .scan-corners::after {
+            content: ''; position: absolute;
+            width: 40px; height: 40px; border: 3px solid #22c55e;
+        }
+        .scan-corners::before {
+            top: -2px; left: -2px; border-right: none; border-bottom: none;
+        }
+        .scan-corners::after {
+            top: -2px; right: -2px; border-left: none; border-bottom: none;
+        }
+        .scan-result {
+            background: #065f46; color: #6ee7b7;
+            padding: 12px 20px; border-radius: 8px;
+            margin: 20px 0; font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+
+<div id="statusMsg" class="status-msg"></div>
+
+<div class="header">
+    <h1>📷 Barcode Scanner</h1>
+    <div class="header-actions">
+        <button class="btn btn-secondary" onclick="window.location.href='/mrp/shop_terminal.html'">← Shop Terminal</button>
+        <button class="btn btn-secondary" onclick="window.location.href='/mrp/mrp_dashboard.html'">Dashboard</button>
+    </div>
+</div>
+
+<div class="controls-bar">
+    <div style="display:flex; align-items:center; gap:8px;">
+        <label>Project:</label>
+        <select id="projectSelect">
+            <option value="">-- Select Project --</option>
+        </select>
+    </div>
+    
+    <div style="display:flex; align-items:center; gap:8px;">
+        <label>Worker:</label>
+        <input type="text" id="workerInput" placeholder="Your name..." style="width:150px;" />
+    </div>
+    
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+        <span id="httpsWarning" style="display:none; color:#fca5a5; font-size:12px;">⚠️ HTTPS required</span>
+        <button class="btn btn-primary" id="cameraBtn" onclick="toggleCamera()">📱 Use Camera</button>
+    </div>
+</div>
+
+<div class="main-container" id="mainContainer">
+    <div class="scanner-area" id="scannerArea">
+        <div class="scanner-card" id="scannerCard">
+            <div class="scanner-icon">📷</div>
+            <h2>Scan Barcode</h2>
+            <p>Use handheld scanner or type manually</p>
+            
+            <input
+                type="text"
+                id="scanInput"
+                class="scan-input"
+                placeholder="project:part or just part"
+                autofocus
+            />
+            
+            <button class="btn btn-primary" style="width:100%; padding:16px; font-size:18px;" onclick="handleScan()">
+                Load Part
+            </button>
+            
+            <div class="guide-box">
+                <h3>Quick Guide</h3>
+                <ul>
+                    <li>• Scan QR code with project:part format</li>
+                    <li>• Or just scan part number (needs project selected)</li>
+                    <li>• Or type manually and click Load Part</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="camera-view" id="cameraView" style="display:none;">
+            <div class="scan-overlay">
+                <video id="videoElement" autoplay playsinline width="640" height="480"></video>
+                <canvas id="canvasElement" width="640" height="480"></canvas>
+                <div class="scan-corners"></div>
+                <div class="scan-line"></div>
+            </div>
+            <div id="scanResult" class="scan-result" style="display:none;"></div>
+            <p style="color:#9ca3af; margin:20px 0;">Point camera at QR code or barcode</p>
+            <button class="btn btn-secondary" onclick="toggleCamera()">Back to Manual Entry</button>
+        </div>
+    </div>
+    
+    <div class="operations-panel" id="operationsPanel" style="display:none;">
+        <h3>Operations</h3>
+        <div id="operationsList"></div>
+        <div id="pdfViewer"></div>
+    </div>
+</div>
+
+<script>
+const API = 'http://DATASERVER:8086';
+
+let currentPart = null;
+let routing = [];
+let completion = [];
+let files = [];
+let projects = [];
+let cameraMode = false;
+let stream = null;
+let scanningActive = false;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await loadProjects();
+    
+    // Load saved worker name
+    const savedWorker = localStorage.getItem('workerName');
+    if (savedWorker) {
+        document.getElementById('workerInput').value = savedWorker;
+    }
+    
+    // Enter key on scan input
+    document.getElementById('scanInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleScan();
+    });
+    
+    // Check HTTPS status
+    const isSecure = window.location.protocol === 'https:' || 
+                    window.location.hostname === 'localhost' || 
+                    window.location.hostname === '127.0.0.1';
+    
+    if (!isSecure) {
+        document.getElementById('httpsWarning').style.display = 'block';
+    }
+});
+
+async function loadProjects() {
+    try {
+        const res = await fetch(`${API}/api/projects`);
+        projects = await res.json();
+        
+        const select = document.getElementById('projectSelect');
+        projects.filter(p => p.status === 'Released' || p.status === 'Setup')
+            .forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.project_code;
+                opt.textContent = `${p.project_code} - ${p.description || p.customer || ''}`;
+                select.appendChild(opt);
+            });
+    } catch (err) {
+        showStatus('Failed to load projects', 'error');
+    }
+}
+
+async function handleScan() {
+    const barcode = document.getElementById('scanInput').value.trim().toLowerCase();
+    if (!barcode) return;
+    
+    // Parse: project:part or just part
+    let project = document.getElementById('projectSelect').value;
+    let partNum = barcode;
+    
+    if (barcode.includes(':')) {
+        const parts = barcode.split(':');
+        project = parts[0];
+        partNum = parts[1];
+    }
+    
+    if (!project) {
+        showStatus('Select a project first', 'error');
+        return;
+    }
+    
+    await loadPart(project, partNum);
+    document.getElementById('scanInput').value = '';
+    document.getElementById('scanInput').focus();
+}
+
+async function loadPart(projectCode, partNumber) {
+    try {
+        // Load part from project
+        const partsRes = await fetch(`${API}/api/projects/${projectCode}/parts`);
+        const allParts = await partsRes.json();
+        const part = allParts.find(p => p.item_number.toLowerCase() === partNumber);
+        
+        if (!part) {
+            showStatus(`Part ${partNumber} not found in ${projectCode}`, 'error');
+            return;
+        }
+        
+        // Load routing
+        const routingRes = await fetch(`${API}/api/routing/${partNumber}`);
+        routing = await routingRes.json();
+        if (!Array.isArray(routing)) routing = [];
+        
+        // Load completion
+        const compRes = await fetch(`${API}/api/part-completion?project=${projectCode}&item=${partNumber}`);
+        completion = await compRes.json();
+        if (!Array.isArray(completion)) completion = [];
+        
+        // Load files
+        const filesRes = await fetch(`${API}/api/files`);
+        const allFiles = await filesRes.json();
+        files = allFiles.filter(f => f.item_number === partNumber);
+        
+        currentPart = { ...part, project_code: projectCode };
+        renderPart();
+        showStatus(`Loaded ${partNumber}`, 'success');
+    } catch (err) {
+        showStatus('Failed to load part data', 'error');
+    }
+}
+
+function renderPart() {
+    // Update scanner area with part info
+    const scannerArea = document.getElementById('scannerArea');
+    scannerArea.innerHTML = `
+        <div style="width:100%; max-width:600px;">
+            <div class="scanner-card">
+                <div style="text-align:center; font-size:60px; margin-bottom:20px;">📷</div>
+                <h2 style="text-align:center; margin-bottom:12px;">Scan Next Part</h2>
+                <input
+                    type="text"
+                    id="scanInput"
+                    class="scan-input"
+                    placeholder="project:part or just part"
+                    autofocus
+                />
+                <button class="btn btn-primary" style="width:100%; padding:16px; font-size:18px;" onclick="handleScan()">
+                    Load Part
+                </button>
+            </div>
+            
+            <div class="part-info-card">
+                <div class="part-number">${currentPart.item_number.toUpperCase()}</div>
+                <div class="part-desc">${currentPart.description || 'No description'}</div>
+                
+                <div class="part-grid">
+                    <div class="part-field">
+                        <label>Project</label>
+                        <value>${currentPart.project_code}</value>
+                    </div>
+                    <div class="part-field">
+                        <label>Quantity</label>
+                        <value style="font-size:24px; font-weight:700; color:#38bdf8;">${currentPart.quantity}</value>
+                    </div>
+                    <div class="part-field">
+                        <label>Type</label>
+                        <value>${currentPart.part_type || '-'}</value>
+                    </div>
+                    <div class="part-field">
+                        <label>Operations</label>
+                        <value>${routing.length}</value>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Re-attach enter key listener
+    document.getElementById('scanInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') handleScan();
+    });
+    
+    // Show operations panel
+    document.getElementById('mainContainer').classList.add('part-loaded');
+    document.getElementById('operationsPanel').style.display = 'block';
+    
+    renderOperations();
+}
+
+function renderOperations() {
+    const listEl = document.getElementById('operationsList');
+    
+    if (routing.length === 0) {
+        listEl.innerHTML = '<div class="empty-state">No routing defined</div>';
+        return;
+    }
+    
+    listEl.innerHTML = routing.map(r => {
+        const isComplete = completion.some(c => c.station_code === r.station_code);
+        const totalTime = (r.est_time_min || 0) * currentPart.quantity;
+        
+        return `
+            <div class="operation-card ${isComplete ? 'complete' : ''}">
+                <div class="operation-header">
+                    <div>
+                        <div class="operation-code">${r.station_code}</div>
+                        <div class="operation-name">${r.station_name}</div>
+                    </div>
+                    ${isComplete ? '<div class="complete-badge">✓</div>' : ''}
+                </div>
+                
+                <div class="operation-time">
+                    Est: ${r.est_time_min || 0} min × ${currentPart.quantity} = ${totalTime} min
+                </div>
+                
+                ${!isComplete ? `
+                    <div class="time-input-row">
+                        <input type="number" id="time_${r.station_code}" placeholder="min" min="0" step="0.5" />
+                        <button class="btn btn-warning btn-sm" onclick="logTime('${r.station_code}')">⏱️ Log</button>
+                    </div>
+                    <button class="btn btn-success" style="width:100%;" onclick="markComplete('${r.station_code}')">
+                        ✓ Mark Complete
+                    </button>
+                ` : ''}
+            </div>
+        `;
+    }).join('');
+    
+    // Show PDF if exists
+    const pdfFile = files.find(f => f.file_type === 'PDF');
+    const pdfViewer = document.getElementById('pdfViewer');
+    
+    if (pdfFile) {
+        pdfViewer.innerHTML = `
+            <div style="margin-top:30px;">
+                <button class="btn btn-secondary" style="width:100%; margin-bottom:12px;" onclick="togglePdf()">
+                    📄 <span id="pdfToggleText">Show</span> Drawing
+                </button>
+                <div class="pdf-viewer" id="pdfContainer" style="display:none;">
+                    <iframe src="${API}/api/pdf?path=${encodeURIComponent(pdfFile.file_path)}"></iframe>
+                </div>
+            </div>
+        `;
+    }
+}
+
+async function logTime(stationCode) {
+    const worker = document.getElementById('workerInput').value.trim();
+    const time = parseFloat(document.getElementById(`time_${stationCode}`).value);
+    
+    if (!worker || !time) {
+        showStatus('Enter worker name and time', 'error');
+        return;
+    }
+    
+    try {
+        await fetch(`${API}/api/time-logs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_code: currentPart.project_code,
+                item_number: currentPart.item_number,
+                station_code: stationCode,
+                worker: worker,
+                time_min: time
+            })
+        });
+        
+        showStatus(`Logged ${time} min for ${stationCode}`, 'success');
+        document.getElementById(`time_${stationCode}`).value = '';
+        localStorage.setItem('workerName', worker);
+    } catch (err) {
+        showStatus('Failed to log time', 'error');
+    }
+}
+
+async function markComplete(stationCode) {
+    const worker = document.getElementById('workerInput').value.trim();
+    
+    if (!worker) {
+        showStatus('Enter worker name', 'error');
+        return;
+    }
+    
+    try {
+        await fetch(`${API}/api/part-completion`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_code: currentPart.project_code,
+                item_number: currentPart.item_number,
+                station_code: stationCode,
+                qty_complete: currentPart.quantity,
+                completed_by: worker
+            })
+        });
+        
+        // Reload completion
+        const compRes = await fetch(`${API}/api/part-completion?project=${currentPart.project_code}&item=${currentPart.item_number}`);
+        completion = await compRes.json();
+        if (!Array.isArray(completion)) completion = [];
+        
+        renderOperations();
+        showStatus(`Marked ${stationCode} complete`, 'success');
+        localStorage.setItem('workerName', worker);
+    } catch (err) {
+        showStatus('Failed to mark complete', 'error');
+    }
+}
+
+function togglePdf() {
+    const container = document.getElementById('pdfContainer');
+    const text = document.getElementById('pdfToggleText');
+    if (container.style.display === 'none') {
+        container.style.display = 'block';
+        text.textContent = 'Hide';
+    } else {
+        container.style.display = 'none';
+        text.textContent = 'Show';
+    }
+}
+
+async function toggleCamera() {
+    cameraMode = !cameraMode;
+    
+    if (cameraMode) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+            document.getElementById('videoElement').srcObject = stream;
+            document.getElementById('scannerCard').style.display = 'none';
+            document.getElementById('cameraView').style.display = 'block';
+            document.getElementById('cameraBtn').textContent = '📷 Stop Camera';
+        } catch (err) {
+            showStatus('Camera access denied', 'error');
+            cameraMode = false;
+        }
+    } else {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        document.getElementById('scannerCard').style.display = 'block';
+        document.getElementById('cameraView').style.display = 'none';
+        document.getElementById('cameraBtn').textContent = '📱 Use Camera';
+        document.getElementById('scanInput').focus();
+    }
+}
+
+function showStatus(text, type) {
+    const el = document.getElementById('statusMsg');
+    el.className = `status-msg ${type}`;
+    el.textContent = text;
+    setTimeout(() => el.className = 'status-msg', 3000);
+}
+</script>
+</body>
+</html>

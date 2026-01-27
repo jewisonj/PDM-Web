@@ -1,0 +1,567 @@
+<html>
+<head>
+    <title>Creo Bulk Renumber v3b</title>
+    <script src="creojs.js"></script>
+    <script type="text/creojs" src="browser.creojs"></script>
+    
+    <!-- Creo.JS scripts - run in Creo -->
+    <script type="text/creojs">
+        function getWorkingDirectory() {
+            return pfcGetCurrentSession().GetCurrentDirectory();
+        }
+        
+        function listAllModels() {
+            var session = pfcGetCurrentSession();
+            var workingDir = session.GetCurrentDirectory();
+            var results = {parts: [], assemblies: [], drawings: [], workingDir: workingDir};
+            
+            // List parts using file extension pattern
+            var parts = session.ListFiles("*.prt", pfcFileListOpt.FILE_LIST_LATEST, workingDir);
+            if (parts != null) {
+                for (var i = 0; i < parts.length; i++) {
+                    results.parts.push(parts[i]);
+                }
+            }
+            
+            // List assemblies
+            var asms = session.ListFiles("*.asm", pfcFileListOpt.FILE_LIST_LATEST, workingDir);
+            if (asms != null) {
+                for (var i = 0; i < asms.length; i++) {
+                    results.assemblies.push(asms[i]);
+                }
+            }
+            
+            // List drawings
+            var drws = session.ListFiles("*.drw", pfcFileListOpt.FILE_LIST_LATEST, workingDir);
+            if (drws != null) {
+                for (var i = 0; i < drws.length; i++) {
+                    results.drawings.push(drws[i]);
+                }
+            }
+            
+            return results;
+        }
+        
+        function performBulkRename(renameData) {
+            var session = pfcGetCurrentSession();
+            var workingDir = session.GetCurrentDirectory();
+            var results = [];
+            
+            // Step 1: Open ALL assemblies in-session (to maintain references)
+            results.push({status: "info", message: "Step 1: Opening all assemblies..."});
+            var allAsms = session.ListFiles("*.asm", pfcFileListOpt.FILE_LIST_LATEST, workingDir);
+            var openedAssemblies = [];
+            
+            if (allAsms != null) {
+                for (var i = 0; i < allAsms.length; i++) {
+                    try {
+                        var basename = allAsms[i].split('\\').pop().split('/').pop();
+                        var descr = pfcModelDescriptor.Create(pfcModelType.MDL_ASSEMBLY, basename, "");
+                        var asm = session.RetrieveModel(descr);
+                        openedAssemblies.push(asm);
+                        results.push({status: "opened_asm", name: basename});
+                    } catch (e) {
+                        var basename = allAsms[i].split('\\').pop().split('/').pop();
+                        results.push({status: "warn_asm", name: basename, error: e.message});
+                    }
+                }
+            }
+            
+            // Step 2: Process each rename
+            results.push({status: "info", message: "Step 2: Renaming models and updating drawings..."});
+            
+            for (var i = 0; i < renameData.length; i++) {
+                var item = renameData[i];
+                
+                // Skip drawings - they're handled automatically with parts/assemblies
+                if (item.type === "DRW") {
+                    continue;
+                }
+                
+                var modelType;
+                if (item.type === "PRT") {
+                    modelType = pfcModelType.MDL_PART;
+                } else if (item.type === "ASM") {
+                    modelType = pfcModelType.MDL_ASSEMBLY;
+                }
+                
+                var matchingDrawing = null;
+                
+                try {
+                    // FIRST: Try to open matching drawing BEFORE opening the model
+                    try {
+                        var drwDescr = pfcModelDescriptor.Create(pfcModelType.MDL_DRAWING, item.current + ".drw", "");
+                        matchingDrawing = session.RetrieveModel(drwDescr);
+                        results.push({status: "opened_drw", name: item.current + ".drw"});
+                    } catch (e) {
+                        // No matching drawing - that's OK
+                    }
+                    
+                    // SECOND: Open the model to be renamed
+                    var descr = pfcModelDescriptor.Create(modelType, item.current + "." + item.type.toLowerCase(), "");
+                    var model = session.RetrieveModel(descr);
+                    results.push({status: "opened", name: item.current});
+                    
+                    // THIRD: Rename the model
+                    model.Rename(item.newName);
+                    results.push({status: "renamed", oldName: item.current, newName: item.newName});
+                    
+                    // FOURTH: Rename the drawing to match (if we opened one)
+                    if (matchingDrawing != null) {
+                        try {
+                            matchingDrawing.Rename(item.newName);
+                            results.push({status: "renamed_drw", oldName: item.current + ".drw", newName: item.newName + ".drw"});
+                            
+                            matchingDrawing.Save();
+                            results.push({status: "saved_drw", name: item.newName + ".drw"});
+                        } catch (e) {
+                            results.push({status: "error_drw", name: item.current, error: e.message});
+                        }
+                    }
+                    
+                    // Clean up - close drawing first, then model
+                    if (matchingDrawing != null) {
+                        try {
+                            matchingDrawing.Erase();
+                        } catch (e) {
+                            // Non-critical
+                        }
+                    }
+                    
+                    try {
+                        model.Erase();
+                    } catch (e) {
+                        // Non-critical
+                    }
+                    
+                } catch (e) {
+                    results.push({status: "error_rename", name: item.current, error: e.message});
+                    
+                    // Clean up on error
+                    if (matchingDrawing != null) {
+                        try {
+                            matchingDrawing.Erase();
+                        } catch (e2) {
+                            // Ignore
+                        }
+                    }
+                }
+            }
+            
+            // Step 3: Save and close all assemblies (locks in the new references)
+            results.push({status: "info", message: "Step 3: Saving assemblies to lock in references..."});
+            for (var i = 0; i < openedAssemblies.length; i++) {
+                try {
+                    openedAssemblies[i].Save();
+                    var asmName = openedAssemblies[i].FileName;
+                    results.push({status: "saved_asm", name: asmName});
+                } catch (e) {
+                    results.push({status: "error_save_asm", error: e.message});
+                }
+                
+                try {
+                    openedAssemblies[i].Erase();
+                } catch (e) {
+                    // Non-critical
+                }
+            }
+            
+            return results;
+        }
+    </script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 900px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px 5px;
+            font-size: 14px;
+            cursor: pointer;
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: #0052a3;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            min-height: 60px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+        h2 {
+            color: #0066cc;
+            margin-top: 0;
+        }
+        .warning {
+            color: #cc6600;
+            font-weight: bold;
+        }
+        .error {
+            color: #cc0000;
+        }
+        .success {
+            color: #009900;
+        }
+        input[type="text"] {
+            width: 400px;
+            padding: 5px;
+            margin: 5px 0;
+        }
+        table {
+            font-size: 14px;
+        }
+        table input[type="text"] {
+            width: 100%;
+            padding: 4px;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        #fileTableContainer {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 10px;
+        }
+    </style>
+</head>
+
+<body onload="CreoJS.$ADD_ON_LOAD(initialize)">
+    <h1>Creo Bulk Renumber Tool v3</h1>
+    
+    <div class="section">
+        <h2>Step 1: Export Working Directory</h2>
+        <p>Export all parts, assemblies, and drawings from the current working directory.</p>
+        <button onclick="exportWorkingDirectory()">Export Working Directory</button>
+        <button onclick="downloadCSV()">Download as CSV</button>
+        <div class="status" id="exportStatus"></div>
+        <p><b>Files in Working Directory:</b></p>
+        <div id="fileTableContainer" style="max-height: 400px; overflow-y: auto;">
+            <table id="fileTable" style="width: 100%; border-collapse: collapse; display: none;">
+                <thead>
+                    <tr style="background-color: #0066cc; color: white;">
+                        <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Current Name</th>
+                        <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Type</th>
+                        <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">New Name</th>
+                    </tr>
+                </thead>
+                <tbody id="fileTableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>Step 2: Edit New Names</h2>
+        <p>Enter new names in the table above, then click the button below to rename.</p>
+        <p class="warning">⚠️ Only files with a new name entered will be renamed</p>
+    </div>
+    
+    <div class="section">
+        <h2>Step 3: Bulk Rename</h2>
+        <p>This will:</p>
+        <ul>
+            <li>Open ALL assemblies in-session (maintains component references)</li>
+            <li>For each part/assembly/drawing being renamed:
+                <ul>
+                    <li>Open the model</li>
+                    <li>For parts/assemblies: open matching drawing if it exists</li>
+                    <li>Rename the model</li>
+                    <li>Regenerate and save matching drawings</li>
+                </ul>
+            </li>
+            <li>Save all assemblies (locks in new component references)</li>
+            <li>Close all models to background when complete</li>
+        </ul>
+        <button onclick="bulkRename()">Bulk Rename from Table</button>
+        <div class="status" id="renameStatus"></div>
+    </div>
+
+    <!-- Browser-side JavaScript -->
+    <script>
+        let workingDir = "";
+        
+        function initialize() {
+            log('exportStatus', 'Creo.JS initialized successfully', 'success');
+            
+            // Get working directory
+            CreoJS.getWorkingDirectory()
+                .then(function(dir) {
+                    workingDir = dir;
+                    log('exportStatus', 'Working directory: ' + dir, 'info');
+                })
+                .catch(function(err) {
+                    log('exportStatus', 'Error getting working directory: ' + err, 'error');
+                });
+        }
+
+        function log(elementId, message, type) {
+            type = type || 'info';
+            var statusDiv = document.getElementById(elementId);
+            var timestamp = new Date().toLocaleTimeString();
+            var className = '';
+            
+            if (type === 'error') className = 'error';
+            else if (type === 'success') className = 'success';
+            else if (type === 'warning') className = 'warning';
+            
+            var div = document.createElement('div');
+            div.className = className;
+            div.textContent = '[' + timestamp + '] ' + message;
+            statusDiv.appendChild(div);
+            statusDiv.scrollTop = statusDiv.scrollHeight;
+        }
+
+        function clearLog(elementId) {
+            document.getElementById(elementId).innerHTML = '';
+        }
+
+        function exportWorkingDirectory() {
+            clearLog('exportStatus');
+            log('exportStatus', 'Scanning working directory...', 'info');
+            
+            CreoJS.listAllModels()
+                .then(function(results) {
+                    // Build table rows
+                    var tbody = document.getElementById('fileTableBody');
+                    tbody.innerHTML = ''; // Clear existing
+                    
+                    var totalCount = 0;
+                    
+                    // Add parts
+                    for (var i = 0; i < results.parts.length; i++) {
+                        addTableRow(tbody, results.parts[i], 'PRT');
+                        totalCount++;
+                    }
+                    
+                    // Add assemblies
+                    for (var i = 0; i < results.assemblies.length; i++) {
+                        addTableRow(tbody, results.assemblies[i], 'ASM');
+                        totalCount++;
+                    }
+                    
+                    // Do NOT add drawings - they will auto-rename with their parts
+                    
+                    // Show table
+                    document.getElementById('fileTable').style.display = 'table';
+                    
+                    log('exportStatus', 'Found ' + totalCount + ' models to rename:', 'info');
+                    log('exportStatus', '  - ' + results.parts.length + ' parts', 'info');
+                    log('exportStatus', '  - ' + results.assemblies.length + ' assemblies', 'info');
+                    log('exportStatus', '  - ' + results.drawings.length + ' drawings (will auto-rename with parts)', 'info');
+                    log('exportStatus', '✓ Files loaded. Enter new names in the table and click Bulk Rename.', 'success');
+                })
+                .catch(function(err) {
+                    log('exportStatus', '✗ Error: ' + err, 'error');
+                });
+        }
+        
+        function addTableRow(tbody, filename, type) {
+            var row = tbody.insertRow();
+            row.style.borderBottom = '1px solid #ddd';
+            
+            // Strip full path and extension from filename
+            // Extract just the filename from the full path
+            var basename = filename.split('\\').pop().split('/').pop();
+            // Remove extension
+            var displayName = basename.replace(/\.(prt|asm|drw)$/i, '');
+            
+            // Current name cell
+            var cell1 = row.insertCell(0);
+            cell1.textContent = displayName;
+            cell1.style.padding = '8px';
+            cell1.style.border = '1px solid #ddd';
+            
+            // Type cell
+            var cell2 = row.insertCell(1);
+            cell2.textContent = type;
+            cell2.style.padding = '8px';
+            cell2.style.border = '1px solid #ddd';
+            cell2.style.textAlign = 'center';
+            cell2.style.fontWeight = 'bold';
+            
+            // New name cell (editable input)
+            var cell3 = row.insertCell(2);
+            cell3.style.padding = '8px';
+            cell3.style.border = '1px solid #ddd';
+            var input = document.createElement('input');
+            input.type = 'text';
+            input.style.width = '100%';
+            input.style.padding = '4px';
+            input.placeholder = 'Enter new name (or click to copy current)';
+            input.setAttribute('data-current', basename);  // Store basename without extension
+            input.setAttribute('data-type', type);
+            
+            // Auto-populate with current name on first click
+            input.addEventListener('focus', function() {
+                if (this.value === '') {
+                    this.value = displayName;
+                    this.select(); // Select all text for easy editing
+                }
+            });
+            
+            cell3.appendChild(input);
+        }
+
+        function downloadCSV() {
+            var table = document.getElementById('fileTable');
+            if (table.style.display === 'none') {
+                alert('Please export the working directory first');
+                return;
+            }
+            
+            // Build CSV from table
+            var csv = "current_name,type,new_name\n";
+            var tbody = document.getElementById('fileTableBody');
+            var rows = tbody.getElementsByTagName('tr');
+            
+            for (var i = 0; i < rows.length; i++) {
+                var cells = rows[i].getElementsByTagName('td');
+                var currentName = cells[0].textContent;
+                var type = cells[1].textContent;
+                var newName = cells[2].getElementsByTagName('input')[0].value;
+                csv += currentName + "," + type + "," + newName + "\n";
+            }
+            
+            // Download
+            var blob = new Blob([csv], { type: 'text/csv' });
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'renumber_list.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            log('exportStatus', 'CSV file downloaded', 'success');
+        }
+        
+        function openCSVInTab() {
+            // No longer needed - editing directly in table
+            alert('You can now edit names directly in the table above!');
+        }
+
+        function bulkRename() {
+            clearLog('renameStatus');
+            
+            var table = document.getElementById('fileTable');
+            if (table.style.display === 'none') {
+                log('renameStatus', '✗ Please export working directory first', 'error');
+                return;
+            }
+            
+            log('renameStatus', 'Reading rename list from table...', 'info');
+            
+            // Parse table to get rename list
+            var tbody = document.getElementById('fileTableBody');
+            var rows = tbody.getElementsByTagName('tr');
+            var renameList = [];
+            
+            for (var i = 0; i < rows.length; i++) {
+                var cells = rows[i].getElementsByTagName('td');
+                var currentName = cells[0].textContent;
+                var type = cells[1].textContent;
+                var newName = cells[2].getElementsByTagName('input')[0].value.trim();
+                
+                if (newName !== '') {
+                    renameList.push({
+                        current: currentName,
+                        type: type,
+                        newName: newName
+                    });
+                }
+            }
+            
+            if (renameList.length === 0) {
+                log('renameStatus', '✗ No files to rename. Enter new names in the table first.', 'error');
+                return;
+            }
+            
+            log('renameStatus', 'Found ' + renameList.length + ' items to rename', 'info');
+            log('renameStatus', '---', 'info');
+            
+            // Call Creo.JS function to perform rename
+            CreoJS.performBulkRename(renameList)
+                .then(function(results) {
+                    log('renameStatus', 'Processing results...', 'info');
+                    
+                    var successCount = 0;
+                    var errorCount = 0;
+                    
+                    for (var i = 0; i < results.length; i++) {
+                        var result = results[i];
+                        
+                        if (result.status === 'info') {
+                            log('renameStatus', result.message, 'info');
+                        } else if (result.status === 'opened_asm') {
+                            log('renameStatus', '  Assembly: ' + result.name, 'info');
+                        } else if (result.status === 'opened_drw') {
+                            log('renameStatus', '  Drawing: ' + result.name, 'info');
+                        } else if (result.status === 'warn_asm') {
+                            log('renameStatus', '  Warning (asm): ' + result.name, 'warning');
+                        } else if (result.status === 'warn_drw') {
+                            log('renameStatus', '  Warning (drw): ' + result.name, 'warning');
+                        } else if (result.status === 'opened') {
+                            log('renameStatus', '  Opened: ' + result.name, 'info');
+                        } else if (result.status === 'renamed') {
+                            log('renameStatus', '  ✓ ' + result.oldName + ' → ' + result.newName, 'success');
+                            successCount++;
+                        } else if (result.status === 'renamed_drw') {
+                            log('renameStatus', '  ✓ Drawing renamed: ' + result.oldName + ' → ' + result.newName, 'success');
+                        } else if (result.status === 'saved_drw') {
+                            log('renameStatus', '  ✓ Saved drawing: ' + result.name, 'success');
+                        } else if (result.status === 'saved_asm') {
+                            log('renameStatus', '  ✓ Saved assembly: ' + result.name, 'success');
+                        } else if (result.status === 'error_drw') {
+                            log('renameStatus', '  ✗ Drawing error for ' + result.name + ': ' + result.error, 'error');
+                        } else if (result.status === 'error_save_asm') {
+                            log('renameStatus', '  ✗ Failed to save assembly: ' + result.error, 'error');
+                        } else if (result.status === 'error_open') {
+                            log('renameStatus', '  ✗ Failed to open ' + result.name + ': ' + result.error, 'error');
+                            errorCount++;
+                        } else if (result.status === 'error_rename') {
+                            log('renameStatus', '  ✗ Failed to rename ' + result.name + ': ' + result.error, 'error');
+                            errorCount++;
+                        }
+                    }
+                    
+                    log('renameStatus', '---', 'info');
+                    log('renameStatus', '✓ Complete: ' + successCount + ' renamed, ' + errorCount + ' errors', 'success');
+                })
+                .catch(function(err) {
+                    log('renameStatus', '✗ Error: ' + err, 'error');
+                });
+        }
+    </script>
+</body>
+</html>
