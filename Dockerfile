@@ -15,8 +15,8 @@ ARG VITE_SUPABASE_ANON_KEY
 # Copy package files first for better caching
 COPY frontend/package*.json ./
 
-# Install dependencies (use npm install since package-lock.json may not be in repo)
-RUN npm install
+# Install dependencies (npm ci is faster and deterministic with lock file)
+RUN npm ci
 
 # Copy frontend source
 COPY frontend/ ./

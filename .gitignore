@@ -72,7 +72,7 @@ node_modules/
 npm-debug.log*
 yarn.lock
 pnpm-lock.yaml
-package-lock.json
+# package-lock.json should be committed for reproducible builds
 dist/
 build/
 .nuxt/
