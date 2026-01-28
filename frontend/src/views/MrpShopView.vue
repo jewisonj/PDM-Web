@@ -168,15 +168,16 @@ async function selectProject(project: MrpProject) {
     // Get PDF files for these items
     const { data: filesData, error: filesError } = await supabase
       .from('files')
-      .select('item_id, file_path, storage_path')
+      .select('item_id, file_path')
       .in('item_id', itemIds)
       .eq('file_type', 'PDF')
+      .not('file_path', 'is', null)
 
     if (filesError) console.warn('Failed to load PDF files:', filesError)
 
     const completionMap = new Map(completionData?.map(c => [c.item_id, c.qty_complete]) || [])
     const partsMap = new Map(partsData?.map(p => [p.item_id, p.quantity]) || [])
-    const filesMap = new Map(filesData?.map(f => [f.item_id, f.storage_path || f.file_path]) || [])
+    const filesMap = new Map(filesData?.map(f => [f.item_id, f.file_path]) || [])
 
     // Build queue items
     queueItems.value = (routingData || [])
@@ -293,24 +294,47 @@ function goHome() {
 }
 
 // PDF Panel functions
-function openPdfPanel(item: QueueItem) {
+const pdfDisplayUrl = ref<string | null>(null)
+const loadingPdf = ref(false)
+
+async function openPdfPanel(item: QueueItem) {
   selectedPartForPdf.value = item
   showPdfPanel.value = true
+  pdfDisplayUrl.value = null
+  loadingPdf.value = true
+
+  try {
+    if (item.pdf_url) {
+      // Parse bucket and path from file_path (e.g., "pdm-drawings/csp00025/A/1/csp00025.pdf")
+      const parts = item.pdf_url.split('/')
+      const bucket = parts[0] // e.g., "pdm-drawings"
+      const filePath = parts.slice(1).join('/') // e.g., "csp00025/A/1/csp00025.pdf"
+
+      // Get signed URL for the PDF
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(filePath, 3600) // 1 hour expiry
+
+      if (error) {
+        console.warn('Signed URL failed, trying public:', error)
+        // Try public URL as fallback
+        const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(filePath)
+        pdfDisplayUrl.value = publicData?.publicUrl || null
+      } else {
+        pdfDisplayUrl.value = data?.signedUrl || null
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load PDF:', e)
+  } finally {
+    loadingPdf.value = false
+  }
 }
 
 function closePdfPanel() {
   showPdfPanel.value = false
   selectedPartForPdf.value = null
-}
-
-async function getPdfUrl(storagePath: string | null): Promise<string | null> {
-  if (!storagePath) return null
-  try {
-    const { data } = await supabase.storage.from('files').getPublicUrl(storagePath)
-    return data?.publicUrl || null
-  } catch {
-    return null
-  }
+  pdfDisplayUrl.value = null
 }
 
 // Panel resize handlers
@@ -587,14 +611,17 @@ onMounted(() => {
                 <td>
                   <div class="part-num">
                     {{ item.item_number }}
-                    <span
+                    <button
                       v-if="item.has_pdf"
-                      class="pdf-icon"
+                      class="pdf-btn"
                       @click.stop="openPdfPanel(item)"
-                      title="View PDF"
+                      title="View Drawing"
                     >
-                      <i class="pi pi-file-pdf"></i>
-                    </span>
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                        <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20M10.92,12.31C10.68,11.54 10.15,9.08 11.55,9.04C12.95,9 12.03,12.16 12.03,12.16C12.42,13.65 14.05,14.72 14.05,14.72C14.55,14.57 17.4,14.24 17,15.72C16.57,17.2 13.5,15.81 13.5,15.81C11.55,15.95 10.09,16.47 10.09,16.47C8.96,18.58 7.64,19.5 7.1,18.61C6.43,17.5 9.23,16.07 9.23,16.07C10.68,13.72 10.9,12.35 10.92,12.31Z"/>
+                      </svg>
+                      PDF
+                    </button>
                   </div>
                   <div class="part-type">{{ item.item_name }}</div>
                 </td>
@@ -652,21 +679,27 @@ onMounted(() => {
             </div>
           </div>
           <div class="pdf-viewer">
+            <div v-if="loadingPdf" class="pdf-loading">
+              <i class="pi pi-spin pi-spinner"></i>
+              Loading PDF...
+            </div>
             <iframe
-              v-if="selectedPartForPdf?.pdf_url"
-              :src="selectedPartForPdf.pdf_url"
+              v-else-if="pdfDisplayUrl"
+              :src="pdfDisplayUrl"
             ></iframe>
             <div v-else class="no-pdf">No PDF available</div>
           </div>
         </div>
         <div class="panel-footer">
           <a
-            v-if="selectedPartForPdf?.pdf_url"
-            :href="selectedPartForPdf.pdf_url"
+            v-if="pdfDisplayUrl"
+            :href="pdfDisplayUrl"
             target="_blank"
-            class="pdf-download-btn"
+            class="pdf-open-btn"
+            title="Open in new tab"
           >
-            <i class="pi pi-file-pdf"></i>
+            <i class="pi pi-external-link"></i>
+            Open Full Screen
           </a>
         </div>
       </div>
@@ -1026,14 +1059,28 @@ onMounted(() => {
   color: #9ca3af;
 }
 
-.pdf-icon {
-  color: #f87171;
+.pdf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.375rem;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+  transition: background 0.15s;
 }
 
-.pdf-icon:hover {
-  color: #fca5a5;
+.pdf-btn:hover {
+  background: #b91c1c;
+}
+
+.pdf-btn svg {
+  flex-shrink: 0;
 }
 
 .qty-badge {
@@ -1254,28 +1301,48 @@ onMounted(() => {
   background: #1e293b;
 }
 
+.pdf-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  height: 100%;
+  color: #9ca3af;
+  background: #1e293b;
+}
+
+.pdf-loading i {
+  font-size: 2rem;
+}
+
 .panel-footer {
   padding: 0.75rem 1rem;
   border-top: 1px solid #1e293b;
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
-.pdf-download-btn {
+.pdf-open-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  background: #dc2626;
-  border-radius: 50%;
-  color: white;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  background: #374151;
+  border-radius: 0.5rem;
+  color: #e5e7eb;
   text-decoration: none;
-  font-size: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.15s;
 }
 
-.pdf-download-btn:hover {
-  background: #b91c1c;
+.pdf-open-btn:hover {
+  background: #4b5563;
+}
+
+.pdf-open-btn i {
+  font-size: 1rem;
 }
 
 .empty-state {
