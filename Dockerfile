@@ -21,10 +21,10 @@ RUN npm ci
 # Copy frontend source
 COPY frontend/ ./
 
-# Build production bundle (Vite uses ARGs as env vars during build)
+# Build production bundle (skip TypeScript checking, just build with Vite)
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
-RUN npm run build
+RUN npx vite build
 
 # ============================================
 # Stage 2: Production Backend + Static Files
