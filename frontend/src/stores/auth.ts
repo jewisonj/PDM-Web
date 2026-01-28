@@ -7,12 +7,19 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<User | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const initialized = ref(false)
 
   const isAuthenticated = computed(() => !!user.value)
   const isEngineer = computed(() => user.value?.role === 'engineer' || user.value?.role === 'admin')
   const isAdmin = computed(() => user.value?.role === 'admin')
 
   async function initialize() {
+    // Prevent multiple initializations
+    if (initialized.value) {
+      return
+    }
+    initialized.value = true
+
     loading.value = true
     error.value = null
 
@@ -24,11 +31,12 @@ export const useAuthStore = defineStore('auth', () => {
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to initialize auth'
+      console.error('Auth initialization error:', e)
     } finally {
       loading.value = false
     }
 
-    // Listen for auth changes
+    // Listen for auth changes (only once)
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
         await fetchUser()
