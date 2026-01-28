@@ -48,16 +48,6 @@ app.include_router(tasks_router, prefix="/api")
 app.include_router(mrp_router, prefix="/api")
 
 
-@app.get("/")
-async def root():
-    """Root endpoint."""
-    return {
-        "name": "PDM-Web API",
-        "version": "1.0.0",
-        "docs": "/docs"
-    }
-
-
 @app.get("/health")
 async def health():
     """Health check endpoint."""
@@ -72,9 +62,15 @@ async def health():
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
-if STATIC_DIR.exists():
+if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
     # Serve static assets (js, css, images)
-    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+    if (STATIC_DIR / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    @app.get("/")
+    async def serve_index():
+        """Serve Vue SPA index."""
+        return FileResponse(STATIC_DIR / "index.html")
 
     # Catch-all route for SPA - must be last
     @app.get("/{full_path:path}")
@@ -91,6 +87,18 @@ if STATIC_DIR.exists():
 
         # Otherwise serve index.html for SPA routing
         return FileResponse(STATIC_DIR / "index.html")
+else:
+    # No static files - serve API info at root (development mode)
+    @app.get("/")
+    async def root():
+        """Root endpoint."""
+        return {
+            "name": "PDM-Web API",
+            "version": "1.0.0",
+            "docs": "/docs",
+            "static_dir": str(STATIC_DIR),
+            "static_exists": STATIC_DIR.exists()
+        }
 
 
 if __name__ == "__main__":
