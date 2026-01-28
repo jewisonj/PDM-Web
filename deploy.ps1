@@ -43,7 +43,7 @@ Write-Host "Deploying PDM-Web to Fly.io..." -ForegroundColor Cyan
 Write-Host "  Supabase URL: $SUPABASE_URL" -ForegroundColor Gray
 
 # Deploy
-fly deploy `
+flyctl deploy `
     --build-arg VITE_SUPABASE_URL=$SUPABASE_URL `
     --build-arg VITE_SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
 
