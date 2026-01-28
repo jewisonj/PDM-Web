@@ -1,7 +1,12 @@
 """PDM-Web FastAPI Backend."""
 
-from fastapi import FastAPI
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from .config import get_settings
 from .routes import (
@@ -57,6 +62,35 @@ async def root():
 async def health():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+# ============================================
+# Static File Serving (Production)
+# ============================================
+# Serve Vue frontend static files in production
+# The static folder is created during Docker build
+
+STATIC_DIR = Path(__file__).parent.parent.parent / "static"
+
+if STATIC_DIR.exists():
+    # Serve static assets (js, css, images)
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    # Catch-all route for SPA - must be last
+    @app.get("/{full_path:path}")
+    async def serve_spa(request: Request, full_path: str):
+        """Serve Vue SPA for all non-API routes."""
+        # Don't intercept API routes
+        if full_path.startswith("api/"):
+            return {"detail": "Not found"}
+
+        # Try to serve the exact file first
+        file_path = STATIC_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(file_path)
+
+        # Otherwise serve index.html for SPA routing
+        return FileResponse(STATIC_DIR / "index.html")
 
 
 if __name__ == "__main__":

@@ -6,14 +6,19 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // API base URL for FastAPI backend
-// Dynamically determine based on current host (works for localhost and Tailnet)
+// Dynamically determine based on current host
 function getApiBaseUrl(): string {
   // Allow explicit override via env var
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL
   }
 
-  // Dynamic: use current hostname with backend port
+  // Production: API is served from same origin (single container deployment)
+  if (import.meta.env.PROD) {
+    return `${window.location.origin}/api`
+  }
+
+  // Development: use current hostname with separate backend port
   const protocol = window.location.protocol
   const hostname = window.location.hostname
   const backendPort = 8001

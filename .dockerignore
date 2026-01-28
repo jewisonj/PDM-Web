@@ -1,0 +1,77 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+Documentation/
+*.md
+!README.md
+
+# Legacy code (not needed for deployment)
+PDM_PowerShell/
+PDM_WebServer/
+PDM_Vault/
+MRP_System/
+
+# Worker (separate deployment)
+worker/
+
+# Scripts (migration, etc)
+scripts/
+
+# Development files
+.env
+.env.*
+!.env.example
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+.pytest_cache/
+.mypy_cache/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.npm
+*.tgz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test/temp files
+*.test.ts
+*.spec.ts
+coverage/
+.nyc_output/
+tmp/
+temp/
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# Local data
+files/
+*.sqlite
+*.db
+
+# Fly.io
+fly.toml.bak

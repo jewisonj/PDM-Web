@@ -14,8 +14,8 @@ class Settings(BaseSettings):
 
     # API
     api_host: str = "0.0.0.0"
-    api_port: int = 8001
-    debug: bool = True
+    api_port: int = 8080  # Default for production (Fly.io)
+    debug: bool = False  # Default to production-safe
 
     # CORS - allow localhost and Tailnet (100.x.x.x) access
     cors_origins: list[str] = [
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://100.106.248.91:5174",  # Tailnet
     ]
-    cors_allow_all: bool = True  # Set to True for internal/Tailnet apps
+    cors_allow_all: bool = False  # Set via env var for dev
 
     class Config:
         env_file = ".env"
