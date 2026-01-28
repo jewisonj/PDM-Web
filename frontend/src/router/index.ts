@@ -64,6 +64,24 @@ const router = createRouter({
       component: () => import('../views/MrpShopView.vue'),
       meta: { requiresAuth: true }
     },
+    {
+      path: '/mrp/parts',
+      name: 'mrp-parts',
+      component: () => import('../views/MrpPartLookupView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/mrp/tracking',
+      name: 'mrp-tracking',
+      component: () => import('../views/MrpProjectTrackingView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/mrp/materials',
+      name: 'mrp-materials',
+      component: () => import('../views/MrpRawMaterialsView.vue'),
+      meta: { requiresAuth: true }
+    },
   ]
 })
 

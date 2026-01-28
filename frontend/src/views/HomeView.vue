@@ -88,6 +88,42 @@ const mrpTools = [
       'Update job status',
       'Time tracking'
     ]
+  },
+  {
+    title: 'Part Lookup',
+    icon: 'pi pi-search',
+    description: 'Look up parts by project, view routing operations, enter time, and mark complete.',
+    route: '/mrp/parts',
+    features: [
+      'Project part search',
+      'Routing operations view',
+      'Time entry & tracking',
+      'PDF drawing viewer'
+    ]
+  },
+  {
+    title: 'Project Tracking',
+    icon: 'pi pi-chart-line',
+    description: 'Gantt chart view of project progress with part hierarchy and status tracking.',
+    route: '/mrp/tracking',
+    features: [
+      'Gantt timeline view',
+      'Part hierarchy display',
+      'Progress visualization',
+      'Status overview'
+    ]
+  },
+  {
+    title: 'Raw Materials',
+    icon: 'pi pi-box',
+    description: 'Manage raw materials inventory including stock levels, reorder points, and ordering.',
+    route: '/mrp/materials',
+    features: [
+      'Inventory tracking',
+      'Stock level alerts',
+      'Inline editing',
+      'Batch updates'
+    ]
   }
 ]
 

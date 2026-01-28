@@ -453,6 +453,18 @@ function goToShop() {
   router.push('/mrp/shop')
 }
 
+function goToRawMaterials() {
+  router.push('/mrp/materials')
+}
+
+function goToPartLookup() {
+  router.push('/mrp/parts')
+}
+
+function goToProjectTracking() {
+  router.push('/mrp/tracking')
+}
+
 onMounted(() => {
   loadProjects()
 })
@@ -462,23 +474,28 @@ onMounted(() => {
   <div class="mrp-dashboard">
     <header class="page-header">
       <div class="header-left">
-        <button class="back-btn" @click="goHome">
-          <i class="pi pi-arrow-left"></i>
-          Home
-        </button>
-        <div>
-          <h1>MRP Dashboard</h1>
-          <p class="subtitle">Manufacturing Resource Planning</p>
-        </div>
+        <h1>MRP Dashboard</h1>
       </div>
       <div class="header-actions">
-        <button class="nav-btn" @click="goToRouting()">
-          <i class="pi pi-sitemap"></i>
+        <button class="nav-btn routing" @click="goToRouting()">
+          <span class="nav-dot routing"></span>
           Routing Editor
         </button>
-        <button class="nav-btn" @click="goToShop">
-          <i class="pi pi-desktop"></i>
+        <button class="nav-btn materials" @click="goToRawMaterials">
+          <span class="nav-dot materials"></span>
+          Raw Materials
+        </button>
+        <button class="nav-btn shop" @click="goToShop">
+          <span class="nav-dot shop"></span>
           Shop Terminal
+        </button>
+        <button class="nav-btn lookup" @click="goToPartLookup">
+          <span class="nav-dot lookup"></span>
+          Part Lookup
+        </button>
+        <button class="nav-btn tracking" @click="goToProjectTracking">
+          <span class="nav-dot tracking"></span>
+          Project Tracking
         </button>
         <button class="primary-btn" @click="showNewProjectModal = true">
           <i class="pi pi-plus"></i>
@@ -829,7 +846,7 @@ onMounted(() => {
 .nav-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   background: #374151;
   border: none;
   color: white;
@@ -843,6 +860,19 @@ onMounted(() => {
 .nav-btn:hover {
   background: #4b5563;
 }
+
+.nav-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nav-dot.routing { background: #3b82f6; }
+.nav-dot.materials { background: #f97316; }
+.nav-dot.shop { background: #eab308; }
+.nav-dot.lookup { background: #22d3ee; }
+.nav-dot.tracking { background: #a855f7; }
 
 .primary-btn {
   display: flex;
