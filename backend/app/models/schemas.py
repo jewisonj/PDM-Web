@@ -151,6 +151,34 @@ class BOMCreate(BaseModel):
     source_file: Optional[str] = None
 
 
+class BOMChildItem(BaseModel):
+    """Child item in bulk BOM upload."""
+    item_number: str
+    quantity: int = 1
+    description: Optional[str] = None
+    material: Optional[str] = None
+    mass: Optional[float] = None
+    thickness: Optional[float] = None
+    cut_length: Optional[float] = None
+
+
+class BOMBulkCreate(BaseModel):
+    """Bulk BOM upload - replaces entire BOM for an assembly."""
+    parent_item_number: str
+    children: list[BOMChildItem]
+    source_file: Optional[str] = None
+
+
+class BOMBulkResponse(BaseModel):
+    """Response from bulk BOM upload."""
+    parent_item_number: str
+    parent_item_id: UUID
+    items_created: int
+    items_updated: int
+    bom_entries_created: int
+    children: list[str]
+
+
 class BOMTreeNode(BaseModel):
     """Recursive BOM tree structure."""
     item: Item

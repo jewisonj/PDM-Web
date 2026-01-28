@@ -39,10 +39,17 @@ export const API_BASE_URL = getApiBaseUrl()
 // Helper for API calls with auth
 export async function apiCall<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retry = true
 ): Promise<T> {
-  const session = await supabase.auth.getSession()
-  const token = session.data.session?.access_token
+  // Get fresh session - Supabase auto-refreshes if token is expired
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError) {
+    console.error('Session error:', sessionError)
+  }
+
+  const token = session?.access_token
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -57,6 +64,17 @@ export async function apiCall<T>(
     ...options,
     headers,
   })
+
+  // On 401, try to refresh session and retry once
+  if (response.status === 401 && retry) {
+    console.log('Got 401, attempting session refresh...')
+    const { data: { session: newSession } } = await supabase.auth.refreshSession()
+
+    if (newSession) {
+      // Retry with new token
+      return apiCall<T>(endpoint, options, false)
+    }
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }))

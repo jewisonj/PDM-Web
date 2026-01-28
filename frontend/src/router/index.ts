@@ -89,10 +89,8 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
-  // Wait for auth to initialize on first load
-  if (!authStore.isAuthenticated && to.meta.requiresAuth !== false) {
-    await authStore.initialize()
-  }
+  // Always wait for auth to initialize before making decisions
+  await authStore.initialize()
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }

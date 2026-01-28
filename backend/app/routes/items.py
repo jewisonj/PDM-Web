@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from uuid import UUID
 
-from ..services.supabase import get_supabase_client
+from ..services.supabase import get_supabase_client, get_supabase_admin
 from ..models.schemas import Item, ItemCreate, ItemUpdate, ItemWithFiles, ItemSearchParams
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -104,26 +104,55 @@ async def create_item(item: ItemCreate):
 
 
 @router.patch("/{item_number}", response_model=Item)
-async def update_item(item_number: str, item: ItemUpdate):
-    """Update an existing item."""
-    supabase = get_supabase_client()
+async def update_item(item_number: str, item: ItemUpdate, upsert: bool = False):
+    """
+    Update an existing item, or create it if upsert=True.
+
+    Args:
+        item_number: The item number to update
+        item: The fields to update
+        upsert: If True, create the item if it doesn't exist (default: False)
+
+    Uses admin client for upsert operations (trusted internal service).
+    """
+    # Use admin client for upsert (internal service), regular client otherwise
+    supabase = get_supabase_admin() if upsert else get_supabase_client()
+    normalized_number = item_number.lower()
 
     # Filter out None values
     update_data = {k: v for k, v in item.model_dump().items() if v is not None}
 
-    if not update_data:
+    if not update_data and not upsert:
         raise HTTPException(status_code=400, detail="No fields to update")
 
     # Convert UUID to string if present
     if update_data.get("project_id"):
         update_data["project_id"] = str(update_data["project_id"])
 
-    result = supabase.table("items").update(update_data).eq("item_number", item_number.lower()).execute()
+    # Try to update first
+    result = supabase.table("items").update(update_data).eq("item_number", normalized_number).execute()
 
-    if not result.data:
-        raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
+    if result.data:
+        return result.data[0]
 
-    return result.data[0]
+    # Item doesn't exist - create if upsert mode
+    if upsert:
+        # Determine if it's a supplier part
+        is_supplier = normalized_number.startswith("mmc") or normalized_number.startswith("spn")
+
+        new_item = {
+            "item_number": normalized_number,
+            "name": normalized_number.upper(),
+            "revision": "A",
+            "iteration": 1,
+            "lifecycle_state": "Design",
+            "is_supplier_part": is_supplier,
+            **update_data
+        }
+        create_result = supabase.table("items").insert(new_item).execute()
+        return create_result.data[0]
+
+    raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
 
 
 @router.delete("/{item_number}")

@@ -8,23 +8,39 @@ export const useAuthStore = defineStore('auth', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const initialized = ref(false)
+  const initPromise = ref<Promise<void> | null>(null)
 
   const isAuthenticated = computed(() => !!user.value)
   const isEngineer = computed(() => user.value?.role === 'engineer' || user.value?.role === 'admin')
   const isAdmin = computed(() => user.value?.role === 'admin')
 
   async function initialize() {
-    // Prevent multiple initializations
+    // If already initialized, return immediately
     if (initialized.value) {
       return
     }
-    initialized.value = true
 
+    // If initialization is in progress, wait for it
+    if (initPromise.value) {
+      return initPromise.value
+    }
+
+    // Start initialization
+    initPromise.value = doInitialize()
+    return initPromise.value
+  }
+
+  async function doInitialize() {
     loading.value = true
     error.value = null
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      // Get current session - Supabase will auto-refresh if needed
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+      }
 
       if (session) {
         await fetchUser()
@@ -34,14 +50,20 @@ export const useAuthStore = defineStore('auth', () => {
       console.error('Auth initialization error:', e)
     } finally {
       loading.value = false
+      initialized.value = true
     }
 
     // Listen for auth changes (only once)
     supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event)
+
       if (event === 'SIGNED_IN' && session) {
         await fetchUser()
       } else if (event === 'SIGNED_OUT') {
         user.value = null
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        // Token was refreshed, re-fetch user to ensure we have valid data
+        await fetchUser()
       }
     })
   }

@@ -3,8 +3,8 @@
 from fastapi import APIRouter, HTTPException
 from uuid import UUID
 
-from ..services.supabase import get_supabase_client
-from ..models.schemas import BOMEntry, BOMCreate, BOMTreeNode, Item
+from ..services.supabase import get_supabase_client, get_supabase_admin
+from ..models.schemas import BOMEntry, BOMCreate, BOMTreeNode, Item, BOMBulkCreate, BOMBulkResponse
 
 router = APIRouter(prefix="/bom", tags=["bom"])
 
@@ -125,6 +125,115 @@ async def add_bom_entry(bom: BOMCreate):
         if "duplicate key" in str(e).lower():
             raise HTTPException(status_code=409, detail="BOM relationship already exists")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/bulk", response_model=BOMBulkResponse)
+async def bulk_upload_bom(bom: BOMBulkCreate):
+    """
+    Bulk upload BOM - replaces entire BOM for an assembly.
+
+    This endpoint:
+    1. Creates the parent assembly item if it doesn't exist
+    2. Creates/updates all child items with their properties
+    3. Deletes all existing BOM entries for the parent
+    4. Creates new BOM relationships
+
+    Used by the local PDM upload client when processing BOM text files from Creo.
+    Uses admin client to bypass RLS for trusted internal operations.
+    """
+    supabase = get_supabase_admin()
+
+    parent_number = bom.parent_item_number.lower()
+    items_created = 0
+    items_updated = 0
+
+    # 1. Get or create parent item
+    parent_result = supabase.table("items").select("id").eq("item_number", parent_number).execute()
+
+    if parent_result.data:
+        parent_id = parent_result.data[0]["id"]
+    else:
+        # Create parent item
+        parent_data = {
+            "item_number": parent_number,
+            "name": parent_number.upper(),
+            "revision": "A",
+            "iteration": 1,
+            "lifecycle_state": "Design",
+        }
+        create_result = supabase.table("items").insert(parent_data).execute()
+        parent_id = create_result.data[0]["id"]
+        items_created += 1
+
+    # 2. Delete existing BOM entries for this parent
+    supabase.table("bom").delete().eq("parent_item_id", parent_id).execute()
+
+    # 3. Process each child item
+    child_item_numbers = []
+    bom_entries_created = 0
+
+    for child in bom.children:
+        child_number = child.item_number.lower()
+        child_item_numbers.append(child_number)
+
+        # Skip zzz (reference) items - don't create them
+        if child_number.startswith("zzz"):
+            continue
+
+        # Check if child item exists
+        child_result = supabase.table("items").select("id").eq("item_number", child_number).execute()
+
+        # Prepare item properties
+        item_props = {
+            "description": child.description,
+            "material": child.material,
+            "mass": child.mass,
+            "thickness": child.thickness,
+            "cut_length": child.cut_length,
+        }
+        # Filter out None values
+        item_props = {k: v for k, v in item_props.items() if v is not None}
+
+        if child_result.data:
+            # Update existing item
+            child_id = child_result.data[0]["id"]
+            if item_props:
+                supabase.table("items").update(item_props).eq("id", child_id).execute()
+                items_updated += 1
+        else:
+            # Create new item
+            is_supplier = child_number.startswith("mmc") or child_number.startswith("spn")
+            new_item = {
+                "item_number": child_number,
+                "name": child_number.upper(),
+                "revision": "A",
+                "iteration": 1,
+                "lifecycle_state": "Design",
+                "is_supplier_part": is_supplier,
+                **item_props
+            }
+            create_result = supabase.table("items").insert(new_item).execute()
+            child_id = create_result.data[0]["id"]
+            items_created += 1
+
+        # 4. Create BOM relationship
+        bom_data = {
+            "parent_item_id": parent_id,
+            "child_item_id": child_id,
+            "quantity": child.quantity,
+            "source_file": bom.source_file,
+        }
+        supabase.table("bom").insert(bom_data).execute()
+        bom_entries_created += 1
+
+    return BOMBulkResponse(
+        parent_item_number=parent_number,
+        parent_item_id=parent_id,
+        items_created=items_created,
+        items_updated=items_updated,
+        bom_entries_created=bom_entries_created,
+        children=child_item_numbers
+    )
 
 
 @router.patch("/{bom_id}")
