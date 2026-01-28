@@ -70,7 +70,7 @@ async def health():
 # Serve Vue frontend static files in production
 # The static folder is created during Docker build
 
-STATIC_DIR = Path(__file__).parent.parent.parent / "static"
+STATIC_DIR = Path(__file__).parent.parent / "static"
 
 if STATIC_DIR.exists():
     # Serve static assets (js, css, images)
