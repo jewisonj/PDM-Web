@@ -201,13 +201,13 @@ def process_nest_task(supabase, task: dict):
             try:
                 supabase.storage.from_(STORAGE_BUCKET).upload(
                     storage_path, content,
-                    file_options={"content-type": "application/dxf"},
+                    file_options={"content-type": "application/octet-stream"},
                 )
             except Exception as e:
                 if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
                     supabase.storage.from_(STORAGE_BUCKET).update(
                         storage_path, content,
-                        file_options={"content-type": "application/dxf"},
+                        file_options={"content-type": "application/octet-stream"},
                     )
                 else:
                     raise

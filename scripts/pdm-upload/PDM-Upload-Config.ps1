@@ -10,7 +10,7 @@
 $Config = @{
     # PDM-Web API URL (change for different environments)
     # Local development:
-    ApiUrl       = "http://localhost:8000/api"
+    ApiUrl       = "http://localhost:8001/api"
     # Production:
     # ApiUrl       = "https://pdm-web.fly.dev/api"
 

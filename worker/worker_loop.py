@@ -155,7 +155,7 @@ def upload_output(supabase, output_path: Path, item_number: str, item_id: str, f
 
     # Determine MIME type
     mime_types = {
-        ".dxf": "application/dxf",
+        ".dxf": "application/octet-stream",
         ".svg": "image/svg+xml",
     }
     ext = output_path.suffix.lower()
