@@ -52,7 +52,14 @@
       "WebSearch",
       "mcp__pdm-supabase__get_project_url",
       "mcp__pdm-supabase__list_tables",
-      "WebFetch(domain:support.ptc.com)"
+      "WebFetch(domain:support.ptc.com)",
+      "Bash(cmd /c \"docker exec pdm-freecad-worker python3 /scripts/worker/run_job.py flatten /data/files/xxp00871.stp /data/files/xxp00871.dxf\")",
+      "mcp__pdm-supabase__execute_sql",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:pypi.org)",
+      "mcp__pdm-supabase__apply_migration",
+      "Bash(powershell:*)",
+      "mcp__pdm-supabase__get_advisors"
     ],
     "deny": []
   },

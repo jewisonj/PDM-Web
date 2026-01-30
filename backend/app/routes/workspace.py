@@ -4,12 +4,14 @@ Compares local Creo workspace files against the PDM vault (Supabase).
 Called by workspace.html running inside Creo's embedded browser.
 """
 
+import re
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
 
-from ..services.supabase import get_supabase_client
+from ..services.supabase import get_supabase_admin
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
 
@@ -40,20 +42,55 @@ class WorkspaceCompareResponse(BaseModel):
     notInVault: list[CompareResult] = []
 
 
+def strip_creo_version(filename: str) -> str:
+    """Strip Creo version number from filename.
+
+    Creo's ListFiles returns versioned filenames like:
+        stp02810.prt.3 -> stp02810.prt
+        xxa00010.asm.27 -> xxa00010.asm
+        sta01050.prt -> sta01050.prt  (no version, unchanged)
+    """
+    return re.sub(r"\.\d+$", "", filename)
+
+
 def extract_item_number(filename: str) -> str:
     """Extract item_number from a Creo filename.
 
-    Examples:
+    Handles versioned filenames (Creo appends .version):
+        stp02810.prt.3 -> stp02810
         stp02810.prt -> stp02810
         mmc93337a110.prt -> mmc93337a110
-        xxa00010.asm -> xxa00010
+        xxa00010.asm.27 -> xxa00010
+        spnca3102e14s-2pb.prt -> spnca3102e14s-2pb
     """
-    # Strip extension
-    if "." in filename:
-        base = filename.rsplit(".", 1)[0]
-    else:
-        base = filename
-    return base.lower()
+    base = strip_creo_version(filename).lower()
+
+    # Strip known Creo/CAD extensions
+    base = re.sub(r"\.(prt|asm|drw|stp|step|dxf|svg|pdf)$", "", base)
+
+    # Check special prefixes FIRST (they contain mixed alpha+digits after the prefix)
+    # McMaster pattern: mmc + alphanumeric (e.g., mmc93337a110, mmc3006t426)
+    match = re.match(r"^(mmc[a-z0-9]+)", base)
+    if match:
+        return match.group(1)
+
+    # Supplier pattern: spn + alphanumeric (may include dashes/underscores)
+    match = re.match(r"^(spn[a-z0-9_-]+)", base)
+    if match:
+        return match.group(1)
+
+    # Reference pattern: zzz + alphanumeric
+    match = re.match(r"^(zzz[a-z0-9]+)", base)
+    if match:
+        return match.group(1)
+
+    # Standard pattern: 3 letters + 4-6 digits (e.g., stp02810, sta01050)
+    match = re.match(r"^([a-z]{3}\d{4,6})", base)
+    if match:
+        return match.group(1)
+
+    # Fallback: return the base without extension
+    return base
 
 
 def parse_local_timestamp(time_str: str) -> Optional[datetime]:
@@ -81,13 +118,19 @@ def parse_local_timestamp(time_str: str) -> Optional[datetime]:
 
 
 def parse_vault_timestamp(time_str: str) -> Optional[datetime]:
-    """Parse an ISO timestamp from Supabase."""
+    """Parse an ISO timestamp from Supabase and convert UTC to local time.
+
+    Supabase stores timestamps in UTC. Local file times from PowerShell
+    are in the machine's local timezone. Convert vault times to local
+    so comparisons are apples-to-apples.
+    """
     if not time_str:
         return None
     try:
         dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-        # Return as naive datetime for comparison with local times
-        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+        # Convert to local time, then strip tzinfo for naive comparison
+        local_dt = dt.astimezone()
+        return local_dt.replace(tzinfo=None)
     except (ValueError, AttributeError):
         return None
 
@@ -97,7 +140,11 @@ def format_vault_time(time_str: str) -> str:
     dt = parse_vault_timestamp(time_str)
     if not dt:
         return ""
-    return dt.strftime("%-m/%-d/%Y, %-I:%M:%S %p").replace("/-", "/").replace(" 0", " ")
+    # Use manual formatting for cross-platform compatibility
+    # (%-m is Linux-only, %#m is Windows-only)
+    hour = dt.hour % 12 or 12
+    ampm = "AM" if dt.hour < 12 else "PM"
+    return f"{dt.month}/{dt.day}/{dt.year}, {hour}:{dt.minute:02d}:{dt.second:02d} {ampm}"
 
 
 @router.post("/compare", response_model=WorkspaceCompareResponse)
@@ -110,7 +157,7 @@ async def compare_workspace(data: WorkspaceCompareRequest):
     - Compare timestamps to determine status
     - Return categorized results
     """
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     if not data.files:
         return WorkspaceCompareResponse()
@@ -153,8 +200,8 @@ async def compare_workspace(data: WorkspaceCompareRequest):
                 key = (file_rec["item_id"], file_rec["file_name"].lower())
                 # Keep the latest file record
                 existing = files_by_item_and_name.get(key)
-                if not existing or (file_rec.get("updated_at") or "") > (
-                    existing.get("updated_at") or ""
+                if not existing or (file_rec.get("updated_at") or file_rec.get("created_at") or "") > (
+                    existing.get("updated_at") or existing.get("created_at") or ""
                 ):
                     files_by_item_and_name[key] = file_rec
 
@@ -183,8 +230,9 @@ async def compare_workspace(data: WorkspaceCompareRequest):
 
         description = item.get("name") or item.get("description") or ""
 
-        # Look up the specific file
-        file_key = (item["id"], filename.lower())
+        # Look up the specific file (strip Creo version number for matching)
+        clean_filename = strip_creo_version(filename).lower()
+        file_key = (item["id"], clean_filename)
         vault_file = files_by_item_and_name.get(file_key)
 
         if not vault_file:

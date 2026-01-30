@@ -28,7 +28,7 @@ $Global:ServiceName = "PDM-Local-Service"
 
 # PDM-Web API URL - same as PDM-Upload config
 # Change this to match your environment
-$Global:ApiUrl = "http://localhost:8000/api"
+$Global:ApiUrl = "http://localhost:8001/api"
 # Production:
 # $Global:ApiUrl = "https://pdm-web.fly.dev/api"
 
@@ -60,16 +60,21 @@ function Get-ItemNumber {
 
     $baseName = [IO.Path]::GetFileNameWithoutExtension($FileName)
 
+    # Check special prefixes FIRST (they contain mixed alpha+digits after the prefix)
+    # McMaster: mmc prefix (e.g., mmc12555k88, mmc93337a110)
+    if ($baseName -match '^(mmc[a-zA-Z0-9_-]+)') {
+        return $Matches[1].ToLower()
+    }
+    # Supplier: spn prefix (e.g., spnca3102e14s-2pb)
+    if ($baseName -match '^(spn[a-zA-Z0-9_-]+)') {
+        return $Matches[1].ToLower()
+    }
+    # Reference: zzz prefix
+    if ($baseName -match '^(zzz[a-zA-Z0-9]+)') {
+        return $Matches[1].ToLower()
+    }
     # Standard: 3 letters + 4-6 digits (e.g., csp0030, wma20120)
     if ($baseName -match '^([a-zA-Z]{3}\d{4,6})') {
-        return $Matches[1].ToLower()
-    }
-    # McMaster: mmc prefix
-    if ($baseName -match '^(mmc[a-zA-Z0-9]+)') {
-        return $Matches[1].ToLower()
-    }
-    # Supplier: spn prefix
-    if ($baseName -match '^(spn[a-zA-Z0-9]+)') {
         return $Matches[1].ToLower()
     }
     return $null
@@ -233,6 +238,12 @@ function Handle-CheckIn {
             $apiResponse = $httpClient.PostAsync($uri, $form).Result
 
             if ($apiResponse.IsSuccessStatusCode) {
+                # Touch file's LastWriteTime to match upload time so timestamps align
+                try {
+                    (Get-Item $fullPath).LastWriteTime = Get-Date
+                } catch {
+                    Write-ServiceLog "  Warning: could not touch $fullPath : $_" "WARN"
+                }
                 Write-ServiceLog "  Uploaded: $filename -> item $itemNumber" "SUCCESS"
                 $results += @{
                     filename   = $filename

@@ -589,7 +589,7 @@
         // Update these URLs for your environment
         const PDM_CONFIG = {
             // FastAPI backend URL
-            apiUrl: 'http://localhost:8000',
+            apiUrl: 'http://localhost:8001',
             // Local service URL (file operations on this machine)
             localServiceUrl: 'http://localhost:8083',
             // Vue frontend URL
@@ -1319,7 +1319,7 @@
         }
 		
 		function openPDMBrowser() {
-			window.location.href = 'http://dataserver:3000/pdm-browser.html';
+			window.open(PDM_CONFIG.frontendUrl, '_blank');
 		}
 		
 		

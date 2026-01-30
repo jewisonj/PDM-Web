@@ -1,5 +1,7 @@
 """Files API routes."""
 
+import re
+
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import Optional
 from uuid import UUID
@@ -27,6 +29,40 @@ def get_file_type(filename: str) -> str:
         "jpeg": "IMAGE",
     }
     return type_map.get(ext, "OTHER")
+
+
+# Valid item_number patterns for auto-creation
+ITEM_NUMBER_PATTERNS = [
+    re.compile(r"^mmc[a-z0-9_-]+$"),   # McMaster (e.g., mmc12555k88)
+    re.compile(r"^spn[a-z0-9_-]+$"),   # Supplier (e.g., spnca3102e14s-2pb)
+    re.compile(r"^zzz[a-z0-9]+$"),     # Reference
+    re.compile(r"^[a-z]{3}\d{4,6}$"),  # Standard (e.g., stp02810)
+]
+
+
+def is_valid_item_number(item_number: str) -> bool:
+    """Check if an item_number matches a known naming convention."""
+    return any(p.match(item_number) for p in ITEM_NUMBER_PATTERNS)
+
+
+def auto_create_item(supabase, item_number: str) -> dict:
+    """Create a new item record for a recognized item number pattern."""
+    item_data = {
+        "item_number": item_number,
+        "revision": "A",
+        "iteration": 1,
+        "lifecycle_state": "Design",
+    }
+
+    # Set supplier flag for mmc/spn prefixes
+    if item_number.startswith("mmc"):
+        item_data["is_supplier_part"] = True
+        item_data["supplier_name"] = "McMaster-Carr"
+    elif item_number.startswith("spn"):
+        item_data["is_supplier_part"] = True
+
+    result = supabase.table("items").insert(item_data).execute()
+    return result.data[0]
 
 
 @router.get("", response_model=list[FileInfo])
@@ -84,12 +120,18 @@ async def upload_file(
     item_result = supabase.table("items").select("id, revision").eq("item_number", clean_item_number).limit(1).execute()
 
     if not item_result.data or len(item_result.data) == 0:
-        print(f"Item not found: '{clean_item_number}'")
-        raise HTTPException(status_code=404, detail=f"Item {clean_item_number} not found")
+        # Auto-create item if it matches a known naming convention
+        if is_valid_item_number(clean_item_number):
+            print(f"Auto-creating item: '{clean_item_number}'")
+            item_data = auto_create_item(supabase, clean_item_number)
+        else:
+            print(f"Item not found and name doesn't match conventions: '{clean_item_number}'")
+            raise HTTPException(status_code=404, detail=f"Item {clean_item_number} not found and doesn't match naming conventions")
+    else:
+        item_data = item_result.data[0]
 
-    item_data = item_result.data[0]
     item_id = item_data["id"]
-    file_revision = revision or item_data["revision"]
+    file_revision = revision or item_data.get("revision", "A")
 
     # Read file content
     content = await file.read()
