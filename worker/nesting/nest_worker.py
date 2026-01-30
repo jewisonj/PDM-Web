@@ -27,7 +27,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client
 
-from dxf_parser import parse_dxf_to_polygons, get_bounding_box, get_total_area
+from dxf_parser import parse_dxf_to_polygons, get_bounding_box, get_total_area, validate_polygon_coverage
 from nester import nest_parts
 from dxf_writer import write_nested_sheet
 from svg_writer import write_svg_from_dxf
@@ -133,6 +133,7 @@ def process_nest_task(supabase, task: dict):
         # 5. Parse DXFs to polygons
         parts_for_nesting = []
         source_polygons = {}  # part_id -> Shapely Polygon (for DXF writer alignment)
+        skipped_before_nest = []  # Parts skipped due to parse/validation failures
         for item in job_items:
             if item["item_number"] not in dxf_paths:
                 continue
@@ -142,6 +143,10 @@ def process_nest_task(supabase, task: dict):
 
             if not polygons:
                 log(f"  WARNING: No valid polygons found in {item['item_number']}")
+                skipped_before_nest.append({
+                    "item_number": item["item_number"],
+                    "reason": "No closed outline found in DXF",
+                })
                 continue
 
             # Use the largest polygon as the part outline
@@ -156,6 +161,19 @@ def process_nest_task(supabase, task: dict):
                 "area_sq_in": round(area, 4),
             }).eq("id", item["id"]).execute()
 
+            # Validate: check polygon actually represents the full DXF outline.
+            # If the polygon is much smaller than the DXF entities, the outline
+            # extraction failed (e.g. open sections) and nesting would be wrong.
+            dxf_local_path = dxf_paths[item["item_number"]]
+            if not validate_polygon_coverage(outline, dxf_local_path, min_coverage=0.5):
+                log(f"  WARNING: {item['item_number']} polygon ({bbox_w:.1f}x{bbox_h:.1f}) "
+                    f"doesn't match DXF extent — skipping (open outline?)")
+                skipped_before_nest.append({
+                    "item_number": item["item_number"],
+                    "reason": "Outline extraction failed (open sections in DXF)",
+                })
+                continue
+
             source_polygons[item["item_number"]] = outline
             parts_for_nesting.append({
                 "id": item["item_number"],
@@ -164,6 +182,24 @@ def process_nest_task(supabase, task: dict):
             })
 
         if not parts_for_nesting:
+            # If ALL parts were skipped, still complete the job with skip info
+            if skipped_before_nest:
+                skipped_data = [
+                    {"part_id": s["item_number"], "instance": 1, "reason": s["reason"]}
+                    for s in skipped_before_nest
+                ]
+                log(f"  All parts skipped — no nestable geometry")
+                supabase.table("nest_jobs").update({
+                    "status": "completed",
+                    "sheets_used": 0,
+                    "total_parts_placed": 0,
+                    "avg_utilization": 0,
+                    "skipped_parts": skipped_data,
+                    "completed_at": now_iso(),
+                }).eq("id", nest_job_id).execute()
+                complete_task(supabase, task_id)
+                log(f"  Nest job {nest_job_id} completed (no parts nested)")
+                return
             raise ValueError("No valid geometry found in any DXF files")
 
         log(f"  Nesting {len(parts_for_nesting)} unique parts...")
@@ -186,11 +222,21 @@ def process_nest_task(supabase, task: dict):
             for sp in result.skipped:
                 log(f"    - {sp.part_id}#{sp.instance}: {sp.reason}")
 
-        # Build skipped parts data for DB storage
+        # Build skipped parts data for DB storage (nester skips + parse/validation skips)
         skipped_data = [
             {"part_id": sp.part_id, "instance": sp.instance, "reason": sp.reason}
             for sp in result.skipped
         ]
+        # Add parts that were skipped before nesting (parse failures, bad geometry)
+        for skip in skipped_before_nest:
+            skipped_data.append({
+                "part_id": skip["item_number"],
+                "instance": 1,
+                "reason": skip["reason"],
+            })
+        if skipped_before_nest:
+            log(f"  {len(skipped_before_nest)} parts skipped before nesting (geometry issues):"
+                + "".join(f"\n    - {s['item_number']}: {s['reason']}" for s in skipped_before_nest))
 
         # 7. Generate output DXFs and upload
         output_prefix = job.get("output_prefix", f"projects/unknown/nests/{nest_job_id}/")
