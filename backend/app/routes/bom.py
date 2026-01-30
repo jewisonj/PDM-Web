@@ -147,11 +147,25 @@ async def bulk_upload_bom(bom: BOMBulkCreate):
     items_created = 0
     items_updated = 0
 
-    # 1. Get or create parent item
+    # 1. Get or create parent item and update its properties
+    parent_props = {
+        "name": bom.parent_name,
+        "material": bom.parent_material,
+        "mass": bom.parent_mass,
+        "thickness": bom.parent_thickness,
+        "cut_length": bom.parent_cut_length,
+        "cut_time": bom.parent_cut_time,
+        "price_est": bom.parent_price_est,
+    }
+    parent_props = {k: v for k, v in parent_props.items() if v is not None}
+
     parent_result = supabase.table("items").select("id").eq("item_number", parent_number).execute()
 
     if parent_result.data:
         parent_id = parent_result.data[0]["id"]
+        if parent_props:
+            supabase.table("items").update(parent_props).eq("id", parent_id).execute()
+            items_updated += 1
     else:
         # Create parent item
         parent_data = {
@@ -160,6 +174,7 @@ async def bulk_upload_bom(bom: BOMBulkCreate):
             "revision": "A",
             "iteration": 1,
             "lifecycle_state": "Design",
+            **parent_props,
         }
         create_result = supabase.table("items").insert(parent_data).execute()
         parent_id = create_result.data[0]["id"]

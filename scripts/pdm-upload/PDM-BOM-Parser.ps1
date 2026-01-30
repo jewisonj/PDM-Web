@@ -30,6 +30,13 @@ function Parse-BOMFile {
 
     $result = @{
         parent_item_number = $null
+        parent_name        = $null
+        parent_material    = $null
+        parent_mass        = $null
+        parent_cut_length  = $null
+        parent_thickness   = $null
+        parent_cut_time    = $null
+        parent_price_est   = $null
         children = @()
     }
 
@@ -98,8 +105,24 @@ function Parse-BOMFile {
         $isAssembly = $line -match '\.ASM'
 
         if ($indent -lt 3 -and $isAssembly -and -not $result.parent_item_number) {
-            # This is the top-level assembly (parent)
+            # This is the top-level assembly (parent) - extract its properties too
             $result.parent_item_number = $itemNumber
+
+            $pDesc = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Description' -EndCol 'Project'
+            $pMat  = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Material' -EndCol 'CutLength'
+            $pMass = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Mass' -EndCol 'Material'
+            $pCL   = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutLength' -EndCol 'Thickness'
+            $pThk  = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol 'CutTime'
+            $pCT   = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutTime' -EndCol 'PriceEst'
+            $pPE   = Get-ColumnValue -Line $line -Cols $cols -StartCol 'PriceEst' -EndCol $null
+
+            if ($pDesc) { $result.parent_name = $pDesc.Trim() }
+            if ($pMat)  { $result.parent_material = $pMat.Trim() }
+            if ($pMass -and $pMass -match '^[\d.]+$') { $result.parent_mass = [double]$pMass }
+            if ($pCL -and $pCL -match '^[\d.]+$')     { $result.parent_cut_length = [double]$pCL }
+            if ($pThk -and $pThk -match '^[\d.]+$')    { $result.parent_thickness = [double]$pThk }
+            if ($pCT -and $pCT -match '^[\d.]+$')      { $result.parent_cut_time = [double]$pCT }
+            if ($pPE -and $pPE -match '^[\d.]+$')      { $result.parent_price_est = [double]$pPE }
         }
         else {
             # This is a child part/subassembly
@@ -388,6 +411,8 @@ function Parse-MLBOMFile {
 
     # bomGroups: parent_item_number -> OrderedDictionary of child_item_number -> properties
     $bomGroups = @{}
+    # parentProps: parent_item_number -> parent assembly properties
+    $parentProps = @{}
 
     foreach ($item in $itemLines) {
         # Pop assemblies at same or deeper indent level
@@ -403,6 +428,17 @@ function Parse-MLBOMFile {
             if (-not $item.item_number.StartsWith("zzz")) {
                 if (-not $bomGroups.ContainsKey($parentNumber)) {
                     $bomGroups[$parentNumber] = @{}
+                    # Capture parent assembly properties from the stack
+                    $parentEntry = $assemblyStack[$assemblyStack.Count - 1]
+                    $parentProps[$parentNumber] = @{
+                        name       = $parentEntry.name
+                        material   = $parentEntry.material
+                        mass       = $parentEntry.mass
+                        cut_length = $parentEntry.cut_length
+                        thickness  = $parentEntry.thickness
+                        cut_time   = $parentEntry.cut_time
+                        price_est  = $parentEntry.price_est
+                    }
                 }
 
                 if ($bomGroups[$parentNumber].ContainsKey($item.item_number)) {
@@ -430,15 +466,30 @@ function Parse-MLBOMFile {
             $assemblyStack.Add(@{
                 indent      = $item.indent
                 item_number = $item.item_number
+                name        = $item.name
+                material    = $item.material
+                mass        = $item.mass
+                cut_length  = $item.cut_length
+                thickness   = $item.thickness
+                cut_time    = $item.cut_time
+                price_est   = $item.price_est
             }) | Out-Null
         }
     }
 
-    # Convert to array of BOM groups
+    # Convert to array of BOM groups (include parent properties)
     $result = @()
     foreach ($parentNumber in $bomGroups.Keys) {
+        $props = if ($parentProps.ContainsKey($parentNumber)) { $parentProps[$parentNumber] } else { @{} }
         $result += @{
             parent_item_number = $parentNumber
+            parent_name        = $props.name
+            parent_material    = $props.material
+            parent_mass        = $props.mass
+            parent_cut_length  = $props.cut_length
+            parent_thickness   = $props.thickness
+            parent_cut_time    = $props.cut_time
+            parent_price_est   = $props.price_est
             children           = @($bomGroups[$parentNumber].Values)
         }
     }

@@ -194,9 +194,16 @@ function Upload-BOM {
         throw "No children found in BOM file"
     }
 
-    # Build request body
+    # Build request body (include parent properties)
     $body = @{
         parent_item_number = $bomData.parent_item_number
+        parent_name        = $bomData.parent_name
+        parent_material    = $bomData.parent_material
+        parent_mass        = $bomData.parent_mass
+        parent_thickness   = $bomData.parent_thickness
+        parent_cut_length  = $bomData.parent_cut_length
+        parent_cut_time    = $bomData.parent_cut_time
+        parent_price_est   = $bomData.parent_price_est
         children = $bomData.children
         source_file = [IO.Path]::GetFileName($FilePath)
     } | ConvertTo-Json -Depth 5
@@ -247,9 +254,16 @@ function Upload-MLBOM {
     foreach ($group in $bomGroups) {
         if ($group.children.Count -eq 0) { continue }
 
-        # Build request body for this assembly
+        # Build request body for this assembly (include parent properties)
         $body = @{
             parent_item_number = $group.parent_item_number
+            parent_name        = $group.parent_name
+            parent_material    = $group.parent_material
+            parent_mass        = $group.parent_mass
+            parent_thickness   = $group.parent_thickness
+            parent_cut_length  = $group.parent_cut_length
+            parent_cut_time    = $group.parent_cut_time
+            parent_price_est   = $group.parent_price_est
             children           = $group.children
             source_file        = $sourceFile
         } | ConvertTo-Json -Depth 5

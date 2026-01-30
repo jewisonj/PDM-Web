@@ -171,6 +171,13 @@ class BOMChildItem(BaseModel):
 class BOMBulkCreate(BaseModel):
     """Bulk BOM upload - replaces entire BOM for an assembly."""
     parent_item_number: str
+    parent_name: Optional[str] = None
+    parent_material: Optional[str] = None
+    parent_mass: Optional[float] = None
+    parent_thickness: Optional[float] = None
+    parent_cut_length: Optional[float] = None
+    parent_cut_time: Optional[float] = None
+    parent_price_est: Optional[float] = None
     children: list[BOMChildItem]
     source_file: Optional[str] = None
 
