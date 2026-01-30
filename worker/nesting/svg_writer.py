@@ -27,7 +27,7 @@ BACKGROUND = "#0f172a"  # slate-900
 DEFAULT_STROKE = "#94a3b8"
 
 # SVG pixels per DXF inch — controls rendered size
-SCALE = 8
+SCALE = 12
 
 
 def write_svg_from_dxf(
@@ -66,20 +66,22 @@ def write_svg_from_dxf(
         fill=BACKGROUND,
     ))
 
-    stroke_w = max(0.02, sheet_width / 2000)
-    label_size = min(0.5, sheet_width / 60)
+    stroke_w = max(0.08, sheet_width / 400)
+    sheet_stroke_w = stroke_w * 0.5
+    label_size = max(0.8, sheet_width / 40)
 
     for entity in msp:
         etype = entity.dxftype()
         layer = entity.dxf.layer if hasattr(entity.dxf, "layer") else ""
         color = LAYER_COLORS.get(layer, DEFAULT_STROKE)
+        sw = sheet_stroke_w if layer == "SHEET" else stroke_w
 
         if etype == "LINE":
             dwg.add(dwg.line(
                 start=_flip(entity.dxf.start, sheet_height),
                 end=_flip(entity.dxf.end, sheet_height),
                 stroke=color,
-                stroke_width=stroke_w,
+                stroke_width=sw,
                 fill="none",
             ))
 
@@ -93,7 +95,7 @@ def write_svg_from_dxf(
             dwg.add(dwg.polyline(
                 points=points,
                 stroke=color,
-                stroke_width=stroke_w,
+                stroke_width=sw,
                 fill="none",
             ))
 
@@ -105,12 +107,12 @@ def write_svg_from_dxf(
                 center=(cx, cy),
                 r=entity.dxf.radius,
                 stroke=color,
-                stroke_width=stroke_w,
+                stroke_width=sw,
                 fill="none",
             ))
 
         elif etype == "ARC":
-            _draw_arc(dwg, entity, sheet_height, color, stroke_w)
+            _draw_arc(dwg, entity, sheet_height, color, sw)
 
         elif etype == "TEXT":
             tx, ty = _flip(

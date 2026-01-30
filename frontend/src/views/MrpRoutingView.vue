@@ -25,6 +25,7 @@ interface Item {
   material?: string
   thickness?: number
   cut_length?: number
+  cut_time?: number
   mass?: number
   has_routing?: boolean
   routing_count?: number
@@ -296,7 +297,7 @@ async function loadData() {
     // Load items with project info
     const { data: itemsData, error: itemsError } = await supabase
       .from('items')
-      .select('id, item_number, name, description, lifecycle_state, material, thickness, cut_length, mass, project_id, projects(name)')
+      .select('id, item_number, name, description, lifecycle_state, material, thickness, cut_length, cut_time, mass, project_id, projects(name)')
       .order('item_number')
 
     if (itemsError) throw itemsError
@@ -467,13 +468,19 @@ function addRoutingStep() {
     ? Math.max(...routing.value.map(r => r.sequence))
     : 0
 
+  // Auto-fill cut_time for Waterjet (012) if user left time empty
+  let estTime = addStationTime.value || 0
+  if (station.station_code === '012' && selectedItem.value.cut_time && estTime === 0) {
+    estTime = Math.round(selectedItem.value.cut_time * 10) / 10
+  }
+
   routing.value.push({
     item_id: selectedItem.value.id,
     station_id: station.id,
     station_code: station.station_code,
     station_name: station.station_name,
     sequence: lastSequence + 10,
-    est_time_min: addStationTime.value || 0,
+    est_time_min: estTime,
     notes: ''
   })
 
@@ -509,13 +516,20 @@ function applyTemplate(templateKey: string) {
 
   routing.value = template.stations.map((stationCode, i) => {
     const station = workstations.value.find(w => w.station_code === stationCode)
+
+    // Auto-fill cut_time for Waterjet (012)
+    let estTime = 0
+    if (stationCode === '012' && selectedItem.value!.cut_time) {
+      estTime = Math.round(selectedItem.value!.cut_time * 10) / 10
+    }
+
     return {
       item_id: selectedItem.value!.id,
       station_id: station?.id || '',
       station_code: station?.station_code,
       station_name: station?.station_name,
       sequence: (i + 1) * 10,
-      est_time_min: 0,
+      est_time_min: estTime,
       notes: ''
     }
   })
@@ -826,9 +840,10 @@ onMounted(() => {
           <!-- Part Info -->
           <div v-if="selectedItem.material || selectedItem.mass" class="part-info-bar">
             <span v-if="selectedItem.material" class="info-chip">{{ selectedItem.material }}</span>
-            <span v-if="selectedItem.thickness" class="info-chip">{{ selectedItem.thickness }}mm</span>
-            <span v-if="selectedItem.mass" class="info-chip">{{ selectedItem.mass }} lb</span>
-            <span v-if="selectedItem.cut_length" class="info-chip">{{ selectedItem.cut_length }}" cut</span>
+            <span v-if="selectedItem.thickness" class="info-chip">{{ selectedItem.thickness }}"</span>
+            <span v-if="selectedItem.mass" class="info-chip">{{ Number(selectedItem.mass).toFixed(1) }} lb</span>
+            <span v-if="selectedItem.cut_length" class="info-chip">{{ Number(selectedItem.cut_length).toFixed(1) }}" cut</span>
+            <span v-if="selectedItem.cut_time" class="info-chip cut-time-chip">{{ Number(selectedItem.cut_time).toFixed(1) }} min cut time</span>
           </div>
 
           <!-- Routing Operations Table -->
@@ -861,6 +876,7 @@ onMounted(() => {
               <span class="col-name">{{ step.station_name }}</span>
               <span class="col-time">
                 <input v-model.number="step.est_time_min" type="number" min="0" class="time-input" /> min
+                <span v-if="step.station_code === '012' && selectedItem?.cut_time" class="cut-time-hint">(from cut_time)</span>
               </span>
               <span class="col-actions">
                 <button class="remove-btn" @click="removeRoutingStep(index)" title="Remove">
@@ -1454,6 +1470,17 @@ onMounted(() => {
 .time-input:focus {
   outline: none;
   border-color: #38bdf8;
+}
+
+.cut-time-hint {
+  font-size: 10px;
+  color: #6ee7b7;
+  white-space: nowrap;
+}
+
+.cut-time-chip {
+  background: #065f46;
+  color: #6ee7b7;
 }
 
 .remove-btn {

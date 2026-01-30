@@ -602,20 +602,29 @@ async function downloadNestSheet(jobId: string, sheetIndex: number) {
   }
 }
 
-const svgPreviewUrl = ref<string | null>(null)
-const svgPreviewLabel = ref('')
-
 async function previewNestSheet(jobId: string, sheetIndex: number) {
   try {
     const response = await fetch(`${API_BASE_URL}/nesting/jobs/${jobId}/sheets/${sheetIndex}/svg`)
     if (!response.ok) throw new Error('SVG preview not available')
     const data = await response.json()
     if (data.url) {
-      svgPreviewUrl.value = data.url
-      svgPreviewLabel.value = `Sheet ${sheetIndex}`
+      window.open(data.url, '_blank')
     }
   } catch (e: any) {
     error.value = e.message || 'Failed to load SVG preview'
+  }
+}
+
+async function deleteNestJob(jobId: string) {
+  if (!confirm('Delete this nest job and its output files?')) return
+  try {
+    const response = await fetch(`${API_BASE_URL}/nesting/jobs/${jobId}`, { method: 'DELETE' })
+    if (!response.ok) throw new Error('Failed to delete nest job')
+    // Remove from local state
+    nestJobs.value = nestJobs.value.filter(j => j.id !== jobId)
+    nestResults.value.delete(jobId)
+  } catch (e: any) {
+    error.value = e.message || 'Failed to delete nest job'
   }
 }
 
@@ -931,6 +940,10 @@ onUnmounted(() => {
                       </button>
                     </div>
                   </div>
+                  <button class="delete-nest-btn" @click="deleteNestJob(job.id)">
+                    <i class="pi pi-trash"></i>
+                    Delete Nest
+                  </button>
                 </div>
               </div>
             </div>
@@ -1024,23 +1037,6 @@ onUnmounted(() => {
       @submit="submitNestJob"
     />
   </div>
-
-  <!-- SVG Preview Modal -->
-  <Teleport to="body">
-    <div v-if="svgPreviewUrl" class="svg-preview-overlay" @click.self="svgPreviewUrl = null">
-      <div class="svg-preview-modal">
-        <div class="svg-preview-header">
-          <span>{{ svgPreviewLabel }}</span>
-          <button class="svg-preview-close" @click="svgPreviewUrl = null">
-            <i class="pi pi-times"></i>
-          </button>
-        </div>
-        <div class="svg-preview-body">
-          <img :src="svgPreviewUrl" alt="Nest sheet preview" />
-        </div>
-      </div>
-    </div>
-  </Teleport>
 </template>
 
 <style scoped>
@@ -1870,60 +1866,23 @@ onUnmounted(() => {
   font-size: 11px;
 }
 
-/* SVG Preview Modal */
-.svg-preview-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.8);
+.delete-nest-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.svg-preview-modal {
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: 8px;
-  max-width: 95vw;
-  max-height: 95vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.svg-preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  border-bottom: 1px solid #334155;
-  color: #e5e7eb;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.svg-preview-close {
-  background: none;
-  border: none;
-  color: #9ca3af;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid #7f1d1d;
+  color: #f87171;
+  padding: 4px 10px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 16px;
-  padding: 4px;
+  font-size: 12px;
+  margin-top: 6px;
+  align-self: flex-start;
 }
 
-.svg-preview-close:hover {
-  color: #e5e7eb;
-}
-
-.svg-preview-body {
-  padding: 16px;
-  overflow: auto;
-}
-
-.svg-preview-body img {
-  max-width: 100%;
-  height: auto;
-  display: block;
+.delete-nest-btn:hover {
+  background: #7f1d1d;
+  color: #fecaca;
 }
 </style>

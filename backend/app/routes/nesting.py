@@ -348,3 +348,45 @@ async def get_nest_sheet_svg(nest_job_id: UUID, sheet_index: int):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not generate SVG URL: {str(e)}")
+
+
+@router.delete("/jobs/{nest_job_id}")
+async def delete_nest_job(nest_job_id: UUID):
+    """Delete a nest job, its results, and all output files from storage."""
+    supabase = get_supabase_admin()
+    job_id = str(nest_job_id)
+
+    # Verify job exists
+    job_result = supabase.table("nest_jobs").select("id, output_prefix").eq("id", job_id).single().execute()
+    if not job_result.data:
+        raise HTTPException(status_code=404, detail="Nest job not found")
+
+    # Get all result rows to find files to delete
+    results = supabase.table("nest_results").select("dxf_path, svg_path").eq("nest_job_id", job_id).execute()
+
+    # Delete files from storage
+    storage_paths = []
+    for row in (results.data or []):
+        if row.get("dxf_path"):
+            storage_paths.append(row["dxf_path"])
+        if row.get("svg_path"):
+            storage_paths.append(row["svg_path"])
+
+    # Also delete manifest if output_prefix is set
+    output_prefix = job_result.data.get("output_prefix")
+    if output_prefix:
+        storage_paths.append(f"{output_prefix}manifest.json")
+
+    if storage_paths:
+        try:
+            supabase.storage.from_("pdm-files").remove(storage_paths)
+        except Exception:
+            pass  # Best-effort cleanup, don't fail the delete
+
+    # Delete database rows (nest_results first due to FK, then job items, then job)
+    supabase.table("nest_results").delete().eq("nest_job_id", job_id).execute()
+    supabase.table("nest_job_items").delete().eq("nest_job_id", job_id).execute()
+    supabase.table("work_queue").delete().eq("payload->>nest_job_id", job_id).execute()
+    supabase.table("nest_jobs").delete().eq("id", job_id).execute()
+
+    return {"deleted": True}

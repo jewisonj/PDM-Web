@@ -6,10 +6,11 @@ Creates DXF files with parts placed on sheets, including:
 - Part labels on LABELS layer
 """
 
+import math
 import ezdxf
 from shapely.geometry import Polygon
 
-from nester import SheetResult
+from nester import SheetResult, Placement
 
 
 def write_nested_sheet(
@@ -49,11 +50,7 @@ def write_nested_sheet(
             continue
 
         try:
-            _insert_part_from_dxf(
-                msp, part_dxf,
-                placement.x, placement.y,
-                placement.rotation,
-            )
+            _insert_part_from_dxf(msp, part_dxf, placement)
         except Exception as e:
             # If we can't read the original DXF, draw the Shapely polygon instead
             _draw_polygon(msp, placement.polygon, "PARTS")
@@ -76,14 +73,21 @@ def write_nested_sheet(
 def _insert_part_from_dxf(
     msp,
     dxf_path: str,
-    x: float, y: float,
-    rotation: float,
+    placement: Placement,
 ) -> None:
-    """Read a DXF file and insert its geometry into msp, transformed."""
+    """Read a DXF file and insert its geometry into msp, transformed.
+
+    Matches the nester's transform order:
+    1. Rotate around source geometry centroid
+    2. Normalize rotated bounding box to (0,0)
+    3. Translate to placement polygon position on the sheet
+    """
     src = ezdxf.readfile(dxf_path)
     src_msp = src.modelspace()
 
-    # Get bounding box of source to normalize position
+    rotation = placement.rotation
+
+    # Collect all points from source to compute centroid and rotated bbox
     all_points = []
     for entity in src_msp:
         etype = entity.dxftype()
@@ -95,30 +99,44 @@ def _insert_part_from_dxf(
         elif etype == "LWPOLYLINE":
             for pt in entity.get_points(format="xy"):
                 all_points.append(pt)
+        elif etype == "SPLINE":
+            try:
+                for pt in entity.flattening(0.01):
+                    all_points.append((pt.x, pt.y))
+            except Exception:
+                pass
 
     if not all_points:
-        return
+        raise ValueError("No geometry found in source DXF")
 
-    min_x = min(p[0] for p in all_points)
-    min_y = min(p[1] for p in all_points)
+    # 1. Compute centroid of source geometry (rotation pivot, matching nester)
+    cx = sum(p[0] for p in all_points) / len(all_points)
+    cy = sum(p[1] for p in all_points) / len(all_points)
 
-    import math
+    # 2. Target position from placement polygon (already correctly placed by nester)
+    target_min_x, target_min_y = placement.polygon.bounds[:2]
 
-    # Rotation in radians
+    # 3. Rotate all source points around centroid to find rotated bounding box
     rad = math.radians(rotation)
     cos_r = math.cos(rad)
     sin_r = math.sin(rad)
 
+    def _rotate_pt(px: float, py: float) -> tuple[float, float]:
+        """Rotate point around source centroid."""
+        dx = px - cx
+        dy = py - cy
+        return (cx + dx * cos_r - dy * sin_r,
+                cy + dx * sin_r + dy * cos_r)
+
+    rotated_pts = [_rotate_pt(p[0], p[1]) for p in all_points]
+    rot_min_x = min(p[0] for p in rotated_pts)
+    rot_min_y = min(p[1] for p in rotated_pts)
+
+    # 4. Full transform: rotate around centroid, then align rotated bbox to target
     def transform(px: float, py: float) -> tuple[float, float]:
-        """Normalize to origin, rotate, then translate to placement position."""
-        # Normalize
-        nx = px - min_x
-        ny = py - min_y
-        # Rotate around origin
-        rx = nx * cos_r - ny * sin_r
-        ry = nx * sin_r + ny * cos_r
-        # Translate
-        return (rx + x, ry + y)
+        rx, ry = _rotate_pt(px, py)
+        return (rx - rot_min_x + target_min_x,
+                ry - rot_min_y + target_min_y)
 
     # Copy entities with transformation
     for entity in src_msp:
@@ -142,22 +160,36 @@ def _insert_part_from_dxf(
             )
 
         elif etype == "CIRCLE":
-            cx, cy = transform(entity.dxf.center.x, entity.dxf.center.y)
+            tcx, tcy = transform(entity.dxf.center.x, entity.dxf.center.y)
             msp.add_circle(
-                (cx, cy), entity.dxf.radius,
+                (tcx, tcy), entity.dxf.radius,
                 dxfattribs={"layer": "PARTS"},
             )
 
         elif etype == "ARC":
-            # Transform arc center; adjust angles for rotation
-            cx, cy = transform(entity.dxf.center.x, entity.dxf.center.y)
+            tcx, tcy = transform(entity.dxf.center.x, entity.dxf.center.y)
             start_angle = entity.dxf.start_angle + rotation
             end_angle = entity.dxf.end_angle + rotation
             msp.add_arc(
-                (cx, cy), entity.dxf.radius,
+                (tcx, tcy), entity.dxf.radius,
                 start_angle, end_angle,
                 dxfattribs={"layer": "PARTS"},
             )
+
+        elif etype == "SPLINE":
+            # Flatten spline to polyline points
+            try:
+                pts = list(entity.flattening(0.01))
+                if len(pts) < 2:
+                    continue
+                transformed = [transform(pt.x, pt.y) for pt in pts]
+                msp.add_lwpolyline(
+                    transformed,
+                    close=entity.closed,
+                    dxfattribs={"layer": "PARTS"},
+                )
+            except Exception:
+                pass
 
 
 def _draw_polygon(msp, polygon: Polygon, layer: str) -> None:
