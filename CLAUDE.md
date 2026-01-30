@@ -121,6 +121,29 @@ docker exec pdm-freecad-worker python3 /scripts/worker/flatten_sheetmetal.py /da
 - `Documentation/02-PDM-COMPLETE-OVERVIEW.md` - Original architecture
 - `Documentation/03-DATABASE-SCHEMA.md` - Legacy SQLite schema
 
+## Specialized Agents (USE THESE)
+
+Custom agents live in `.claude/agents/`. **Delegate to these agents aggressively** to keep the main context window lean. Each agent has deep domain knowledge pre-loaded so it can work autonomously.
+
+| Agent | File | Use For |
+|-------|------|---------|
+| **supabase** | `supabase.md` | Database schema, queries, RLS policies, auth flows, storage buckets, migrations, backend stability. Knows all 16 tables, indexes, triggers, dual-client pattern. |
+| **mrp** | `mrp.md` | Manufacturing features, shop floor UI, routing, materials, labor tracking, cost estimation, print packets. Knows what managers vs shop workers need. |
+| **style** | `style.md` | UI consistency, dark theme (MRP) vs light theme (PDM), slideout panels, tables, badges, buttons, spacing. Has the complete color system and component patterns. |
+| **documentation** | `documentation.md` | Recording changes, documenting bug fixes, updating docs after features. Knows all 27+ documentation files. |
+| **creojs** | `creojs.md` | CreoJS apps in Creo Parametric browser, PFC API (pfcSession, pfcModel, etc.), workspace.html. Reference: `creojs-reference.md` |
+
+### When to Delegate
+- **Changing database/backend** -> Delegate to `supabase` agent
+- **Building/fixing MRP features** -> Delegate to `mrp` agent
+- **Building/fixing UI components** -> Delegate to `style` agent for review
+- **After completing any task** -> Delegate to `documentation` agent to record what changed
+- **CreoJS/Creo browser work** -> Delegate to `creojs` agent
+- **Multiple concerns** -> Delegate to multiple agents in parallel
+
+### Why Delegate
+Agents run in isolated context windows. Delegating keeps the main conversation context clean and available for coordination, while agents handle the deep domain work with their full specialized knowledge loaded.
+
 ## Next Steps
 
 1. Set up Docker Compose (PostgreSQL + FastAPI skeleton)
