@@ -59,7 +59,8 @@
       "WebFetch(domain:pypi.org)",
       "mcp__pdm-supabase__apply_migration",
       "Bash(powershell:*)",
-      "mcp__pdm-supabase__get_advisors"
+      "mcp__pdm-supabase__get_advisors",
+      "Bash(timeout:*)"
     ],
     "deny": []
   },
