@@ -27,7 +27,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client
 
-from dxf_parser import parse_dxf_to_polygons, get_bounding_box, get_total_area, validate_polygon_coverage
+from dxf_parser import parse_dxf_to_polygons, get_bounding_box, get_total_area
 from nester import nest_parts
 from dxf_writer import write_nested_sheet
 from svg_writer import write_svg_from_dxf
@@ -160,19 +160,6 @@ def process_nest_task(supabase, task: dict):
                 "bounding_box_h": round(bbox_h, 4),
                 "area_sq_in": round(area, 4),
             }).eq("id", item["id"]).execute()
-
-            # Validate: check polygon actually represents the full DXF outline.
-            # If the polygon is much smaller than the DXF entities, the outline
-            # extraction failed (e.g. open sections) and nesting would be wrong.
-            dxf_local_path = dxf_paths[item["item_number"]]
-            if not validate_polygon_coverage(outline, dxf_local_path, min_coverage=0.5):
-                log(f"  WARNING: {item['item_number']} polygon ({bbox_w:.1f}x{bbox_h:.1f}) "
-                    f"doesn't match DXF extent — skipping (open outline?)")
-                skipped_before_nest.append({
-                    "item_number": item["item_number"],
-                    "reason": "Outline extraction failed (open sections in DXF)",
-                })
-                continue
 
             source_polygons[item["item_number"]] = outline
             parts_for_nesting.append({

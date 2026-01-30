@@ -132,6 +132,7 @@ Custom agents live in `.claude/agents/`. **Delegate to these agents aggressively
 | **style** | `style.md` | UI consistency, dark theme (MRP) vs light theme (PDM), slideout panels, tables, badges, buttons, spacing. Has the complete color system and component patterns. |
 | **documentation** | `documentation.md` | Recording changes, documenting bug fixes, updating docs after features. Knows all 27+ documentation files. |
 | **creojs** | `creojs.md` | CreoJS apps in Creo Parametric browser, PFC API (pfcSession, pfcModel, etc.), workspace.html. Reference: `creojs-reference.md` |
+| **dxf-pipeline** | `dxf-pipeline.md` | DXF/SVG file creation, FreeCAD sheet metal flattening, nesting geometry, open segment debugging, STEP-to-nested-DXF pipeline. Knows all curve types, coordinate transforms, and the full pipeline. |
 
 ### When to Delegate
 - **Changing database/backend** -> Delegate to `supabase` agent
@@ -139,6 +140,7 @@ Custom agents live in `.claude/agents/`. **Delegate to these agents aggressively
 - **Building/fixing UI components** -> Delegate to `style` agent for review
 - **After completing any task** -> Delegate to `documentation` agent to record what changed
 - **CreoJS/Creo browser work** -> Delegate to `creojs` agent
+- **DXF/SVG/FreeCAD/nesting work** -> Delegate to `dxf-pipeline` agent
 - **Multiple concerns** -> Delegate to multiple agents in parallel
 
 ### Why Delegate
