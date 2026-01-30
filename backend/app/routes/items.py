@@ -149,8 +149,20 @@ async def update_item(item_number: str, item: ItemUpdate, upsert: bool = False):
             "is_supplier_part": is_supplier,
             **update_data
         }
-        create_result = supabase.table("items").insert(new_item).execute()
-        return create_result.data[0]
+        try:
+            create_result = supabase.table("items").insert(new_item).execute()
+            return create_result.data[0]
+        except Exception as e:
+            if "duplicate key" in str(e).lower() or "23505" in str(e):
+                # Item exists but update returned no data (schema cache lag)
+                # Retry the update
+                retry_result = supabase.table("items").update(update_data).eq("item_number", normalized_number).execute()
+                if retry_result.data:
+                    return retry_result.data[0]
+                # Fall through to fetch the item as-is
+                fetch_result = supabase.table("items").select("*").eq("item_number", normalized_number).single().execute()
+                return fetch_result.data
+            raise HTTPException(status_code=400, detail=str(e))
 
     raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
 

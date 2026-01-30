@@ -1,0 +1,21 @@
+﻿       Model Name        DESCRIPTION         PROJECT       PRO_MP_MASS  PTC_MASTER_MATERIAL  CUT_LENGTH  SMT_THICKNESS  CUT_TIME   PRICE_EST   Current Rep: Master Rep 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ STP02810.PRT            PLATE, FRONT COVER  WATTS MARINE  58.373103    ALUMINUM             330.933454  0.25           21.801431  317.182541                          
+   Design Items                                                                                                                                                        
+   RIGHT                                                                                                                                                               
+   TOP                                                                                                                                                                 
+   FRONT                                                                                                                                                               
+   PRT_CSYS_DEF                                                                                                                                                        
+   Planar 1(First Wall)                                                                                                                                                
+   Flat 1                                                                                                                                                              
+   Flat 2                                                                                                                                                              
+   Round 1                                                                                                                                                             
+   Extruded Cut 1                                                                                                                                                      
+   Sketch 1                                                                                                                                                            
+   A_2                                                                                                                                                                 
+   Extruded Cut 2                                                                                                                                                      
+   Extruded Cut 3                                                                                                                                                      
+   Round 2                                                                                                                                                             
+   Mirror 1                                                                                                                                                            
+   Insert Here                                                                                                                                                         
+   Flat Pattern 1                                                                                                                                                      

@@ -185,11 +185,13 @@ async def bulk_upload_bom(bom: BOMBulkCreate):
 
         # Prepare item properties
         item_props = {
-            "description": child.description,
+            "name": child.name,
             "material": child.material,
             "mass": child.mass,
             "thickness": child.thickness,
             "cut_length": child.cut_length,
+            "cut_time": child.cut_time,
+            "price_est": child.price_est,
         }
         # Filter out None values
         item_props = {k: v for k, v in item_props.items() if v is not None}

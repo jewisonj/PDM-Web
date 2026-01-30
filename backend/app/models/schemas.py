@@ -66,6 +66,8 @@ class ItemBase(BaseModel):
     mass: Optional[float] = None
     thickness: Optional[float] = None
     cut_length: Optional[float] = None
+    cut_time: Optional[float] = None
+    price_est: Optional[float] = None
     is_supplier_part: bool = False
     supplier_name: Optional[str] = None
     supplier_pn: Optional[str] = None
@@ -87,6 +89,8 @@ class ItemUpdate(BaseModel):
     mass: Optional[float] = None
     thickness: Optional[float] = None
     cut_length: Optional[float] = None
+    cut_time: Optional[float] = None
+    price_est: Optional[float] = None
     is_supplier_part: Optional[bool] = None
     supplier_name: Optional[str] = None
     supplier_pn: Optional[str] = None
@@ -155,11 +159,13 @@ class BOMChildItem(BaseModel):
     """Child item in bulk BOM upload."""
     item_number: str
     quantity: int = 1
-    description: Optional[str] = None
+    name: Optional[str] = None
     material: Optional[str] = None
     mass: Optional[float] = None
     thickness: Optional[float] = None
     cut_length: Optional[float] = None
+    cut_time: Optional[float] = None
+    price_est: Optional[float] = None
 
 
 class BOMBulkCreate(BaseModel):

@@ -57,6 +57,8 @@ function Parse-BOMFile {
         Material    = if ($headerLine.IndexOf('PTC_MASTER_MATERIAL') -ge 0) { $headerLine.IndexOf('PTC_MASTER_MATERIAL') } else { -1 }
         CutLength   = if ($headerLine.IndexOf('CUT_LENGTH') -ge 0) { $headerLine.IndexOf('CUT_LENGTH') } else { -1 }
         Thickness   = if ($headerLine.IndexOf('SMT_THICKNESS') -ge 0) { $headerLine.IndexOf('SMT_THICKNESS') } else { -1 }
+        CutTime     = if ($headerLine.IndexOf('CUT_TIME') -ge 0) { $headerLine.IndexOf('CUT_TIME') } else { -1 }
+        PriceEst    = if ($headerLine.IndexOf('PRICE_EST') -ge 0) { $headerLine.IndexOf('PRICE_EST') } else { -1 }
     }
 
     # Track children for quantity counting
@@ -107,12 +109,16 @@ function Parse-BOMFile {
             $material = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Material' -EndCol 'CutLength'
             $massStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Mass' -EndCol 'Material'
             $cutLengthStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutLength' -EndCol 'Thickness'
-            $thicknessStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol $null
+            $thicknessStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol 'CutTime'
+            $cutTimeStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutTime' -EndCol 'PriceEst'
+            $priceEstStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'PriceEst' -EndCol $null
 
             # Parse numeric values
             $mass = $null
             $cutLength = $null
             $thickness = $null
+            $cutTime = $null
+            $priceEst = $null
 
             if ($massStr -and $massStr -match '^[\d.]+$') {
                 $mass = [double]$massStr
@@ -123,6 +129,12 @@ function Parse-BOMFile {
             if ($thicknessStr -and $thicknessStr -match '^[\d.]+$') {
                 $thickness = [double]$thicknessStr
             }
+            if ($cutTimeStr -and $cutTimeStr -match '^[\d.]+$') {
+                $cutTime = [double]$cutTimeStr
+            }
+            if ($priceEstStr -and $priceEstStr -match '^[\d.]+$') {
+                $priceEst = [double]$priceEstStr
+            }
 
             # Check for duplicate (increment quantity)
             if ($childrenMap.ContainsKey($itemNumber)) {
@@ -132,11 +144,13 @@ function Parse-BOMFile {
                 $childrenMap[$itemNumber] = @{
                     item_number = $itemNumber
                     quantity    = 1
-                    description = if ($description) { $description.Trim() } else { $null }
+                    name        = if ($description) { $description.Trim() } else { $null }
                     material    = if ($material) { $material.Trim() } else { $null }
                     mass        = $mass
                     cut_length  = $cutLength
                     thickness   = $thickness
+                    cut_time    = $cutTime
+                    price_est   = $priceEst
                 }
             }
         }
@@ -189,6 +203,8 @@ function Parse-ParameterFile {
         Material    = if ($headerLine.IndexOf('PTC_MASTER_MATERIAL') -ge 0) { $headerLine.IndexOf('PTC_MASTER_MATERIAL') } else { -1 }
         CutLength   = if ($headerLine.IndexOf('CUT_LENGTH') -ge 0) { $headerLine.IndexOf('CUT_LENGTH') } else { -1 }
         Thickness   = if ($headerLine.IndexOf('SMT_THICKNESS') -ge 0) { $headerLine.IndexOf('SMT_THICKNESS') } else { -1 }
+        CutTime     = if ($headerLine.IndexOf('CUT_TIME') -ge 0) { $headerLine.IndexOf('CUT_TIME') } else { -1 }
+        PriceEst    = if ($headerLine.IndexOf('PRICE_EST') -ge 0) { $headerLine.IndexOf('PRICE_EST') } else { -1 }
     }
 
     # Find first data line (after separator)
@@ -215,9 +231,11 @@ function Parse-ParameterFile {
             $material = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Material' -EndCol 'CutLength'
             $massStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Mass' -EndCol 'Material'
             $cutLengthStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutLength' -EndCol 'Thickness'
-            $thicknessStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol $null
+            $thicknessStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol 'CutTime'
+            $cutTimeStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutTime' -EndCol 'PriceEst'
+            $priceEstStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'PriceEst' -EndCol $null
 
-            if ($description) { $result.description = $description.Trim() }
+            if ($description) { $result.name = $description.Trim() }
             if ($material) { $result.material = $material.Trim() }
 
             if ($massStr -and $massStr -match '^[\d.]+$') {
@@ -228,6 +246,12 @@ function Parse-ParameterFile {
             }
             if ($thicknessStr -and $thicknessStr -match '^[\d.]+$') {
                 $result.thickness = [double]$thicknessStr
+            }
+            if ($cutTimeStr -and $cutTimeStr -match '^[\d.]+$') {
+                $result.cut_time = [double]$cutTimeStr
+            }
+            if ($priceEstStr -and $priceEstStr -match '^[\d.]+$') {
+                $result.price_est = [double]$priceEstStr
             }
 
             # Only process first data line for parameter files

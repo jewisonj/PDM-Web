@@ -1,0 +1,32 @@
+﻿     Model Name      DESCRIPTION          PROJECT       PRO_MP_MASS  SMT_THICKNESS  PTC_MASTER_MATERIAL    CUT_LENGTH  CUT_TIME  PRICE_EST  Current Rep: DEFAULT REP 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ STA01010.ASM        SAWTOOTH ASSEMBLY    SEATTLE P91   2187.926641                                                                         Def: Master Rep          
+   Materials                                                                                                                                                         
+   ASM_RIGHT                                                                                                                                                         
+   ASM_TOP                                                                                                                                                           
+   ASM_FRONT                                                                                                                                                         
+   ASM_DEF_CSYS                                                                                                                                                      
+   STA01020.ASM      MAIN WELDMENT        WATTS MARINE  1804.859543                                                                                                  
+   STA01040.ASM      TOP COVER, RIGHT     WATTS MARINE  78.557317                                                                                                    
+   STA01045.ASM      TOP COVER, RIGHT     WATTS MARINE  83.516014                                                                                                    
+   STA01050.ASM      CONTROL BOX PANEL    WATTS MARINE  17.960714                                                                                                    
+   DOOR_PIVOT                                                                                                                                                        
+   DOOR_HINGE                                                                                                                                                        
+   STA01070.ASM      FRONT COVER          WATTS MARINE  60.197593                                                                                                    
+   STP02850.PRT      CONTROL COVER PLATE  WATTS MARINE  17.996703    0.25           STEEL                  69.823022   4.599843  26.796804                           
+   STP02860.PRT      TOP COVER PLATE      WATTS MARINE  51.899274    0.25           STEEL                  135.477876  8.925092  66.427114                           
+   STP02860.PRT      TOP COVER PLATE      WATTS MARINE  51.899274    0.25           STEEL                  135.477876  8.925092  66.427114                           
+   STP02870.PRT      TOP COVER PLATE      WATTS MARINE  38.901789    0.25           STEEL                  125.59292   8.273885  53.751234                           
+   STP02870.PRT      TOP COVER PLATE      WATTS MARINE  38.901789    0.25           STEEL                  125.59292   8.273885  53.751234                           
+   MMC3392T51.ASM    STAINLESS CHAIN      HRDWARE       1.71297                                                                                                      
+   MMC97245A709.PRT                                     0.000000                    PTC_SYSTEM_MTRL_PROPS                                                            
+   MMC93085K36.PRT                                      0.000000                    PTC_SYSTEM_MTRL_PROPS                                                            
+   MMC97245A709.PRT                                     0.000000                    PTC_SYSTEM_MTRL_PROPS                                                            
+   Insert Here                                                                                                                                                       
+   MMC8077A322.PRT                                                                                                                                                   
+   MMC8077A322.PRT                                                                                                                                                   
+   Sketch 1                                                                                                                                                          
+   Sections                                                                                                                                                          
+     A                                                                                                                                                               
+     B                                                                                                                                                               
+     C                                                                                                                                                               

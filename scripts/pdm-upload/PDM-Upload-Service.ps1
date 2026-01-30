@@ -166,8 +166,14 @@ $onCreated = Register-ObjectEvent $watcher "Created" -Action {
     $filePath = $Event.SourceEventArgs.FullPath
     $fileName = $Event.SourceEventArgs.Name
 
-    # Small delay to ensure file is fully written
-    Start-Sleep -Milliseconds $Config.PollInterval
+    # Wait for temp files to be created/removed and file to be fully written
+    # This gives Creo time to finish creating PDFs with embedded images, etc.
+    Start-Sleep -Seconds 3
+
+    # Check if file still exists (temp files may have been removed)
+    if (-not (Test-Path $filePath)) {
+        return
+    }
 
     # Process the file
     Process-DroppedFile -FilePath $filePath

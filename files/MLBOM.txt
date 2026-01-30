@@ -1,0 +1,779 @@
+﻿                 Model Name                   DESCRIPTION          PROJECT       PRO_MP_MASS  SMT_THICKNESS  PTC_MASTER_MATERIAL       CUT_LENGTH  CUT_TIME   PRICE_EST   Current Rep: DEFAULT REP 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ STA01010.ASM                                 SAWTOOTH ASSEMBLY    SEATTLE P91   2187.926641                                                                              Def: Master Rep          
+   STA01020.ASM                               MAIN WELDMENT        WATTS MARINE  1804.859543                                                                                                       
+     STP02730<STP02735>.PRT                   SIDE PLATE           WATTS MARINE  126.40205    0.25           STEEL                     171.541722  11.300928  135.694062                           
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Chamfer 1                                                                                                                                                                                   
+       Planar 2                                                                                                                                                                                    
+       Extruded Cut 2                                                                                                                                                                              
+       Flat 1                                                                                                                                                                                      
+       Flange 1                                                                                                                                                                                    
+       Flange 2                                                                                                                                                                                    
+       Extruded Cut 3                                                                                                                                                                              
+       Unbend 1                                                                                                                                                                                    
+         BEND_NOTE_0                                                                                                                                                                               
+         BEND_NOTE_1                                                                                                                                                                               
+       Bend Back 1                                                                                                                                                                                 
+       Extruded Cut 5                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02890.PRT                             HINGE PLATE          WATTS MARINE  0.571602     0.38           STEEL                     13.535      1.595751   4.47524                              
+       Extrude 1(First Wall)                                                                                                                                                                       
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 1                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+       Flat Pattern 1                                                                                                                                                                              
+         BEND_NOTE_0                                                                                                                                                                               
+     STP02730<STP02735>.PRT                   SIDE PLATE           WATTS MARINE  126.40205    0.25           STEEL                     171.541722  11.300928  135.694062                           
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Chamfer 1                                                                                                                                                                                   
+       Planar 2                                                                                                                                                                                    
+       Extruded Cut 2                                                                                                                                                                              
+       Flat 1                                                                                                                                                                                      
+       Flange 1                                                                                                                                                                                    
+       Flange 2                                                                                                                                                                                    
+       Extruded Cut 3                                                                                                                                                                              
+       Unbend 1                                                                                                                                                                                    
+         BEND_NOTE_0                                                                                                                                                                               
+         BEND_NOTE_1                                                                                                                                                                               
+       Bend Back 1                                                                                                                                                                                 
+       Extruded Cut 5                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02890.PRT                             HINGE PLATE          WATTS MARINE  0.571602     0.38           STEEL                     13.535      1.595751   4.47524                              
+       Extrude 1(First Wall)                                                                                                                                                                       
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 1                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+       Flat Pattern 1                                                                                                                                                                              
+         BEND_NOTE_0                                                                                                                                                                               
+     STP02750.PRT                             FRONT PLATE          WATTS MARINE  407.668514   0.25           STEEL                     939.781917  61.911514  501.297021                           
+       Extrude 1(First Wall)                                                                                                                                                                       
+         Section 1                                                                                                                                                                                 
+       Pattern 1 of Extruded Cut 1                                                                                                                                                                 
+         Extruded Cut 1 [1]                                                                                                                                                                        
+           Section 1                                                                                                                                                                               
+         Extruded Cut 1 [2]                                                                                                                                                                        
+           Section 1                                                                                                                                                                               
+         Extruded Cut 1 [3]                                                                                                                                                                        
+           Section 1                                                                                                                                                                               
+         Extruded Cut 1 [4]                                                                                                                                                                        
+           Section 1                                                                                                                                                                               
+       Extruded Cut 2                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 3                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Unbend 1                                                                                                                                                                                    
+         BEND_NOTE_9                                                                                                                                                                               
+         BEND_NOTE_11                                                                                                                                                                              
+       Extruded Cut 5                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Bend Back 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+       Extruded Cut 4                                                                                                                                                                              
+       Flat Pattern 1                                                                                                                                                                              
+         BEND_NOTE_0                                                                                                                                                                               
+         BEND_NOTE_1                                                                                                                                                                               
+         BEND_NOTE_2                                                                                                                                                                               
+         BEND_NOTE_3                                                                                                                                                                               
+         BEND_NOTE_8                                                                                                                                                                               
+     STP02760.PRT                             REAR PLATE           WATTS MARINE  387.234737   0.25           STEEL                     885.035782  58.304915  474.911814                           
+       Design Items                                                                                                                                                                                
+         Annotations                                                                                                                                                                               
+           ad102                                                                                                                                                                                   
+           ad105                                                                                                                                                                                   
+       Extrude 1(First Wall)                                                                                                                                                                       
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 1                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 2                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 3                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 4                                                                                                                                                                              
+       Planar 1                                                                                                                                                                                    
+       Mirror 1                                                                                                                                                                                    
+         Planar 1 (2)                                                                                                                                                                              
+       Extruded Cut 5                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 6                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Unbend 1                                                                                                                                                                                    
+         BEND_NOTE_2                                                                                                                                                                               
+       Extruded Cut 7                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Bend Back 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+       Flat Pattern 1                                                                                                                                                                              
+     STP02790.PRT                             SPLITTER PLATE       WATTS MARINE  97.973839    0.25           STEEL                     163.883805  10.796435  110.268851                           
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Chamfer 1                                                                                                                                                                                   
+       Insert Here                                                                                                                                                                                 
+     LID_DEFINITION                                                                                                                                                                                
+       STP02780.PRT                           TOP LID PLATE        WATTS MARINE  77.572414    0.25           ALUMINUM                  254.659037  16.77658   391.017312  Exclude                  
+         Extrude 1(First Wall)                                                                                                                                                                     
+           Section 1                                                                                                                                                                               
+         Extruded Cut 1                                                                                                                                                                            
+         Unbend 1                                                                                                                                                                                  
+           BEND_NOTE_2                                                                                                                                                                             
+           BEND_NOTE_3                                                                                                                                                                             
+         Extruded Cut 2                                                                                                                                                                            
+           Section 1                                                                                                                                                                               
+         Bend Back 1                                                                                                                                                                               
+         Extruded Cut 3                                                                                                                                                                            
+           Section 1                                                                                                                                                                               
+         Extruded Cut 4                                                                                                                                                                            
+           Section 1                                                                                                                                                                               
+         Flat Pattern 1                                                                                                                                                                            
+     STP02880.PRT                             BOTTOM PLATE         WATTS MARINE  577.854217   0.25           STEEL                     574.167761  37.825366  585.7395                             
+       Extrude 1(First Wall)                                                                                                                                                                       
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 1                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Unbend 1                                                                                                                                                                                    
+         BEND_NOTE_1                                                                                                                                                                               
+       Extruded Cut 2                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Bend Back 1                                                                                                                                                                                 
+       Flat 1                                                                                                                                                                                      
+       Mirror 1                                                                                                                                                                                    
+         Flat 1 (2)                                                                                                                                                                                
+       Insert Here                                                                                                                                                                                 
+       Flat Pattern 1                                                                                                                                                                              
+         BEND_NOTE_0                                                                                                                                                                               
+     STP02800.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.34831      0.375          STEEL                     10.409422   1.204863   3.308222                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02800.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.34831      0.375          STEEL                     10.409422   1.204863   3.308222                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02800.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.34831      0.375          STEEL                     10.409422   1.204863   3.308222                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02800.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.34831      0.375          STEEL                     10.409422   1.204863   3.308222                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02950.PRT                             DOOR BUSHING         WATTS MARINE  0.143143                    STEEL                                                                                 
+       Extrude 1                                                                                                                                                                                   
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+       Extrude 2                                                                                                                                                                                   
+     MMC12555K88.PRT                          2" NPT BUNG                        0.464495                    STEEL                                                                                 
+       Import Feature id 5                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     MMC12555K88.PRT                          2" NPT BUNG                        0.464495                    STEEL                                                                                 
+       Import Feature id 5                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     STP02950.PRT                             DOOR BUSHING         WATTS MARINE  0.143143                    STEEL                                                                                 
+       Extrude 1                                                                                                                                                                                   
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+       Extrude 2                                                                                                                                                                                   
+     Insert Here                                                                                                                                                                                   
+   STA01040.ASM                               TOP COVER, RIGHT     WATTS MARINE  78.557317                                                                                                         
+     STP02780.PRT                             TOP LID PLATE        WATTS MARINE  77.572414    0.25           ALUMINUM                  254.659037  16.77658   391.017312                           
+       Extrude 1(First Wall)                                                                                                                                                                       
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 1                                                                                                                                                                              
+       Unbend 1                                                                                                                                                                                    
+         BEND_NOTE_2                                                                                                                                                                               
+         BEND_NOTE_3                                                                                                                                                                               
+       Extruded Cut 2                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Bend Back 1                                                                                                                                                                                 
+       Extruded Cut 3                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 4                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+       Flat Pattern 1                                                                                                                                                                              
+     STP02805.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.130932     0.375          ALUMINUM                  10.784422   1.248269   3.709867                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Planar 2                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02805.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.130932     0.375          ALUMINUM                  10.784422   1.248269   3.709867                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Planar 2                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02805.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.130932     0.375          ALUMINUM                  10.784422   1.248269   3.709867                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Planar 2                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02805.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.130932     0.375          ALUMINUM                  10.784422   1.248269   3.709867                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Planar 2                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02805.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.130932     0.375          ALUMINUM                  10.784422   1.248269   3.709867                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Planar 2                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02920.PRT                             DECAL                WATTS MARINE  0.165121     0.05           VINYL_DECAL                                                                           
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02920.PRT                             DECAL                WATTS MARINE  0.165121     0.05           VINYL_DECAL                                                                           
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     Insert Here                                                                                                                                                                                   
+   STA01045.ASM                               TOP COVER, RIGHT     WATTS MARINE  83.516014                                                                                                         
+     Mirrored Bodies id 1                                                                                                                                                                          
+     STP02785.PRT                             TOP COVER PLATE      WATTS MARINE  77.572414    0.25           ALUMINUM                  254.659037  16.77658   391.017312                           
+       Mirrored Bodies id 1                                                                                                                                                                        
+       Insert Here                                                                                                                                                                                 
+       Flat Pattern 1                                                                                                                                                                              
+         BEND_NOTE_0                                                                                                                                                                               
+         BEND_NOTE_1                                                                                                                                                                               
+         BEND_NOTE_2                                                                                                                                                                               
+         BEND_NOTE_3                                                                                                                                                                               
+     STP02805.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.130932     0.375          ALUMINUM                  10.784422   1.248269   3.709867                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Planar 2                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02805.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.130932     0.375          ALUMINUM                  10.784422   1.248269   3.709867                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Planar 2                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02805.PRT                             GOOSNECK BRACKET     WATTS MARINE  0.130932     0.375          ALUMINUM                  10.784422   1.248269   3.709867                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Planar 2                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02920.PRT                             DECAL                WATTS MARINE  0.165121     0.05           VINYL_DECAL                                                                           
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02920.PRT                             DECAL                WATTS MARINE  0.165121     0.05           VINYL_DECAL                                                                           
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02910.PRT                             TOP COVER, LONG      WATTS MARINE  5.220561     0.25           ALUMINUM                  113.886643                                                  
+       Extrude 1(First Wall)                                                                                                                                                                       
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+       Flat Pattern 1                                                                                                                                                                              
+         BEND_NOTE_0                                                                                                                                                                               
+         BEND_NOTE_1                                                                                                                                                                               
+     Insert Here                                                                                                                                                                                   
+   STA01050.ASM                               CONTROL BOX PANEL    WATTS MARINE  17.960714                                                                                                         
+     STP02840.PRT                             CONTROL BOX PLATE    WATTS MARINE  16.488327    0.25           STEEL                     132.642686  8.738314   35.860862                            
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       MOUNTING_HOLES                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       24P_CUTOUT                                                                                                                                                                                  
+         Section 1                                                                                                                                                                                 
+       24P_MNT_HOLES                                                                                                                                                                               
+         Section 1                                                                                                                                                                                 
+       ETH_HOLE                                                                                                                                                                                    
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 5                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 6                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 7                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 8                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 9                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 10                                                                                                                                                                             
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     LAPP_10103900.ASM                                                           0.000116                                                                                                          
+       Import Feature id 4                                                                                                                                                                         
+       EPIC_X_AE_H-B_24_AD-LB______ART.ASM                                       0.000116                                                                                                          
+         Annotations                                                                                                                                                                               
+           STEP_COMMENTS                                                                                                                                                                           
+         Import Feature id 4                                                                                                                                                                       
+         EPIC_H-B_24_AD-LBA______ART__NR.PRT                                     0.000063                    PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         EPIC_X_AE_H-B_24_AG-LB.PRT                                              0.000022                    PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Note_0                                                                                                                                                                                  
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         EPIC_X_AE_H-B_24_AD-LBDE.PRT                                            0.000031                    PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Note_1                                                                                                                                                                                  
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         Insert Here                                                                                                                                                                               
+       Insert Here                                                                                                                                                                                 
+     LAPP_10103900.ASM                                                           0.000116                                                                                                          
+       Import Feature id 4                                                                                                                                                                         
+       EPIC_X_AE_H-B_24_AD-LB______ART.ASM                                       0.000116                                                                                                          
+         Annotations                                                                                                                                                                               
+           STEP_COMMENTS                                                                                                                                                                           
+         Import Feature id 4                                                                                                                                                                       
+         EPIC_H-B_24_AD-LBA______ART__NR.PRT                                     0.000063                    PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         EPIC_X_AE_H-B_24_AG-LB.PRT                                              0.000022                    PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Note_0                                                                                                                                                                                  
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         EPIC_X_AE_H-B_24_AD-LBDE.PRT                                            0.000031                    PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Note_1                                                                                                                                                                                  
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         Insert Here                                                                                                                                                                               
+       Insert Here                                                                                                                                                                                 
+     CNEF-24T.PRT                                                                0.161181                    PVC                                                                                   
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     CNEM-24T.PRT                                                                0.141641                    PVC                                                                                   
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     LAPP_10004000.ASM                                                           0.000075                                                                                                          
+       Import Feature id 4                                                                                                                                                                         
+       EPIC_X_AE_H-B_6_AD-LB______ART_.ASM                                       0.000075                                                                                                          
+         Annotations                                                                                                                                                                               
+           STEP_COMMENTS                                                                                                                                                                           
+         Import Feature id 4                                                                                                                                                                       
+         EPIC_H-B_6_AD-LBA______ART__NR_.PRT                                     0.000047                    PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         EPIC_X_AE_H-B_6_LB______ART__NR.PRT                                     0.00001                     PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         EPIC_X_AE_H-B_6_AD-LBDE.PRT                                             0.000019                    PVC                                                                                   
+           Design Items                                                                                                                                                                            
+             Annotations                                                                                                                                                                           
+               STEP_COMMENTS                                                                                                                                                                       
+           Note_0                                                                                                                                                                                  
+           Import Feature id 4                                                                                                                                                                     
+           Insert Here                                                                                                                                                                             
+         Insert Here                                                                                                                                                                               
+       Insert Here                                                                                                                                                                                 
+     CA3102E14S-2PB.PRT                                                          0.025034                    PVC                                                                                   
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     MS3102E16-10S.PRT                                                           0.035852                    PVC                                                                                   
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     MS3102E18-11S.PRT                                                           0.06606                     PVC                                                                                   
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     HBL2310.PRT                                                                 0.233601                    PVC                                                                                   
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     HBL15FRGN.PRT                                                               0.095495                    PVC                                                                                   
+       Revolve 1                                                                                                                                                                                   
+         Section 1                                                                                                                                                                                 
+       Pattern 1 of LOCAL_GROUP                                                                                                                                                                    
+         LOCAL_GROUP                                                                                                                                                                               
+           Extrude 1                                                                                                                                                                               
+             Section 1                                                                                                                                                                             
+         LOCAL_GROUP_1                                                                                                                                                                             
+           Extrude 2                                                                                                                                                                               
+             Section 1                                                                                                                                                                             
+         LOCAL_GROUP_2                                                                                                                                                                             
+           Extrude 3                                                                                                                                                                               
+             Section 1                                                                                                                                                                             
+       Extrude 4                                                                                                                                                                                   
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     MMC7219K76.PRT                                                              0.000000                    PTC_SYSTEM_MTRL_PROPS                                                                 
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     Insert Here                                                                                                                                                                                   
+   STA01070.ASM                               FRONT COVER          WATTS MARINE  60.197593                                                                                                         
+     STP02810.PRT                             PLATE, FRONT COVER   WATTS MARINE  58.373103    0.25           ALUMINUM                  330.933454  21.801431  317.182541                           
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Flat 1                                                                                                                                                                                      
+       Flat 2                                                                                                                                                                                      
+       Extruded Cut 1                                                                                                                                                                              
+       Extruded Cut 2                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Extruded Cut 3                                                                                                                                                                              
+         Section 1                                                                                                                                                                                 
+       Mirror 1                                                                                                                                                                                    
+         Extruded Cut 3 (2)                                                                                                                                                                        
+           Section 1 (1)                                                                                                                                                                           
+       Insert Here                                                                                                                                                                                 
+       Flat Pattern 1                                                                                                                                                                              
+         BEND_NOTE_0                                                                                                                                                                               
+         BEND_NOTE_1                                                                                                                                                                               
+     STP02940.PRT                             PIVOT ARM            WATTS MARINE  0.377067     0.25           ALUMINUM                  34.563522   2.276996   7.389294                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     STP02940.PRT                             PIVOT ARM            WATTS MARINE  0.377067     0.25           ALUMINUM                  34.563522   2.276996   7.389294                             
+       Planar 1(First Wall)                                                                                                                                                                        
+         Section 1                                                                                                                                                                                 
+       Insert Here                                                                                                                                                                                 
+     MASS_PROP_1                                                                                                                                                                                   
+     MMC13195A65.PRT                                                             0.000000                    PTC_SYSTEM_MTRL_PROPS                                                                 
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     MMC13195A65.PRT                                                             0.000000                    PTC_SYSTEM_MTRL_PROPS                                                                 
+       Import Feature id 4                                                                                                                                                                         
+       Insert Here                                                                                                                                                                                 
+     Insert Here                                                                                                                                                                                   
+   STP02850.PRT                               CONTROL COVER PLATE  WATTS MARINE  17.996703    0.25           STEEL                     69.823022   4.599843   26.796804                            
+     Planar 1(First Wall)                                                                                                                                                                          
+       Section 1                                                                                                                                                                                   
+     Extruded Cut 1                                                                                                                                                                                
+       Section 1                                                                                                                                                                                   
+     Insert Here                                                                                                                                                                                   
+   STP02860.PRT                               TOP COVER PLATE      WATTS MARINE  51.899274    0.25           STEEL                     135.477876  8.925092   66.427114                            
+     Planar 1(First Wall)                                                                                                                                                                          
+       Section 1                                                                                                                                                                                   
+     Extruded Cut 1                                                                                                                                                                                
+       Section 1                                                                                                                                                                                   
+     Insert Here                                                                                                                                                                                   
+   STP02860.PRT                               TOP COVER PLATE      WATTS MARINE  51.899274    0.25           STEEL                     135.477876  8.925092   66.427114                            
+     Planar 1(First Wall)                                                                                                                                                                          
+       Section 1                                                                                                                                                                                   
+     Extruded Cut 1                                                                                                                                                                                
+       Section 1                                                                                                                                                                                   
+     Insert Here                                                                                                                                                                                   
+   STP02870.PRT                               TOP COVER PLATE      WATTS MARINE  38.901789    0.25           STEEL                     125.59292   8.273885   53.751234                            
+     Planar 1(First Wall)                                                                                                                                                                          
+       Section 1                                                                                                                                                                                   
+     Extruded Cut 1                                                                                                                                                                                
+       Section 1                                                                                                                                                                                   
+     Insert Here                                                                                                                                                                                   
+   STP02870.PRT                               TOP COVER PLATE      WATTS MARINE  38.901789    0.25           STEEL                     125.59292   8.273885   53.751234                            
+     Planar 1(First Wall)                                                                                                                                                                          
+       Section 1                                                                                                                                                                                   
+     Extruded Cut 1                                                                                                                                                                                
+       Section 1                                                                                                                                                                                   
+     Insert Here                                                                                                                                                                                   
+   MMC3392T51.ASM                             STAINLESS CHAIN      HRDWARE       1.71297                                                                                                           
+     Import Feature id 4                                                                                                                                                                           
+     Pattern 1 of ZZZ3392T51.PRT                                                                                                                                                                   
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+     Pattern 2 of ZZZ3392T51.PRT                                                                                                                                                                   
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+       ZZZ3392T51.PRT                         CHAINLINK                          0.025954                    STAINLESS_STEEL_FERRITIC                                                              
+         Sweep 1                                                                                                                                                                                   
+           Section 1                                                                                                                                                                               
+         Insert Here                                                                                                                                                                               
+     Insert Here                                                                                                                                                                                   
+   MMC97245A709.PRT                                                              0.000000                    PTC_SYSTEM_MTRL_PROPS                                                                 
+     Import Feature id 4                                                                                                                                                                           
+     Insert Here                                                                                                                                                                                   
+   MMC93085K36.PRT                                                               0.000000                    PTC_SYSTEM_MTRL_PROPS                                                                 
+     Import Feature id 4                                                                                                                                                                           
+     Extrude 1                                                                                                                                                                                     
+       Section 1                                                                                                                                                                                   
+     Insert Here                                                                                                                                                                                   
+   MMC97245A709.PRT                                                              0.000000                    PTC_SYSTEM_MTRL_PROPS                                                                 
+     Import Feature id 4                                                                                                                                                                           
+     Insert Here                                                                                                                                                                                   
+   Insert Here                                                                                                                                                                                     
+   MMC8077A322.PRT                                                                                                                                                                                 
+   MMC8077A322.PRT                                                                                                                                                                                 
+   Sections                                                                                                                                                                                        
+     A                                                                                                                                                                                             
+     B                                                                                                                                                                                             
+     C                                                                                                                                                                                             

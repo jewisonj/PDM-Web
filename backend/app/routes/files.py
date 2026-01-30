@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import Optional
 from uuid import UUID
 
-from ..services.supabase import get_supabase_client
+from ..services.supabase import get_supabase_client, get_supabase_admin
 from ..models.schemas import FileInfo, FileCreate
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -71,17 +71,25 @@ async def upload_file(
     item_number: str = Form(...),
     revision: Optional[str] = Form(None),
 ):
-    """Upload a file and associate it with an item."""
-    supabase = get_supabase_client()
+    """Upload a file and associate it with an item.
 
-    # Get item ID
-    item_result = supabase.table("items").select("id, revision").eq("item_number", item_number.lower()).single().execute()
+    Uses admin client to bypass RLS for internal upload service.
+    """
+    supabase = get_supabase_admin()
 
-    if not item_result.data:
-        raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
+    clean_item_number = item_number.strip().lower()
+    print(f"Upload request: item_number='{clean_item_number}', filename={file.filename}")
 
-    item_id = item_result.data["id"]
-    file_revision = revision or item_result.data["revision"]
+    # Get item ID (use limit(1) instead of single() to avoid error on 0 rows)
+    item_result = supabase.table("items").select("id, revision").eq("item_number", clean_item_number).limit(1).execute()
+
+    if not item_result.data or len(item_result.data) == 0:
+        print(f"Item not found: '{clean_item_number}'")
+        raise HTTPException(status_code=404, detail=f"Item {clean_item_number} not found")
+
+    item_data = item_result.data[0]
+    item_id = item_data["id"]
+    file_revision = revision or item_data["revision"]
 
     # Read file content
     content = await file.read()
@@ -91,19 +99,22 @@ async def upload_file(
     file_type = get_file_type(file.filename)
 
     # Upload to Supabase Storage
-    storage_path = f"{item_number.lower()}/{file.filename}"
+    # Use pdm-files bucket for all uploads via this service
+    bucket = "pdm-files"
+    path_in_bucket = f"{item_number.lower()}/{file.filename}"
+    storage_path = f"{bucket}/{path_in_bucket}"  # Full path including bucket for file_path column
 
     try:
-        storage_result = supabase.storage.from_("pdm-files").upload(
-            storage_path,
+        storage_result = supabase.storage.from_(bucket).upload(
+            path_in_bucket,
             content,
             file_options={"content-type": file.content_type or "application/octet-stream"}
         )
     except Exception as e:
         # If file exists, update it
         if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
-            supabase.storage.from_("pdm-files").update(
-                storage_path,
+            supabase.storage.from_(bucket).update(
+                path_in_bucket,
                 content,
                 file_options={"content-type": file.content_type or "application/octet-stream"}
             )
@@ -117,6 +128,7 @@ async def upload_file(
         # Update existing file record
         new_iteration = existing.data[0]["iteration"] + 1
         result = supabase.table("files").update({
+            "file_path": storage_path,
             "file_size": file_size,
             "revision": file_revision,
             "iteration": new_iteration,

@@ -69,11 +69,27 @@ function Get-FileAction {
     $fileName = [IO.Path]::GetFileName($FilePath).ToLower()
     $ext = [IO.Path]::GetExtension($FilePath).ToLower()
 
-    # Check for specific text file names first
+    # Ignore service files and common non-upload files
+    $ignoreExtensions = @('.ps1', '.bat', '.cmd', '.log', '.ini', '.config', '.json', '.md', '.txt', '.jpg', '.jpeg', '.png', '.gif')
+    $ignoreFiles = @('pdm-upload-config.ps1', 'pdm-upload-functions.ps1', 'pdm-upload-service.ps1',
+                     'pdm-bom-parser.ps1', 'start-pdmupload.bat', 'install-pdmupload.ps1',
+                     'test-api.ps1', 'desktop.ini', 'thumbs.db')
+
+    # Skip ignored files
+    if ($ignoreFiles -contains $fileName) {
+        return 'Skip'
+    }
+
+    # Check for specific text file names (BOM/param files)
     switch ($fileName) {
         'param.txt'  { return 'Parameters' }
         'bom.txt'    { return 'BOM' }
         'mlbom.txt'  { return 'MLBOM' }
+    }
+
+    # Skip other ignored extensions (after checking for specific .txt files above)
+    if ($ignoreExtensions -contains $ext) {
+        return 'Skip'
     }
 
     # Then check by extension for uploads
@@ -98,7 +114,6 @@ function Upload-File {
 
     .DESCRIPTION
         Uses multipart/form-data to upload file with item_number.
-        Creates the item if it doesn't exist.
     #>
     param(
         [string]$FilePath,
@@ -108,45 +123,52 @@ function Upload-File {
     $uri = "$($Config.ApiUrl)/files/upload"
     $fileName = [IO.Path]::GetFileName($FilePath)
 
-    # Build multipart form
-    $boundary = [System.Guid]::NewGuid().ToString()
-    $LF = "`r`n"
+    # Use .NET HttpClient for reliable multipart upload
+    Add-Type -AssemblyName System.Net.Http
 
-    # Read file bytes
+    $httpClient = New-Object System.Net.Http.HttpClient
+    $form = New-Object System.Net.Http.MultipartFormDataContent
+
+    # Add item_number field
+    $itemField = New-Object System.Net.Http.StringContent($ItemNumber)
+    $form.Add($itemField, "item_number")
+
+    # Add file (use comma to prevent array unrolling)
     $fileBytes = [IO.File]::ReadAllBytes($FilePath)
-    $fileEnc = [System.Text.Encoding]::GetEncoding('ISO-8859-1').GetString($fileBytes)
+    $fileContent = New-Object System.Net.Http.ByteArrayContent(,$fileBytes)
 
     # Determine content type
     $ext = [IO.Path]::GetExtension($FilePath).ToLower()
-    $contentType = switch ($ext) {
+    $mimeType = switch ($ext) {
         '.pdf'  { 'application/pdf' }
         '.step' { 'application/step' }
         '.stp'  { 'application/step' }
         '.dxf'  { 'application/dxf' }
         '.svg'  { 'image/svg+xml' }
+        '.prt'  { 'application/octet-stream' }
+        '.asm'  { 'application/octet-stream' }
+        '.drw'  { 'application/octet-stream' }
         default { 'application/octet-stream' }
     }
 
-    $body = @"
---$boundary$LF
-Content-Disposition: form-data; name="item_number"$LF
-$LF
-$ItemNumber$LF
---$boundary$LF
-Content-Disposition: form-data; name="file"; filename="$fileName"$LF
-Content-Type: $contentType$LF
-$LF
-$fileEnc$LF
---$boundary--$LF
-"@
+    $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse($mimeType)
+    $form.Add($fileContent, "file", $fileName)
 
-    $headers = @{
-        "Content-Type" = "multipart/form-data; boundary=$boundary"
+    try {
+        $response = $httpClient.PostAsync($uri, $form).Result
+
+        if (-not $response.IsSuccessStatusCode) {
+            $errorBody = $response.Content.ReadAsStringAsync().Result
+            throw "Upload failed ($($response.StatusCode)): $errorBody"
+        }
+
+        $result = $response.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+        return $result
     }
-
-    $result = Invoke-RestMethod -Uri $uri -Method Post -Body $body -Headers $headers -ContentType "multipart/form-data; boundary=$boundary"
-
-    return $result
+    finally {
+        $form.Dispose()
+        $httpClient.Dispose()
+    }
 }
 
 
