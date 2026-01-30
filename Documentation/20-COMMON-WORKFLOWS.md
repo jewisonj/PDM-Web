@@ -1,399 +1,533 @@
-# PDM System - Common Workflows & Procedures
+# PDM-Web -- Common Workflows and Procedures
 
-**Step-by-Step Guides for Daily Operations**
-**Related Docs:** [README.md](README.md), [QUICK-START-CHECKLIST.md](17-QUICK-START-CHECKLIST.md), [COMMON-WORKFLOWS.md](COMMON-WORKFLOWS.md)
+Step-by-step guides for daily operations in the PDM-Web system.
 
----
-
-## 🚀 Most Common Tasks
-
-### 1. Check In a New CAD File
-
-**Time Required:** 2-3 minutes
-**Tools Needed:** File explorer or command line
-**Services Required:** CheckIn-Watcher running
-
-**Steps:**
-
-1. **Prepare file with correct naming:**
-   - Item number must be 3 letters + 4-6 digits
-   - Example: `csp0030.prt`, `wma20120.stp`
-   - Lowercase recommended
-   ```powershell
-   # If file has wrong name, rename it
-   Rename-Item "my_part.step" "csp0030.step"
-   ```
-
-2. **Copy file to CheckIn folder:**
-   ```powershell
-   Copy-Item "csp0030.step" "D:\PDM_Vault\CADData\CheckIn\"
-   ```
-
-3. **Wait for automatic processing:**
-   - CheckIn-Watcher automatically detects file
-   - Processing takes 1-3 seconds depending on file type
-   - File automatically moves to appropriate subfolder (STEP\, DXF\, etc.)
-
-4. **Verify in database:**
-   ```powershell
-   sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT item_number, COUNT(*) as file_count FROM files WHERE item_number='csp0030' GROUP BY item_number;"
-   ```
-
-5. **Verify in web browser:**
-   - Open: `http://localhost:3000`
-   - Search for item: `csp0030`
-   - Should see item in table with files listed
-
-**Troubleshooting:**
-- File not moving → Check filename (must start with item number)
-- Item not appearing → Wait a few seconds, refresh browser
-- See [19-TROUBLESHOOTING-DECISION-TREE.md](19-TROUBLESHOOTING-DECISION-TREE.md)
+**Related Docs:** [17-QUICK-START-CHECKLIST.md](17-QUICK-START-CHECKLIST.md), [14-SKILL-DEFINITION.md](14-SKILL-DEFINITION.md)
 
 ---
 
-### 2. Process a BOM (Bill of Materials)
+## 1. Browsing and Searching Items
 
-**Time Required:** 5-10 minutes
-**Tools Needed:** Creo
-**Services Required:** BOM-Watcher running
+**Where:** PDM Browser (`/pdm-browser`)
 
-**Steps:**
+### Steps
 
-1. **Export BOM from Creo:**
-   - Open assembly in Creo
-   - Use: Tools → Table → Tree → Create Drawing
-   - Export to text file
-   - Include columns: Description, Project, Material, Mass, Thickness, Cut_Length, Price_Est
+1. Log in and click **PDM Browser** on the Home page
+2. The items table loads with all items from the database
+3. Use the **search bar** to filter by item number, name, or description
+4. Use the **State** dropdown to filter by lifecycle state (Design, Review, Released, Obsolete)
+5. Use the **Project** dropdown to filter by project
+6. Click any **column header** to sort ascending; click again to sort descending
+7. The item count indicator shows how many items match your filters (e.g., "42 of 350 items")
 
-2. **Name file correctly:**
-   - Must start with assembly item number
-   - Example: `wma20120.txt` for assembly wma20120
-   ```powershell
-   # If named wrong, rename
-   Rename-Item "bom_export.txt" "wma20120.txt"
-   ```
+### Viewing Item Details
 
-3. **Place in BOM folder:**
-   ```powershell
-   Copy-Item "wma20120.txt" "D:\PDM_Vault\CADData\BOM\"
-   ```
-
-4. **Wait for automatic processing:**
-   - BOM-Watcher detects and processes file (1-2 seconds)
-   - Parses parent and child relationships
-   - Updates database
-   - Automatically deletes processed .txt file
-
-5. **Verify in database:**
-   ```powershell
-   # Check BOM relationships created
-   sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT child_item, SUM(quantity) as qty FROM bom WHERE parent_item='wma20120' GROUP BY child_item;"
-
-   # Check item properties updated
-   sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT item_number, material, mass FROM items WHERE item_number='wma20120';"
-   ```
-
-6. **Verify in web browser:**
-   - Open: `http://localhost:3000`
-   - Find assembly: `wma20120`
-   - Click to see detail panel
-   - "Bill of Materials" section should show children
-
-**Troubleshooting:**
-- BOM not processed → Check filename matches assembly item number
-- Properties not updated → Verify columns in BOM export
-- See [19-TROUBLESHOOTING-DECISION-TREE.md](19-TROUBLESHOOTING-DECISION-TREE.md)
+1. Click any row in the items table
+2. The **detail panel** slides open on the right side
+3. The panel shows:
+   - **Item Information** -- item number, name, revision, state, project, material, mass, thickness, cut length, dates
+   - **Files** -- list of associated files with type badges; click a file to open it
+   - **Bill of Materials** -- direct children (if the item is an assembly)
+   - **Where Used** -- parent assemblies that contain this item
+4. Click a BOM child or where-used entry to navigate to that item
+5. Press **Escape** or click the **X** button to close the panel
 
 ---
 
-### 3. Calculate BOM Cost
+## 2. Creating a New Item
 
-**Time Required:** 1 minute
-**Tools Needed:** PowerShell
-**Services Required:** None (runs on-demand)
-**Prerequisites:** Prices must be in database
+**Where:** API (items are typically created via BOM upload or the PDM Upload Service)
 
-**Steps:**
+### Via the API (Swagger UI)
 
-1. **Open PowerShell:**
-   ```powershell
-   cd D:\PDM_PowerShell
-   ```
+1. Open `http://localhost:8000/docs`
+2. Expand **POST /api/items**
+3. Click **Try it out**
+4. Enter the item data in JSON format:
 
-2. **Run cost rollup script:**
-   ```powershell
-   .\Get-BOMCost.ps1 -Assembly "wma20120"
-   ```
-
-3. **View results:**
-   - Script displays hierarchical cost breakdown
-   - Shows assembly cost, component costs, subtotals
-   - Color-coded for easy reading
-
-4. **For multiple quantities:**
-   ```powershell
-   .\Get-BOMCost.ps1 -Assembly "wma20120" -Quantity 10
-   # Shows total cost for 10 units
-   # Shows per-unit cost
-   ```
-
-**Example Output:**
-```
-==================================================
-  BOM Cost Rollup for wma20120
-==================================================
-
-[ASM] wma20120 x1 @ $50.00
-  [PART] csp0030 x4 @ $2.50 = $10.00
-  [ASM] sub_asm x2 @ $15.00
-    [PART] csp0031 x2 @ $3.75 = $7.50
-  Subtotal: $77.50 = $50.00 (Assembly) + $27.50 (Children)
-
-==================================================
-  Total Estimated Cost: $77.50
-==================================================
+```json
+{
+  "item_number": "csp0045",
+  "name": "Bracket, Side Mount",
+  "revision": "A",
+  "iteration": 1,
+  "lifecycle_state": "Design",
+  "material": "Steel, 1018",
+  "thickness": 3.0
+}
 ```
 
-**Troubleshooting:**
-- "All prices show as 'no price'" → Need to update item prices in database
-- See [06-BOM-COST-ROLLUP-GUIDE.md](06-BOM-COST-ROLLUP-GUIDE.md)
+5. Click **Execute**
+6. Verify the response shows the created item with an `id`
+
+### Via BOM Upload (Automatic)
+
+Items are automatically created when they appear in a BOM upload and do not yet exist in the database. See the "Uploading a BOM" workflow below.
+
+### Item Number Rules
+
+- Must follow the pattern: 3 lowercase letters + 4-6 digits (e.g., `csp0045`)
+- The system normalizes to lowercase automatically
+- Use the **Part Number Generator** (`/part-numbers`) to find the next available number for each prefix
+- Items with `mmc` or `spn` prefixes are flagged as supplier parts
 
 ---
 
-### 4. Generate Manufacturing Documents (DXF/SVG)
+## 3. Uploading a File
 
-**Time Required:** 10-30 seconds (per file)
-**Tools Needed:** FreeCAD (automatic)
-**Services Required:** Worker-Processor running
-**Prerequisites:** STEP file must exist
+Files can be uploaded through the API, the Swagger UI, or the PDM Upload Service.
 
-**Automatic Generation:**
-When you check in an updated STEP file for an item that already has DXF/SVG:
+### Via the API (curl)
 
-1. **Check in updated STEP:**
-   ```powershell
-   Copy-Item "csp0030_updated.step" "D:\PDM_Vault\CADData\CheckIn\csp0030.step"
-   ```
+```bash
+curl -X POST http://localhost:8000/api/files/upload \
+  -F "file=@csp0030.step" \
+  -F "item_number=csp0030"
+```
 
-2. **CheckIn-Watcher automatically:**
-   - Detects existing DXF/SVG
-   - Queues GENERATE_DXF and GENERATE_SVG tasks
-   - Adds tasks to work_queue
+### Via Swagger UI
 
-3. **Worker-Processor automatically:**
-   - Picks up tasks (within 5 seconds)
-   - Calls FreeCAD to generate files
-   - Places DXF/SVG in CheckIn folder
-   - CheckIn-Watcher registers them
+1. Open `http://localhost:8000/docs`
+2. Expand **POST /api/files/upload**
+3. Click **Try it out**
+4. Select a file using the file chooser
+5. Enter the `item_number` in the form field
+6. Click **Execute**
+7. The response shows the file record including storage path and iteration number
 
-4. **Verify generation:**
-   ```powershell
-   # Check if generation tasks completed
-   sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT task_type, status FROM work_queue WHERE item_number='csp0030' AND status='Completed';"
+### Via PDM Upload Service
 
-   # Check files exist
-   ls "D:\PDM_Vault\CADData\DXF\csp0030*"
-   ls "D:\PDM_Vault\CADData\SVG\csp0030*"
-   ```
+1. Ensure the PDM Upload Service is running (`scripts/pdm-upload/Start-PDMUpload.bat`)
+2. Copy the file to `C:\PDM-Upload`
+3. The service automatically:
+   - Extracts the item number from the filename (e.g., `csp0030.step` maps to item `csp0030`)
+   - Uploads the file to the API
+   - Deletes the local file on success (or moves it to `Failed/` on error)
+4. Check the log at `C:\PDM-Upload\pdm-upload.log` for confirmation
 
-**Manual Generation:**
-If files don't auto-generate:
+### Notes
+
+- The item must exist before uploading a file. If the item does not exist, the upload returns a 404 error.
+- Re-uploading a file with the same name for the same item increments the file iteration.
+- Files are stored in Supabase Storage under the `pdm-files` bucket at `{item_number}/{filename}`.
+- Supported file types: STEP, DXF, SVG, PDF, PRT, ASM, DRW, PNG, JPG.
+
+---
+
+## 4. Uploading a BOM
+
+BOM data flows from Creo Parametric into PDM-Web through the BOM upload pipeline.
+
+### Export from Creo
+
+1. Open the assembly in Creo Parametric
+2. Use the tree tool (Tools > Table > Tree) to export the assembly structure
+3. Include the following columns in the export: Model Name, DESCRIPTION, PROJECT, PRO_MP_MASS, PTC_MASTER_MATERIAL, CUT_LENGTH, SMT_THICKNESS, CUT_TIME, PRICE_EST
+4. Save as a text file
+
+### Upload via PDM Upload Service
+
+1. Ensure the PDM Upload Service is running
+2. Rename the exported file to:
+   - `BOM.txt` for a single-level BOM
+   - `MLBOM.txt` for a multi-level BOM
+3. Copy the file to `C:\PDM-Upload`
+4. The service automatically:
+   - Parses the fixed-width text file to extract parent assembly and child parts
+   - Detects quantities by counting duplicate child entries
+   - Sends the parsed data to `POST /api/bom/bulk`
+   - The API creates any items that do not yet exist
+   - The API updates item properties (name, material, mass, thickness, etc.) from the BOM data
+   - The API replaces the entire BOM for the parent assembly
+5. Check the log for confirmation: `SUCCESS: Uploaded BOM - Parent: wma20120, Children: 15`
+
+### Upload via API Directly
+
+```bash
+curl -X POST http://localhost:8000/api/bom/bulk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent_item_number": "wma20120",
+    "children": [
+      {"item_number": "wmp20080", "quantity": 2, "name": "Bracket", "material": "Steel", "mass": 2.5, "thickness": 3.0},
+      {"item_number": "wmp20090", "quantity": 1, "name": "Shaft", "material": "Aluminum", "mass": 1.2}
+    ],
+    "source_file": "BOM.txt"
+  }'
+```
+
+### What the Bulk BOM Upload Does
+
+1. Creates the parent assembly item if it does not exist
+2. Deletes all existing BOM entries for the parent (full replacement)
+3. For each child: creates the item if new, or updates its properties if it already exists
+4. Creates new BOM relationships with quantities
+5. Returns a summary: items created, items updated, BOM entries created
+
+---
+
+## 5. Viewing BOM Tree and Cost Data
+
+### Viewing the BOM Tree
+
+**Where:** PDM Browser detail panel or Item Detail view
+
+1. Navigate to the PDM Browser
+2. Click an assembly item to open the detail panel
+3. The **Bill of Materials** section shows direct children with quantities
+4. Click a child item to navigate to its detail (and see its own BOM if it is a sub-assembly)
+
+### Via the API
+
+**Single-level BOM (direct children only):**
+
+```
+GET /api/bom/{item_number}
+```
+
+**Full recursive BOM tree:**
+
+```
+GET /api/bom/{item_number}/tree
+```
+
+Returns a nested JSON structure:
+
+```json
+{
+  "item": { "item_number": "wma20120", "name": "Assembly", ... },
+  "quantity": 1,
+  "children": [
+    {
+      "item": { "item_number": "wmp20080", "name": "Bracket", "price_est": 12.50, ... },
+      "quantity": 2,
+      "children": []
+    }
+  ]
+}
+```
+
+### Where-Used Query
+
+To find all assemblies that contain a given part:
+
+```
+GET /api/bom/{item_number}/where-used
+```
+
+This is also shown in the detail panel under the **Where Used** section.
+
+### Cost Data
+
+Item cost data is stored in the `price_est` and `unit_price` fields on each item. When viewing a BOM tree, multiply each child's price by its quantity to calculate the assembly cost. Price data is populated through:
+
+- BOM uploads (the `PRICE_EST` column from Creo exports)
+- Manual item updates via the API
+- The `unit_price` field for supplier parts
+
+---
+
+## 6. Generating DXF and SVG Files
+
+DXF flat patterns and SVG bend drawings are generated from STEP files using the FreeCAD Docker worker.
+
+### Prerequisites
+
+- The FreeCAD Docker container must be running: `docker-compose up -d freecad-worker`
+- The item must have a STEP file uploaded to Supabase Storage
+
+### Queue Generation via API
+
+**Generate DXF flat pattern:**
+
+```
+POST /api/tasks/generate-dxf/{item_number}
+```
+
+**Generate SVG bend drawing:**
+
+```
+POST /api/tasks/generate-svg/{item_number}
+```
+
+Example using curl:
+
+```bash
+curl -X POST http://localhost:8000/api/tasks/generate-dxf/csp0030
+curl -X POST http://localhost:8000/api/tasks/generate-svg/csp0030
+```
+
+### Monitor Progress
+
+1. Open the **Work Queue** view (`/tasks`)
+2. Find the task by item number
+3. Status progresses: pending > processing > completed (or failed)
+4. Failed tasks show error messages for debugging
+
+Or via API:
+
+```
+GET /api/tasks?status=pending
+GET /api/tasks?task_type=GENERATE_DXF
+```
+
+### Manual Processing via Docker
+
+For testing or one-off generation:
+
+```bash
+# Flatten sheet metal to DXF
+docker exec pdm-freecad-worker freecadcmd /scripts/flatten_sheetmetal.py \
+  /data/files/csp0030.stp /data/files/csp0030_flat.dxf
+
+# Create bend drawing SVG
+docker exec pdm-freecad-worker freecadcmd /scripts/bend_drawing.py \
+  /data/files/csp0030.stp /data/files/csp0030_bends.svg
+```
+
+---
+
+## 7. Downloading Files
+
+### From the PDM Browser
+
+1. Open the PDM Browser and click an item
+2. In the detail panel, find the **Files** section
+3. Click any file with a type badge (STEP, DXF, SVG, PDF, etc.)
+4. Files with storage paths open in a new browser tab via a signed URL
+5. PDFs and images render directly in the browser
+6. Other file types trigger a download
+
+### Via the API
+
+1. Get the file ID from the item detail:
+
+```
+GET /api/items/{item_number}
+```
+
+2. Request a signed download URL:
+
+```
+GET /api/files/{file_id}/download
+```
+
+3. The response contains a time-limited URL (1-hour expiry):
+
+```json
+{
+  "url": "https://...supabase.co/storage/v1/object/sign/pdm-files/...",
+  "filename": "csp0030.step",
+  "expires_in": 3600
+}
+```
+
+4. Open or download using the signed URL
+
+---
+
+## 8. Updating Item Properties
+
+### Via the API
+
+Update specific fields on an existing item:
+
+```bash
+curl -X PATCH http://localhost:8000/api/items/csp0030 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "material": "Steel, 304 SS",
+    "thickness": 2.5,
+    "mass": 1.8,
+    "description": "Side bracket, stainless"
+  }'
+```
+
+Only the fields you include are updated; all other fields remain unchanged.
+
+### Via Parameter File Upload
+
+1. Export a parameter file from Creo (single item, same column format as BOM)
+2. Save as `param.txt`
+3. Drop into `C:\PDM-Upload`
+4. The PDM Upload Service parses the file and calls:
+
+```
+PATCH /api/items/{item_number}?upsert=true
+```
+
+The `upsert=true` flag creates the item if it does not exist, or updates it if it does.
+
+### Via BOM Upload
+
+When a BOM is uploaded, all child item properties (name, material, mass, thickness, cut length, cut time, price estimate) are updated from the BOM data. This is the most common way properties are populated in bulk.
+
+---
+
+## 9. Managing Lifecycle States
+
+Items have a lifecycle state that controls their status in the engineering process.
+
+### Available States
+
+| State | Meaning |
+|---|---|
+| Design | Active engineering work; item is editable |
+| Review | Pending review or approval |
+| Released | Approved for production; should not be modified |
+| Obsolete | No longer active; retained for historical reference |
+
+### Changing State via API
+
+```bash
+curl -X PATCH http://localhost:8000/api/items/csp0030 \
+  -H "Content-Type: application/json" \
+  -d '{"lifecycle_state": "Released"}'
+```
+
+### Viewing Lifecycle History
+
+Each state change is recorded in the `lifecycle_history` table:
+
+```
+GET /api/items/{item_number}/history
+```
+
+Returns a list of transitions with old state, new state, timestamp, and the user who made the change.
+
+### Filtering by State
+
+In the PDM Browser, use the **State** dropdown to show only items in a specific lifecycle state. This is useful for finding all items still in Design, or all Released items.
+
+---
+
+## 10. Using the Part Number Generator
+
+**Where:** Part Number Generator (`/part-numbers`)
+
+1. Click **Part Number Generator** on the Home page
+2. The view shows all item number prefixes (CS, XX, WM, CC, etc.) with the next available number
+3. Click any number to **copy it to your clipboard**
+4. Use the copied number when creating a new part in Creo or the PDM system
+5. The numbers update in real-time from the database, so they always reflect the latest available
+
+---
+
+## 11. Monitoring the Work Queue
+
+**Where:** Work Queue (`/tasks`)
+
+1. Click **Work Queue** on the Home page
+2. The table shows all background tasks with:
+   - Task type (GENERATE_DXF, GENERATE_SVG, etc.)
+   - Status (pending, processing, completed, failed)
+   - Associated item
+   - Created and completed timestamps
+   - Error messages for failed tasks
+3. Use this view to:
+   - Verify that DXF/SVG generation tasks completed successfully
+   - Identify and debug failed tasks
+   - Monitor processing throughput
+
+---
+
+## 12. Using the PDM Upload Service for Bulk Operations
+
+The PDM Upload Service enables bulk file and data upload from a local workstation.
+
+### Starting the Service
 
 ```powershell
-# Insert task manually
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "INSERT INTO work_queue (item_number, file_path, task_type, status) VALUES ('csp0030', 'D:\PDM_Vault\CADData\STEP\csp0030.step', 'GENERATE_DXF', 'Pending');"
-
-# Wait for processing
-Start-Sleep 15
-
-# Check result
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT * FROM work_queue WHERE item_number='csp0030' ORDER BY created_at DESC LIMIT 2;"
+cd scripts\pdm-upload
+.\Start-PDMUpload.bat
 ```
 
----
+The service watches `C:\PDM-Upload` and processes files as they appear.
 
-### 5. Clean Up Orphaned Files
+### Bulk File Upload
 
-**Time Required:** 2-5 minutes
-**Tools Needed:** PowerShell
-**Services Required:** None (can run anytime)
-**Safety:** Dry-run mode available
+1. Copy multiple STEP/PDF/DXF/SVG files into `C:\PDM-Upload`
+2. The service processes them one at a time in order of arrival
+3. Each file is uploaded to the API and then deleted from the watch folder
+4. Failed files are moved to `C:\PDM-Upload\Failed\` with an error log entry
 
-**Steps:**
+### Bulk BOM Update
 
-1. **Preview cleanup (dry-run):**
-   ```powershell
-   cd D:\PDM_PowerShell
-   .\PDM-Database-Cleanup.ps1 -DryRun
-   ```
-   - Shows what would be deleted
-   - Does NOT delete anything
+1. Export BOM from Creo and save as `BOM.txt`
+2. Copy to `C:\PDM-Upload`
+3. The service parses and uploads the BOM, creating/updating all items
 
-2. **Review results:**
-   - Look for expected orphaned files
-   - Verify no important files listed
+### Bulk Parameter Update
 
-3. **Execute cleanup:**
-   ```powershell
-   .\PDM-Database-Cleanup.ps1 -Confirm
-   ```
-   - Prompts for confirmation before deleting
-   - Shows progress
-   - Updates database
+1. Export parameters from Creo and save as `param.txt`
+2. Copy to `C:\PDM-Upload`
+3. The service parses and updates the item properties
 
-4. **Verify cleanup:**
-   ```powershell
-   # Should have fewer orphaned entries
-   sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM files WHERE file_path NOT IN (SELECT file_path FROM files WHERE file_path != '');"
-   ```
+### Monitoring
 
-**Safety:**
-- Dry-run mode shows what would happen
-- Confirmation prompt before actual deletion
-- Backup created by tool if requested
-- See [07-PDM-DATABASE-CLEANUP-GUIDE.md](07-PDM-DATABASE-CLEANUP-GUIDE.md)
+Check the service log for activity and errors:
 
----
-
-### 6. Release an Item (Future - When Multi-User Ready)
-
-**Status:** IN DEVELOPMENT - Not yet used
-**Prerequisites:** Release-Watcher service (not yet fully implemented)
-
-**Planned Workflow:**
-1. Item in Design state ready for production
-2. Copy item files to Release folder: `D:\PDM_Vault\Release\`
-3. Release-Watcher automatically:
-   - Transitions item to Released state
-   - Locks files
-   - Creates audit trail entry
-4. Item appears in Released folder
-5. Item is read-only
-
-**Current Workaround:**
-Manually update database:
 ```powershell
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "UPDATE items SET lifecycle_state='Released' WHERE item_number='csp0030';"
+Get-Content C:\PDM-Upload\pdm-upload.log -Tail 20
 ```
 
 ---
 
-### 7. Back Up Your System
+## 13. Working with MRP Tools
 
-**Time Required:** 5-10 minutes (first time)
-**Frequency:** Daily recommended
-**Tools Needed:** PowerShell
+### MRP Part Lookup
 
-**Basic Backup:**
-```powershell
-# Create backup directory
-$date = Get-Date -Format "yyyy-MM-dd"
-$backupPath = "D:\PDM_Backups\$date"
-New-Item -ItemType Directory -Path $backupPath -Force
+**Where:** Part Lookup (`/mrp/parts`)
 
-# Backup database (most critical)
-Copy-Item "D:\PDM_Vault\pdm.sqlite" "$backupPath\pdm.sqlite"
+1. Search for parts by project
+2. View routing operations assigned to each part
+3. Enter time spent on operations
+4. Mark operations as complete
+5. View PDF drawings inline
 
-# Backup CAD files (large but important)
-Copy-Item "D:\PDM_Vault\CADData" "$backupPath\CADData" -Recurse
+### Project Tracking
 
-Write-Host "Backup complete at: $backupPath"
+**Where:** Project Tracking (`/mrp/tracking`)
+
+1. View a Gantt chart of project progress
+2. See part hierarchy and completion status
+3. Track overall project timeline
+
+### Raw Materials
+
+**Where:** Raw Materials (`/mrp/materials`)
+
+1. View current raw materials inventory
+2. Edit stock levels and reorder points inline
+3. Track material usage across projects
+
+### Print Packets
+
+Generate a combined PDF print packet for shop floor use:
+
+```bash
+curl -X POST http://localhost:8000/api/mrp/projects/{project_id}/print-packet
 ```
 
-**Automated Daily Backup:**
-Create scheduled task:
-```powershell
-# Create PowerShell script: D:\PDM_Scripts\Daily-Backup.ps1
-# Content:
-$date = Get-Date -Format "yyyy-MM-dd"
-$backupPath = "D:\PDM_Backups\$date"
-New-Item -ItemType Directory -Path $backupPath -Force
-Copy-Item "D:\PDM_Vault\pdm.sqlite" "$backupPath\pdm.sqlite"
-
-# Schedule it:
-# Task Scheduler → New Task → Run D:\PDM_Scripts\Daily-Backup.ps1 daily at 2 AM
-```
-
-See [21-BACKUP-RECOVERY-GUIDE.md](21-BACKUP-RECOVERY-GUIDE.md)
+The packet includes a cover sheet with categorized parts lists and individual part PDFs with routing stamp overlays.
 
 ---
 
-### 8. Monitor System Health
+## Quick Reference: API Endpoints for Common Tasks
 
-**Time Required:** 2-3 minutes daily
-**Frequency:** Daily
-**Tools Needed:** PowerShell, web browser
-
-**Daily Checklist:**
-```powershell
-# Check all services running
-Get-Service | Where-Object {$_.Name -like "PDM_*"} | Select-Object Name, Status
-
-# Check for errors in logs
-Get-Content "D:\PDM_Vault\logs\pdm.log" -Tail 50 | Select-String "ERROR"
-
-# Check disk space
-Get-PSDrive D | Select-Object Name, @{n='Used (GB)';e={[math]::Round($_.Used/1GB,2)}}, @{n='Free (GB)';e={[math]::Round($_.Free/1GB,2)}}
-
-# Check database size
-[math]::Round((Get-Item "D:\PDM_Vault\pdm.sqlite").Length / 1GB, 2)
-
-# Check web server
-Invoke-WebRequest -Uri "http://localhost:3000" -ErrorAction SilentlyContinue | Select-Object StatusCode
-```
-
----
-
-## 🔄 Periodic Maintenance
-
-### Weekly
-- [ ] Review error logs
-- [ ] Check disk space (should be > 200GB free)
-- [ ] Verify all services running
-- [ ] Test web server access
-
-### Monthly
-- [ ] Clean up orphaned files
-- [ ] Optimize database
-- [ ] Review system performance
-- [ ] Backup and verify
-
-### Quarterly
-- [ ] Full system backup and test restore
-- [ ] Review and archive obsolete items
-- [ ] Update documentation
-- [ ] Performance analysis
-
----
-
-## 📊 Database Queries for Monitoring
-
-**Item Statistics:**
-```powershell
-# Count items by lifecycle state
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT lifecycle_state, COUNT(*) FROM items GROUP BY lifecycle_state;"
-
-# Recent items
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT item_number, created_at FROM items ORDER BY created_at DESC LIMIT 10;"
-
-# Items with most files
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT item_number, COUNT(*) as file_count FROM files GROUP BY item_number ORDER BY file_count DESC LIMIT 5;"
-```
-
-**System Health:**
-```powershell
-# Pending tasks
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM work_queue WHERE status='Pending';"
-
-# Failed tasks
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM work_queue WHERE status='Failed';"
-
-# Currently checked out
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM checkouts;"
-```
-
----
-
-**Last Updated:** 2025-01-03
-**Version:** 2.0
-**Related:** [README.md](README.md), [17-QUICK-START-CHECKLIST.md](17-QUICK-START-CHECKLIST.md), [19-TROUBLESHOOTING-DECISION-TREE.md](19-TROUBLESHOOTING-DECISION-TREE.md)
+| Task | Method | Endpoint |
+|---|---|---|
+| Search items | GET | `/api/items?q=bracket` |
+| Get item details | GET | `/api/items/csp0030` |
+| Create item | POST | `/api/items` |
+| Update item | PATCH | `/api/items/csp0030` |
+| Upload file | POST | `/api/files/upload` |
+| Download file | GET | `/api/files/{id}/download` |
+| Get BOM tree | GET | `/api/bom/csp0030/tree` |
+| Get where-used | GET | `/api/bom/csp0030/where-used` |
+| Upload BOM | POST | `/api/bom/bulk` |
+| Queue DXF | POST | `/api/tasks/generate-dxf/csp0030` |
+| Queue SVG | POST | `/api/tasks/generate-svg/csp0030` |
+| Check tasks | GET | `/api/tasks?status=pending` |
+| API docs | GET | `/docs` |
+| Health check | GET | `/health` |

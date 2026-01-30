@@ -1,566 +1,588 @@
-# PDM System - Troubleshooting Decision Tree
+# PDM-Web System - Troubleshooting Guide
 
-**Diagnostic Guide for Common Issues**
-**Related Docs:** [README.md](README.md), [04-SERVICES-REFERENCE.md](04-SERVICES-REFERENCE.md), [05-POWERSHELL-SCRIPTS-INDEX.md](05-POWERSHELL-SCRIPTS-INDEX.md)
-
----
-
-## 🎯 Start Here - Choose Your Problem
-
-### **PROBLEM CATEGORIES**
-
-1. [🔴 Service Not Running](#service-not-running)
-2. [📁 Files Not Being Processed](#files-not-being-processed)
-3. [💾 Database Issues](#database-issues)
-4. [🌐 Web Server Problems](#web-server-problems)
-5. [🖨️ DXF/SVG Generation Failing](#dxfsvg-generation-failing)
-6. [⚙️ Performance Issues](#performance-issues)
-7. [🔒 Permission / Access Issues](#permission--access-issues)
-8. [📊 Data Issues](#data-issues)
+**Diagnostic guide for common issues in the web-based PDM system**
+**Related Docs:** [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md), [18-GLOSSARY-TERMS.md](18-GLOSSARY-TERMS.md)
 
 ---
 
-## 🔴 Service Not Running
+## Start Here - Choose Your Problem
 
-**Symptom:** Service doesn't start or crashes immediately
+### Problem Categories
 
-### Step 1: Verify Service Type
-- **Is it a Windows Service?**
-  ```powershell
-  Get-Service | Where-Object {$_.Name -like "PDM_*" -or $_.Name -eq "PDM-Browser"}
-  ```
-  - If not listed → [Install as Windows Service](#install-as-windows-service)
-  - If listed but stopped → [Check Service Status](#check-service-status)
-  - If running → [Check Service Output](#check-service-output)
+1. [Backend Not Starting](#backend-not-starting)
+2. [Frontend Not Loading](#frontend-not-loading)
+3. [Authentication Issues](#authentication-issues)
+4. [File Upload Failures](#file-upload-failures)
+5. [BOM Upload Issues](#bom-upload-issues)
+6. [Database Connection Problems](#database-connection-problems)
+7. [Data Issues](#data-issues)
+8. [Upload Bridge Problems](#upload-bridge-problems)
 
-- **Is it a manual PowerShell script?**
-  → [Check PowerShell Configuration](#check-powershell-configuration)
+---
 
-### Step 2: Check PowerShell Configuration
+## Backend Not Starting
 
-**Error: "Cannot execute script"**
-```powershell
-# Check execution policy
-Get-ExecutionPolicy
-# Should return: RemoteSigned or Unrestricted
+**Symptom:** `uvicorn` fails to start or the API returns errors.
 
-# If restricted, allow scripts
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+### Step 1: Check Uvicorn Output
+
+```bash
+cd backend
+uvicorn app.main:app --reload --port 8000
 ```
 
-**Error: "PDM-Library.ps1 not found"**
-```powershell
-# Verify library exists
-Test-Path "D:\PDM_PowerShell\PDM-Library.ps1"
+Look for error messages in the terminal output. Common errors are listed below.
 
-# If not found, verify scripts are in correct location
-ls "D:\PDM_PowerShell\" | grep -i library
+### Step 2: Missing .env File or Environment Variables
+
+**Error:** `ValidationError` from Pydantic Settings, or empty/missing Supabase URL.
+
+```
+pydantic_core._pydantic_core.ValidationError: 1 validation error for Settings
+supabase_url
+  Field required
 ```
 
-### Step 3: Check Service Status
+**Fix:** Create or verify `backend/.env`:
 
-**For Windows Services (NSSM):**
-```powershell
-# Check all PDM services
-Get-Service | Where-Object {$_.Name -like "PDM_*"}
-
-# Check specific service
-Get-Service -Name "PDM_CheckInWatcher" | Select-Object Name, Status, StartType
-
-# Try to start it
-Start-Service -Name "PDM_CheckInWatcher"
-
-# Check if it stays running (wait 5 seconds)
-Start-Sleep 5
-Get-Service -Name "PDM_CheckInWatcher"
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=eyJ...
+SUPABASE_SERVICE_KEY=eyJ...
+API_PORT=8000
+DEBUG=true
+CORS_ALLOW_ALL=true
 ```
 
-**If Status = "Stopped":**
-- Try restarting: `Restart-Service -Name "PDM_CheckInWatcher"`
-- Check logs: See [Check Service Output](#check-service-output)
+**Verify the file exists:**
 
-**If Status = "Running":**
-- Check output: See [Check Service Output](#check-service-output)
-
-### Step 4: Check Service Output
-
-**View Recent Logs:**
-```powershell
-# Last 50 lines
-Get-Content "D:\PDM_Vault\logs\pdm.log" -Tail 50
-
-# Follow log in real-time
-Get-Content "D:\PDM_Vault\logs\pdm.log" -Wait -Tail 20
-
-# Search for errors
-Select-String -Path "D:\PDM_Vault\logs\pdm.log" -Pattern "ERROR|Exception|Failed" | Select-Object -Last 10
+```bash
+# Check .env exists in backend directory
+ls backend/.env
 ```
 
-**Common Error Messages:**
+### Step 3: Missing Python Dependencies
 
-| Error | Cause | Solution |
-|-------|-------|----------|
-| "Cannot find path" | Folder doesn't exist | Create folder or verify path |
-| "Database is locked" | Another process using DB | Stop all services, check for zombie processes |
-| "Access denied" | Permission issue | Run as Administrator or fix NTFS permissions |
-| "FileNotFound" | Missing dependency | Verify all required files exist |
+**Error:** `ModuleNotFoundError: No module named 'fastapi'` (or similar).
 
-### Step 5: Install as Windows Service
+**Fix:**
 
-If service isn't installed:
-```powershell
-# Download NSSM from https://nssm.cc/download
-# Extract to C:\Tools\nssm\
+```bash
+cd backend
+pip install -r requirements.txt
+```
 
-# Open PowerShell as Administrator
-cd "C:\Tools\nssm"
+If using a virtual environment, make sure it is activated first.
 
-# Install service
-.\nssm.exe install PDM_CheckInWatcher "powershell.exe" "-ExecutionPolicy Bypass -File D:\PDM_PowerShell\CheckIn-Watcher.ps1"
+### Step 4: Port Already in Use
 
-# Set to auto-start
-.\nssm.exe set PDM_CheckInWatcher Start SERVICE_AUTO_START
+**Error:** `[Errno 98] Address already in use` or `[WinError 10048]`.
 
-# Start service
-.\nssm.exe start PDM_CheckInWatcher
+**Fix:**
 
-# Verify
-Get-Service PDM_CheckInWatcher
+```bash
+# Find what is using the port (Windows)
+netstat -ano | findstr :8000
+
+# Kill the process by PID
+taskkill /PID <pid> /F
+
+# Or use a different port
+uvicorn app.main:app --reload --port 8001
+```
+
+### Step 5: Supabase Connection Failure
+
+**Error:** Network errors, timeout, or `AuthApiError`.
+
+**Diagnostic steps:**
+
+1. Verify the Supabase URL is correct (check dashboard at https://supabase.com/dashboard)
+2. Verify the anon key and service key match the project
+3. Check internet connectivity
+4. Try accessing the Supabase URL in a browser: `https://your-project.supabase.co/rest/v1/`
+
+### Step 6: Import Errors
+
+**Error:** `ImportError` or circular import issues.
+
+**Common causes:**
+
+- Running from wrong directory (must be in `backend/` or use `cd backend && uvicorn app.main:app`)
+- Missing `__init__.py` in a package directory
+- Circular imports between modules
+
+**Fix:** Ensure you run uvicorn from the `backend/` directory:
+
+```bash
+cd backend
+uvicorn app.main:app --reload
 ```
 
 ---
 
-## 📁 Files Not Being Processed
+## Frontend Not Loading
 
-**Symptom:** Files dropped in CheckIn folder don't move to subfolders
+**Symptom:** Browser shows blank page, errors, or cannot connect to API.
 
-### Step 1: Verify Service Running
-```powershell
-Get-Service -Name "PDM_CheckInWatcher" | Select-Object Status
-```
-- If stopped → See [Service Not Running](#service-not-running)
-- If running → Continue to Step 2
+### Step 1: Check Vite Dev Server
 
-### Step 2: Verify Folder Exists
-```powershell
-# Check folders exist
-Test-Path "D:\PDM_Vault\CADData\CheckIn"
-Test-Path "D:\PDM_Vault\CADData\STEP"
-Test-Path "D:\PDM_Vault\CADData\DXF"
-
-# If any return False, create them
-New-Item -ItemType Directory -Path "D:\PDM_Vault\CADData\CheckIn" -Force
+```bash
+cd frontend
+npm run dev
 ```
 
-### Step 3: Check File Naming
-- **Requirement:** Filename must start with item number (3 letters + 4-6 digits)
-- **Valid:** `csp0030.step`, `wma20120.txt`, `stp01000.dxf`
-- **Invalid:** `part1.step`, `test.step`, `new_file.step`
+**Error:** `npm ERR! Missing script: "dev"`
 
-**Test with valid filename:**
-```powershell
-# Copy test file with valid item number
-Copy-Item "some_file.step" "D:\PDM_Vault\CADData\CheckIn\csp0030.step"
+**Fix:**
 
-# Wait 2 seconds
-Start-Sleep 2
-
-# Check if moved
-Test-Path "D:\PDM_Vault\CADData\CheckIn\csp0030.step"  # Should be False (moved away)
-Test-Path "D:\PDM_Vault\CADData\STEP\csp0030.step"      # Should be True (moved here)
-```
-
-### Step 4: Check Logs
-```powershell
-# Monitor logs in real-time
-Get-Content "D:\PDM_Vault\logs\pdm.log" -Wait -Tail 50 | Select-String "csp0030|CheckIn|ERROR"
-```
-
-**Look for:**
-- "Processing file: csp0030.step" - file detected
-- "Moving to STEP folder" - classification successful
-- "Registered in database" - database entry created
-
-### Step 5: Verify Database
-```powershell
-# Check if item created
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT * FROM items WHERE item_number='csp0030';"
-
-# Check if file registered
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT * FROM files WHERE item_number='csp0030';"
-```
-
----
-
-## 💾 Database Issues
-
-**Symptom:** "Database is locked" or "Cannot open database"
-
-### Step 1: Check Database File
-```powershell
-# Verify database exists and is accessible
-Test-Path "D:\PDM_Vault\pdm.sqlite"
-
-# Check file size (should be > 0)
-(Get-Item "D:\PDM_Vault\pdm.sqlite").Length
-
-# Check if locked
-Get-Process | Where-Object {$_.Name -match "sqlite|powershell" -and $_.Name -ne "explorer"}
-```
-
-### Step 2: Stop All Services
-```powershell
-# Stop all PDM services
-Stop-Service -Name "PDM_CheckInWatcher", "PDM_WorkerProcessor", "PDM_BOMWatcher", "PDM_PartParameterWatcher" -ErrorAction SilentlyContinue
-
-# Wait for proper shutdown
-Start-Sleep 3
-
-# Check for zombie processes
-Get-Process | Where-Object {$_.Name -eq "sqlite3"}
-
-# Kill any stuck processes (careful!)
-Get-Process sqlite3 | Stop-Process -Force
-```
-
-### Step 3: Test Database Connection
-```powershell
-# Test SQLite directly
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM items;"
-
-# If error, database may be corrupted
-# If success, database is OK
-```
-
-### Step 4: Restart Services
-```powershell
-# Start services one at a time
-Start-Service -Name "PDM_CheckInWatcher"
-Start-Sleep 2
-
-Start-Service -Name "PDM_BOMWatcher"
-Start-Sleep 2
-
-Start-Service -Name "PDM_WorkerProcessor"
-Start-Sleep 2
-
-# Verify all running
-Get-Service | Where-Object {$_.Name -like "PDM_*"}
-```
-
-### Step 5: If Database Corrupted
-
-**Check corruption:**
-```powershell
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "PRAGMA integrity_check;"
-```
-
-**Recovery options:**
-1. **Restore from backup** (recommended)
-   ```powershell
-   Copy-Item "D:\PDM_Backups\latest\pdm.sqlite" "D:\PDM_Vault\pdm.sqlite" -Force
-   ```
-
-2. **Repair database:**
-   ```powershell
-   sqlite3.exe D:\PDM_Vault\pdm.sqlite ".recover" | sqlite3.exe "D:\PDM_Vault\pdm_recovered.sqlite"
-   # Then rename recovered database
-   ```
-
-3. **Reset database** (destructive - loses all data):
-   ```powershell
-   Remove-Item "D:\PDM_Vault\pdm.sqlite"
-   # PDM will recreate on next run (may need manual initialization)
-   ```
-
----
-
-## 🌐 Web Server Problems
-
-**Symptom:** Web server won't start or page doesn't load
-
-### Step 1: Check Server Running
-```powershell
-# Check if Node.js process running
-Get-Process | Where-Object {$_.Name -eq "node"}
-
-# Test port listening
-Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue
-
-# If nothing, try to start
-cd D:\PDM_WebServer
-node server.js
-```
-
-### Step 2: Check Port Conflict
-```powershell
-# Check if port 3000 in use
-Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue
-
-# If in use, either:
-# 1. Kill other process: Get-Process -Id <PID> | Stop-Process -Force
-# 2. Change port in server.js line 5
-
-# Alternative port
-$env:PORT = 3001
-node server.js
-```
-
-### Step 3: Check Dependencies
-```powershell
-# Verify npm packages installed
-Test-Path "D:\PDM_WebServer\node_modules"
-
-# If missing, install
-cd D:\PDM_WebServer
+```bash
+cd frontend
 npm install
+npm run dev
 ```
 
-### Step 4: Check Database Configuration
-```powershell
-# Verify database path in server.js
-grep "DB_PATH\|PDM_DB_PATH" "D:\PDM_WebServer\server.js"
+### Step 2: Node Modules Missing
 
-# Check database exists
-Test-Path "D:\PDM_Vault\pdm.sqlite"
+**Error:** `Cannot find module` errors during startup.
 
-# Test database manually
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM items;"
+**Fix:**
+
+```bash
+cd frontend
+rm -rf node_modules
+npm install
+npm run dev
 ```
 
-### Step 5: Browser Access
-```powershell
-# Try accessing in browser
-# http://localhost:3000
+### Step 3: API URL Misconfigured
 
-# Or test with PowerShell
-$response = Invoke-WebRequest -Uri "http://localhost:3000" -ErrorAction SilentlyContinue
-$response.StatusCode  # Should be 200
+**Symptom:** Frontend loads but shows no data, or network requests fail in browser dev tools.
+
+**Diagnostic:**
+
+1. Open browser Developer Tools (F12)
+2. Go to the Network tab
+3. Look for failed API requests (red entries)
+4. Check the request URL -- it should point to `http://localhost:8000/api/`
+
+**Fix:** Verify the API base URL in the frontend configuration. Check `frontend/.env` or `frontend/src/services/` for the API URL setting. It should point to the backend server:
+
+```
+VITE_API_URL=http://localhost:8000
+```
+
+Or if using the Supabase client directly, verify `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
+
+### Step 4: CORS Errors
+
+**Symptom:** Browser console shows `Access-Control-Allow-Origin` errors.
+
+**Diagnostic:** Open browser Developer Tools (F12), check Console tab for CORS messages.
+
+**Fix:** Ensure the backend CORS configuration allows the frontend origin. In `backend/.env`:
+
+```
+CORS_ALLOW_ALL=true
+```
+
+Or add the specific origin to `cors_origins` in `backend/app/config.py`.
+
+### Step 5: Blank Page After Build
+
+**Symptom:** `npm run build` succeeds but the page is blank in production.
+
+**Diagnostic:** Check browser console for JavaScript errors. Common cause is incorrect base URL for the router.
+
+**Fix:** Verify `vite.config.ts` has the correct `base` setting for your deployment path.
+
+---
+
+## Authentication Issues
+
+**Symptom:** Cannot log in, or logged-in state is lost.
+
+### Step 1: Wrong Credentials
+
+**Symptom:** Login form shows "Invalid credentials" or similar error.
+
+**Diagnostic:**
+
+1. Verify the email/password in Supabase Auth dashboard
+2. Check if the user exists: Supabase Dashboard -> Authentication -> Users
+3. Try resetting the password via the dashboard
+
+### Step 2: JWT Token Expired
+
+**Symptom:** Was logged in, now API calls return 401 Unauthorized.
+
+**Diagnostic:** Open browser Developer Tools -> Application tab -> Local Storage. Look for the Supabase session token and check its expiry.
+
+**Fix:** Log out and log back in. The Supabase client library should auto-refresh tokens, but if the refresh token has also expired, a fresh login is required.
+
+### Step 3: RLS Blocking Data Access
+
+**Symptom:** User is authenticated but API returns empty data or 403 errors.
+
+**Diagnostic:**
+
+1. Check Supabase Dashboard -> Table Editor -> items table
+2. Click the RLS shield icon to view policies
+3. Verify that the authenticated user matches the policy conditions
+
+**Common cause:** RLS policies require a specific role or user ID that the current user does not have.
+
+**Temporary fix for development:** Use the admin client (`get_supabase_admin()`) in the affected endpoint. For production, fix the RLS policy in the Supabase dashboard.
+
+### Step 4: Auth State Not Persisting
+
+**Symptom:** User must log in again after every page refresh.
+
+**Diagnostic:** Check that the auth store is properly initializing on app load. The `router/index.ts` navigation guard calls `authStore.initialize()` before each route.
+
+**Fix:** Verify the auth store's `initialize()` method calls `supabase.auth.getSession()` to restore the session from local storage.
+
+---
+
+## File Upload Failures
+
+**Symptom:** File upload returns an error or the file does not appear in the system.
+
+### Step 1: Check the Upload Endpoint Response
+
+Use browser Developer Tools (Network tab) or the FastAPI docs at `/docs` to test the upload endpoint directly.
+
+```bash
+# Test with curl
+curl -X POST http://localhost:8000/api/files/upload \
+  -F "file=@test.step" \
+  -F "item_number=csp0030"
+```
+
+### Step 2: Item Does Not Exist
+
+**Error:** `404: Item csp0030 not found`
+
+**Fix:** The item must exist in the `items` table before files can be uploaded to it. Create the item first:
+
+```bash
+curl -X POST http://localhost:8000/api/items \
+  -H "Content-Type: application/json" \
+  -d '{"item_number": "csp0030", "name": "CSP0030"}'
+```
+
+Or use the upload bridge with `upsert=true` to auto-create items.
+
+### Step 3: Supabase Storage Bucket Missing
+
+**Error:** `StorageApiError: Bucket not found`
+
+**Fix:** Create the `pdm-files` bucket in the Supabase Dashboard:
+
+1. Go to Supabase Dashboard -> Storage
+2. Click "New bucket"
+3. Name: `pdm-files`
+4. Set public/private as needed (private recommended, use signed URLs)
+
+### Step 4: File Size Limit
+
+**Error:** `413 Request Entity Too Large` or Supabase storage size error.
+
+**Fix:** Supabase free tier has a file size limit (default 50MB). For larger files:
+
+1. Check Supabase project settings for storage limits
+2. Consider compressing files before upload
+3. Upgrade Supabase plan if needed
+
+### Step 5: Duplicate File in Storage
+
+**Error:** `The resource already exists`
+
+The upload endpoint handles this by falling back to an update operation. If this error persists, check that the exception handling in `files.py` is catching the correct error string.
+
+### Step 6: RLS on Storage
+
+**Symptom:** Upload succeeds in the API but storage operation fails silently.
+
+**Fix:** The file upload endpoint should use `get_supabase_admin()` to bypass RLS for storage operations. Verify this is the case in `backend/app/routes/files.py`.
+
+---
+
+## BOM Upload Issues
+
+**Symptom:** BOM data is not appearing in the system or the upload returns errors.
+
+### Step 1: Check BOM Endpoint Response
+
+```bash
+curl -X POST http://localhost:8000/api/bom/bulk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "parent_item_number": "sta01000",
+    "children": [
+      {"item_number": "stp01000", "quantity": 7}
+    ]
+  }'
+```
+
+### Step 2: BOM Parser Not Finding Items
+
+**Symptom:** Upload bridge runs but no BOM data is uploaded.
+
+**Diagnostic:** Check the BOM text file format. The parser expects specific column headers from Creo BOM exports.
+
+**Fix:** Verify the BOM file matches the expected format in `PDM-BOM-Parser.ps1`. Check the parser output for error messages.
+
+### Step 3: Circular Reference Protection
+
+**Symptom:** BOM tree endpoint returns incomplete data.
+
+The tree endpoint has a `max_depth` parameter (default 10) to prevent infinite recursion. If your BOM is deeper than 10 levels, increase this parameter:
+
+```
+GET /api/bom/{item_number}/tree?max_depth=20
+```
+
+### Step 4: Reference Items (zzz prefix)
+
+**Symptom:** Some BOM children are not created.
+
+This is expected behavior. Items with the `zzz` prefix are reference-only and are intentionally skipped during BOM upload. See `backend/app/routes/bom.py` bulk upload logic.
+
+---
+
+## Database Connection Problems
+
+**Symptom:** API returns 500 errors related to database operations.
+
+### Step 1: Verify Supabase Project Status
+
+1. Go to https://supabase.com/dashboard
+2. Select your project
+3. Check the project status indicator (should show "Healthy")
+4. If paused (free tier), click "Restore" to restart
+
+### Step 2: Check API Keys
+
+**Symptom:** `AuthApiError` or `Invalid API key`.
+
+**Diagnostic:**
+
+1. Go to Supabase Dashboard -> Settings -> API
+2. Copy the correct URL, anon key, and service role key
+3. Update `backend/.env` with the correct values
+4. Restart uvicorn
+
+### Step 3: Table Does Not Exist
+
+**Error:** `relation "items" does not exist`
+
+**Fix:** Run the database migrations. Check the Supabase SQL Editor and verify tables exist. If migrating from scratch, apply the schema from the migration plan.
+
+### Step 4: Check Supabase Logs
+
+1. Go to Supabase Dashboard -> Logs
+2. Select "Postgres" or "API" logs
+3. Filter for errors in the relevant time range
+4. Look for connection pool exhaustion, query timeouts, or permission errors
+
+### Step 5: Query Timeout
+
+**Symptom:** Slow responses or timeout errors on complex queries (especially BOM tree).
+
+**Fix:** The recursive BOM tree query makes multiple Supabase calls. For deep trees, this can be slow. Consider:
+
+- Reducing `max_depth`
+- Implementing server-side caching
+- Using a PostgreSQL recursive CTE query instead of multiple API calls
+
+---
+
+## Data Issues
+
+**Symptom:** Incorrect data in the database, missing items, or inconsistent records.
+
+### Step 1: Verify Item Number Format
+
+Item numbers must match the pattern `[a-z]{3}\d{4,6}` (3 lowercase letters + 4-6 digits).
+
+**Check in Supabase SQL Editor:**
+
+```sql
+SELECT item_number FROM items
+WHERE item_number !~ '^[a-z]{3}\d{4,6}$'
+ORDER BY item_number;
+```
+
+This should return no rows. Any results indicate invalid item numbers.
+
+### Step 2: Check for Duplicate Items
+
+```sql
+SELECT item_number, COUNT(*) as cnt
+FROM items
+GROUP BY item_number
+HAVING COUNT(*) > 1;
+```
+
+The `item_number` column has a unique constraint, so true duplicates should not exist. If you see this error during inserts, the upsert logic should handle it.
+
+### Step 3: Orphaned Files
+
+Files linked to deleted items:
+
+```sql
+SELECT f.id, f.file_name, f.item_id
+FROM files f
+LEFT JOIN items i ON f.item_id = i.id
+WHERE i.id IS NULL;
+```
+
+### Step 4: Orphaned BOM Entries
+
+BOM entries referencing deleted items:
+
+```sql
+SELECT b.id, b.parent_item_id, b.child_item_id
+FROM bom b
+LEFT JOIN items p ON b.parent_item_id = p.id
+LEFT JOIN items c ON b.child_item_id = c.id
+WHERE p.id IS NULL OR c.id IS NULL;
+```
+
+### Step 5: Check items vs files Consistency
+
+Every file should have a valid `item_id`:
+
+```sql
+SELECT f.file_name, f.item_id
+FROM files f
+WHERE f.item_id NOT IN (SELECT id FROM items);
 ```
 
 ---
 
-## 🖨️ DXF/SVG Generation Failing
+## Upload Bridge Problems
 
-**Symptom:** DXF/SVG files not created; tasks stuck in work_queue
+**Symptom:** The local PowerShell upload scripts are not sending data to the API.
 
-### Step 1: Verify Worker-Processor Running
+### Step 1: Verify API Connectivity
+
 ```powershell
-Get-Service -Name "PDM_WorkerProcessor" | Select-Object Status
-
-# Check logs
-Get-Content "D:\PDM_Vault\logs\pdm.log" -Tail 20 | Select-String "GENERATE_DXF|GENERATE_SVG|ERROR"
+# Test API health
+Invoke-RestMethod -Uri "http://localhost:8000/health"
+# Should return: @{status=healthy}
 ```
 
-### Step 2: Check FreeCAD Installation
+If this fails, the backend is not running or the URL is wrong. See [Backend Not Starting](#backend-not-starting).
+
+### Step 2: Check Upload Configuration
+
+Review `scripts/pdm-upload/PDM-Upload-Config.ps1` for the correct API URL and watched folders.
+
+### Step 3: Check Upload Service Logs
+
+Run the upload service manually to see output:
+
 ```powershell
-# Verify FreeCAD exists
-Test-Path "C:\Program Files\FreeCAD 0.21\bin\FreeCAD.exe"
-
-# Test FreeCAD headless
-& "C:\Program Files\FreeCAD 0.21\bin\FreeCAD.exe" --version
-
-# Check batch files exist
-Test-Path "D:\FreeCAD\Tools\flatten_sheetmetal.bat"
-Test-Path "D:\FreeCAD\Tools\create_bend_drawing.bat"
+cd scripts\pdm-upload
+.\PDM-Upload-Service.ps1
 ```
 
-### Step 3: Test Batch File Manually
+Watch for error messages about file processing, API calls, or authentication.
+
+### Step 4: File Naming Issues
+
+The upload bridge extracts item numbers from filenames. Filenames must start with a valid item number (3 letters + 4-6 digits).
+
+**Valid:** `csp0030.step`, `wma20120_flat.dxf`
+**Invalid:** `part1.step`, `test-file.step`, `CSP0030.step` (uppercase)
+
+### Step 5: BOM Parser Issues
+
+If BOM files are not being processed, check:
+
+1. The BOM text file is in the expected format
+2. The watched folder path is correct in the configuration
+3. The API URL for the bulk BOM endpoint is reachable
+
 ```powershell
-cd D:\FreeCAD\Tools
+# Test BOM endpoint directly
+$body = @{
+    parent_item_number = "sta01000"
+    children = @(
+        @{ item_number = "stp01000"; quantity = 1 }
+    )
+} | ConvertTo-Json -Depth 3
 
-# Test DXF generation
-.\flatten_sheetmetal.bat "D:\PDM_Vault\CADData\STEP\csp0030.step" "D:\PDM_Vault\CADData\CheckIn\csp0030_test.dxf"
-
-# Check output
-ls "D:\PDM_Vault\CADData\CheckIn\csp0030_test.dxf"
-```
-
-### Step 4: Check Work Queue
-```powershell
-# View pending tasks
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT * FROM work_queue WHERE status='Pending' LIMIT 5;"
-
-# View failed tasks
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT * FROM work_queue WHERE status='Failed' LIMIT 5;"
-
-# Check task details
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT task_id, item_number, task_type, status, completed_at FROM work_queue ORDER BY created_at DESC LIMIT 10;"
-```
-
-### Step 5: Check Output Files
-```powershell
-# FreeCAD batch scripts write to temp
-Get-Content "$env:TEMP\dxf_stdout.txt" -ErrorAction SilentlyContinue
-Get-Content "$env:TEMP\dxf_stderr.txt" -ErrorAction SilentlyContinue
-Get-Content "$env:TEMP\svg_stdout.txt" -ErrorAction SilentlyContinue
-Get-Content "$env:TEMP\svg_stderr.txt" -ErrorAction SilentlyContinue
-```
-
-### Step 6: Manual Task Creation
-```powershell
-# If tasks missing, manually insert
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "INSERT INTO work_queue (item_number, file_path, task_type, status) VALUES ('csp0030', 'D:\PDM_Vault\CADData\STEP\csp0030.step', 'GENERATE_DXF', 'Pending');"
-
-# Check task was created
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT * FROM work_queue WHERE status='Pending';"
-
-# Wait for Worker-Processor to pick it up
-Start-Sleep 10
-
-# Check result
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT * FROM work_queue WHERE item_number='csp0030' ORDER BY created_at DESC LIMIT 1;"
+Invoke-RestMethod -Uri "http://localhost:8000/api/bom/bulk" `
+    -Method POST `
+    -ContentType "application/json" `
+    -Body $body
 ```
 
 ---
 
-## ⚙️ Performance Issues
+## Diagnostic Tools Reference
 
-**Symptom:** System running slow, files processing slowly
+### Browser Developer Tools (F12)
 
-### Step 1: Check Disk Space
-```powershell
-# Check D: drive space
-Get-PSDrive D | Select-Object Name, Used, Free
+- **Console tab:** JavaScript errors, Vue warnings, failed API responses
+- **Network tab:** API request/response details, status codes, timing
+- **Application tab:** Local Storage (auth tokens), cookies, service workers
 
-# Should have at least 100GB free
-# If < 50GB, consider cleanup
+### FastAPI Interactive Docs
+
+- **Swagger UI:** `http://localhost:8000/docs` -- test any endpoint interactively
+- **ReDoc:** `http://localhost:8000/redoc` -- read-only API documentation
+
+### Supabase Dashboard
+
+- **Table Editor:** Browse and edit data directly
+- **SQL Editor:** Run ad-hoc queries for diagnostics
+- **Logs:** API logs, Postgres logs, Auth logs
+- **Storage:** Browse uploaded files, check bucket configuration
+- **Auth:** User management, view active sessions
+
+### FastAPI Logs
+
+Uvicorn prints request logs to the terminal:
+
+```
+INFO:     127.0.0.1:52000 - "GET /api/items?limit=1000 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52000 - "POST /api/files/upload HTTP/1.1" 404 Not Found
 ```
 
-### Step 2: Check Database Size
-```powershell
-# Check database file size
-(Get-Item "D:\PDM_Vault\pdm.sqlite").Length / 1GB  # Size in GB
+Look for non-200 status codes to identify failing endpoints.
 
-# If > 2GB, may need optimization
-# Run database optimization
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "VACUUM;"
+### Health Check
+
+```bash
+curl http://localhost:8000/health
+# Expected: {"status":"healthy"}
 ```
 
-### Step 3: Monitor Service CPU/Memory
-```powershell
-# Check resource usage
-Get-Process | Where-Object {$_.Name -like "powershell|node|FreeCAD"} | Select-Object Name, CPU, WorkingSet
-
-# If CPU > 80% or Memory > 1GB, restart service
-```
-
-### Step 4: Increase Worker Poll Interval
-```powershell
-# Edit Worker-Processor.ps1
-# Find: $Global:PollInterval = 5
-# Change to: $Global:PollInterval = 10 (process every 10 seconds instead of 5)
-
-# Reduces database load
-```
-
-### Step 5: Archive Old Items
-```powershell
-# Move obsolete items to archive
-# See COMMON-WORKFLOWS.md for archive procedures
-```
+If this fails, the backend process is not running.
 
 ---
 
-## 🔒 Permission / Access Issues
+## Quick Diagnostic Checklist
 
-**Symptom:** "Access denied" errors in logs
+When something is not working, run through this checklist:
 
-### Step 1: Check Service Account
-```powershell
-# Services typically run as Local System
-# Verify account has permissions to D:\PDM_Vault
-
-# Test access
-Test-Path "D:\PDM_Vault"
-Test-Path "D:\PDM_Vault\CADData\CheckIn"
-
-# If access denied, may need to run as Administrator
-```
-
-### Step 2: Check File Permissions
-```powershell
-# Get NTFS permissions
-Get-Acl "D:\PDM_Vault" | Select-Object -ExpandProperty Access
-
-# Should allow: Modify, Read, Write for service account
-# If not, run PowerShell as Administrator and fix
-```
-
-### Step 3: Fix Permissions
-```powershell
-# Run as Administrator
-$Acl = Get-Acl "D:\PDM_Vault"
-$Rule = New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM","Modify","ContainerInherit,ObjectInherit","None","Allow")
-$Acl.AddAccessRule($Rule)
-Set-Acl "D:\PDM_Vault" $Acl
-
-# Recursively fix if needed
-(Get-ChildItem "D:\PDM_Vault" -Recurse) | Set-Acl $Acl
-```
+1. **Backend running?** -- Check terminal for uvicorn output
+2. **Frontend running?** -- Check terminal for Vite output
+3. **`.env` file present?** -- Check `backend/.env` for Supabase credentials
+4. **Supabase project active?** -- Check dashboard status
+5. **Browser console errors?** -- F12 -> Console tab
+6. **Network requests failing?** -- F12 -> Network tab
+7. **CORS errors?** -- Set `CORS_ALLOW_ALL=true` in backend `.env`
+8. **Auth token valid?** -- Try logging out and back in
+9. **Admin client used where needed?** -- File upload and BOM bulk endpoints need `get_supabase_admin()`
+10. **Item numbers lowercase?** -- Check all entry points normalize to lowercase
 
 ---
 
-## 📊 Data Issues
-
-**Symptom:** Incorrect data in database, items missing, etc.
-
-### Step 1: Verify Data Integrity
-```powershell
-# Check for orphaned files (in database but not on disk)
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM files WHERE NOT EXISTS(SELECT 1 FROM files f WHERE f.file_path = files.file_path AND EXISTS(SELECT 1 FROM items WHERE files.file_path LIKE '%' || items.item_number || '%'));"
-```
-
-### Step 2: Cleanup Orphaned Files
-```powershell
-# Use PDM Database Cleanup tool
-cd D:\PDM_PowerShell
-.\PDM-Database-Cleanup.ps1 -DryRun  # Preview changes
-
-# Then execute
-.\PDM-Database-Cleanup.ps1 -Confirm
-```
-
-### Step 3: Verify Item Numbers
-```powershell
-# Check for invalid item numbers
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT item_number FROM items WHERE NOT (item_number REGEXP '^[a-z]{3}\d{4,6}$');"
-
-# Should return empty (no invalid items)
-```
-
----
-
-## 🆘 Still Having Issues?
-
-If none of the above helps:
-
-1. **Collect diagnostic information:**
-   ```powershell
-   # Get system info
-   $diagnostics = @{
-       "PSVersion" = $PSVersionTable.PSVersion
-       "OS" = (Get-WmiObject win32_operatingsystem).caption
-       "Services" = Get-Service | Where-Object {$_.Name -like "PDM_*"}
-       "Node" = & node --version
-       "Database" = if (Test-Path "D:\PDM_Vault\pdm.sqlite") { "OK" } else { "MISSING" }
-       "Logs" = Get-Item "D:\PDM_Vault\logs\pdm.log" | Select-Object Length, LastWriteTime
-   }
-   $diagnostics
-   ```
-
-2. **Check logs for patterns:**
-   ```powershell
-   Select-String -Path "D:\PDM_Vault\logs\pdm.log" -Pattern "ERROR" | Group-Object -Property Line | Sort-Object -Descending Count | Select-Object -First 5
-   ```
-
-3. **Review related documentation:**
-   - Service issues: [05-POWERSHELL-SCRIPTS-INDEX.md](05-POWERSHELL-SCRIPTS-INDEX.md)
-   - Database: [03-DATABASE-SCHEMA.md](03-DATABASE-SCHEMA.md)
-   - Web server: [08-PDM-WEBSERVER-README.md](08-PDM-WEBSERVER-README.md)
-
----
-
-**Last Updated:** 2025-01-03
-**Version:** 2.0
-**Related:** [README.md](README.md), [COMMON-WORKFLOWS.md](COMMON-WORKFLOWS.md)
+**Last Updated:** 2025-01-29
+**Version:** 3.0
+**Related:** [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md), [18-GLOSSARY-TERMS.md](18-GLOSSARY-TERMS.md)

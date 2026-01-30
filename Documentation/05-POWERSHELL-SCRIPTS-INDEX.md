@@ -1,568 +1,385 @@
-# PDM PowerShell Scripts - Index & Guide
+# Scripts and Automation Reference
 
-Quick reference guide for all PowerShell scripts in the PDM system.
-
-**Location:** `D:\PDM_PowerShell\`
+Reference guide for all scripts and automation in the PDM-Web system.
 
 ---
 
-## Script Overview
+## Overview
 
-The PDM system is powered by 15 PowerShell scripts that handle automation, data processing, and system management. All scripts use the shared library **PDM-Library.ps1** for common functions.
+The PDM-Web system uses a small set of PowerShell scripts as a bridge between local CAD tools (Creo Parametric) and the web-based backend API. These scripts run on the engineer's workstation and handle file uploads, BOM parsing, and parameter synchronization.
+
+Most automation that was previously handled by PowerShell Windows services is now handled directly by the FastAPI backend and Supabase. The remaining scripts serve a focused purpose: moving data from local CAD exports into the web system.
+
+### Script Inventory
+
+| Script | Location | Purpose |
+|--------|----------|---------|
+| PDM-Upload-Service.ps1 | `scripts/pdm-upload/` | FileSystemWatcher that processes dropped files |
+| PDM-Upload-Functions.ps1 | `scripts/pdm-upload/` | HTTP upload helpers, item number extraction, MIME detection |
+| PDM-BOM-Parser.ps1 | `scripts/pdm-upload/` | Creo BOM/parameter text file parser |
+| PDM-Upload-Config.ps1 | `scripts/pdm-upload/` | Configuration (API URL, watch folder, logging) |
+| deploy.ps1 | Project root | Fly.io deployment script |
 
 ---
 
-## Core Services (Windows Services / Watchers)
+## Upload Bridge Scripts
 
-These scripts run continuously as Windows services or manual processes, monitoring folders and executing automated workflows.
+**Location:** `scripts/pdm-upload/`
 
-### ✅ Production Services
+These scripts form the "upload bridge" -- a local service that watches a folder on the engineer's workstation and automatically uploads files to the PDM-Web API.
 
-#### 1. CheckIn-Watcher.ps1
-**Purpose:** File ingestion and classification engine
+### How It Works
 
-**What It Does:**
-- Monitors `D:\PDM_Vault\CADData\CheckIn\` for new files
-- Classifies files by type (CAD, STEP, DXF, SVG, PDF, etc.)
-- Moves files to appropriate folders (STEP\, DXF\, SVG\, PDF\, etc.)
-- Auto-creates items if not exist
-- Registers files in database
-- Queues DXF/SVG regeneration if applicable
+1. The engineer (or Creo) drops files into `C:\PDM-Upload\`.
+2. `PDM-Upload-Service.ps1` detects new files via FileSystemWatcher.
+3. Based on file type and name, the service routes each file to the appropriate action:
+   - CAD/STEP/DXF/SVG/PDF files are uploaded to `POST /api/files/upload`.
+   - `BOM.txt` or `MLBOM.txt` files are parsed and sent to `POST /api/bom/bulk`.
+   - `param.txt` files are parsed and sent to `PATCH /api/items/{item_number}?upsert=true`.
+4. Successfully processed files are deleted from the watch folder.
+5. Failed files are moved to `C:\PDM-Upload\Failed\` for manual review.
 
-**File Types:**
-- `.prt`, `.asm`, `.drw` → CAD files
-- `.step`, `.stp` → 3D models
-- `.dxf` → Flat patterns
-- `.svg` → Technical drawings
-- `.pdf` → Documentation
-- `_asm.neu` → Assembly neutral files (triggers BOM extraction)
-
-**Key Functions:**
-- `Get-FileClassification` - Determines file type
-- `Extract-ItemNumber` - Parses item number from filename
-- `Queue-ExportGeneration` - Queues DXF/SVG generation
-
-**Configuration:**
-```powershell
-$Global:CheckInPath  = "D:\PDM_Vault\CADData\CheckIn"
-$Global:FreeCADExe   = "C:\Program Files\FreeCAD 0.21\bin\FreeCAD.exe"
+```
+C:\PDM-Upload\              <-- Drop files here
+  |
+  +-- Failed\               <-- Failed uploads land here
+  +-- pdm-upload.log        <-- Log file
 ```
 
-**Documentation:** See `D:\PDM_COMPLETE_OVERVIEW.md` - CheckIn-Watcher section
+---
+
+### PDM-Upload-Config.ps1
+
+**Purpose:** Central configuration for all upload bridge scripts.
+
+**Configurable Values:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `ApiUrl` | `http://localhost:8000/api` | PDM-Web API base URL |
+| `WatchFolder` | `C:\PDM-Upload` | Local folder to monitor for new files |
+| `LogFile` | `C:\PDM-Upload\pdm-upload.log` | Log file path |
+| `PollInterval` | `500` (ms) | Delay after file detection before processing |
+| `MaxLogSize` | `10MB` | Log file rotation threshold |
+
+**Switching to production API:**
+
+Edit `PDM-Upload-Config.ps1` and change the `ApiUrl` value:
+
+```powershell
+$Config = @{
+    # Local development:
+    # ApiUrl = "http://localhost:8000/api"
+
+    # Production:
+    ApiUrl = "https://pdm-web.fly.dev/api"
+    # ...
+}
+```
+
+**Logging:**
+
+The `Write-Log` function writes timestamped entries to both the console and the log file. Log files are automatically rotated when they exceed `MaxLogSize`.
+
+Log format:
+```
+2026-01-29 14:30:00 PDM Upload Service Starting
+2026-01-29 14:30:01 Processing: csp0030.step
+2026-01-29 14:30:02 SUCCESS: Uploaded csp0030.step for item csp0030
+```
 
 ---
 
-#### 2. BOM-Watcher.ps1
-**Purpose:** Bill of Materials processing
+### PDM-Upload-Service.ps1
 
-**What It Does:**
-- Monitors `D:\PDM_Vault\CADData\BOM\` for `.txt` files
-- Parses Creo BOM tree exports
-- Extracts parent assembly and child components
-- Populates `bom` table with parent/child relationships
-- Updates item properties (material, mass, thickness, cost, etc.)
-- Auto-creates missing items
+**Purpose:** Main service script. Monitors the watch folder and dispatches file processing.
+
+**Requirements:** PowerShell 5.1 or later.
+
+**Starting the service:**
+
+```powershell
+cd scripts\pdm-upload
+.\PDM-Upload-Service.ps1
+```
+
+Leave the PowerShell window open. Press Ctrl+C to stop.
+
+**Startup behavior:**
+
+1. Loads configuration, helper functions, and BOM parser (dot-sourced).
+2. Creates the watch folder and `Failed` subfolder if they do not exist.
+3. Processes any files already present in the watch folder.
+4. Starts a FileSystemWatcher on `Created` events.
+5. Runs indefinitely until interrupted.
+
+**File processing flow:**
+
+For each new file detected:
+
+1. Skip temporary files (names starting with `~` or `.`).
+2. Wait for the file to be fully written (up to 5 retries, 500ms each).
+3. Wait 3 seconds after the Created event to allow related files to finish (Creo PDFs with embedded images).
+4. Determine the file action using `Get-FileAction`.
+5. Execute the appropriate handler:
+   - `Upload` -- Extract item number, upload via `Upload-File`.
+   - `BOM` / `MLBOM` -- Parse and upload via `Upload-BOM`.
+   - `Parameters` -- Parse and update via `Update-Parameters`.
+   - `Skip` -- Ignore unsupported file types.
+6. Delete the file on success. On failure, move to `Failed\` folder with duplicate-name handling.
+
+**Skipped items:** Files for `zzz`-prefixed items (reference/placeholder items) are silently deleted without uploading.
+
+---
+
+### PDM-Upload-Functions.ps1
+
+**Purpose:** HTTP client functions and file classification logic.
+
+**Functions:**
+
+#### Get-ItemNumber
+
+Extracts the item number from a filename. Supports these patterns:
+
+| Pattern | Example Filename | Extracted Item Number |
+|---------|-----------------|----------------------|
+| Standard (3 letters + 4-6 digits) | `csp0030.step` | `csp0030` |
+| With suffix | `csp0030_flat.dxf` | `csp0030` |
+| Uppercase | `CSP0030_REV_A.pdf` | `csp0030` |
+| McMaster | `mmc4464k478.prt` | `mmc4464k478` |
+| Supplier | `spn12345.step` | `spn12345` |
+| Reference | `zzz00001.prt` | `zzz00001` |
+
+Returns `$null` if no valid item number pattern is found.
+
+#### Get-FileAction
+
+Determines what action to take based on filename and extension.
+
+**Return values:**
+
+| Action | Trigger | Description |
+|--------|---------|-------------|
+| `Upload` | `.step`, `.stp`, `.pdf`, `.dxf`, `.svg`, `.prt`, `.asm`, `.drw` | Upload as file attachment |
+| `BOM` | File named `bom.txt` | Parse as single-level BOM |
+| `MLBOM` | File named `mlbom.txt` | Parse as multi-level BOM |
+| `Parameters` | File named `param.txt` | Parse as parameter update |
+| `Skip` | All other files | Ignore (logs, configs, images, etc.) |
+
+**Ignored files:** Script files (`.ps1`, `.bat`), config files, images, and a hardcoded list of known service files are always skipped.
+
+#### Upload-File
+
+Uploads a file to the API using multipart/form-data via .NET `HttpClient`.
+
+**Parameters:**
+- `FilePath` -- Full path to the file.
+- `ItemNumber` -- Item number to associate with.
+
+**Endpoint called:** `POST {ApiUrl}/files/upload`
+
+**MIME type detection:**
+
+| Extension | MIME Type |
+|-----------|----------|
+| `.pdf` | `application/pdf` |
+| `.step`, `.stp` | `application/step` |
+| `.dxf` | `application/dxf` |
+| `.svg` | `image/svg+xml` |
+| Others | `application/octet-stream` |
+
+#### Upload-BOM
+
+Parses a BOM text file and uploads the result to the bulk BOM endpoint.
+
+**Parameters:**
+- `FilePath` -- Path to the BOM text file.
 
 **Process:**
-1. Detects new BOM text file
-2. Parses header for parent assembly
-3. Extracts child items and quantities
-4. Parses columns: Description, Project, Material, Mass, Thickness
-5. Updates database with relationships and properties
-6. Deletes processed file
+1. Calls `Parse-BOMFile` to extract parent/children data.
+2. Validates that a parent item number and at least one child were found.
+3. Constructs a JSON request body with `parent_item_number`, `children`, and `source_file`.
+4. Posts to `POST {ApiUrl}/bom/bulk`.
 
-**File Format:**
-BOM files are text exports from Creo with fixed-column format. Header identifies parent assembly, subsequent lines with indent are children.
+#### Update-Parameters
 
-**Configuration:**
-```powershell
-$Global:BOMPath = "D:\PDM_Vault\CADData\BOM"
+Parses a parameter text file and updates item properties.
+
+**Parameters:**
+- `FilePath` -- Path to the parameter text file.
+
+**Process:**
+1. Calls `Parse-ParameterFile` to extract item number and properties.
+2. Validates that an item number was found.
+3. Constructs a JSON request body with the non-null properties.
+4. Sends to `PATCH {ApiUrl}/items/{item_number}?upsert=true`.
+
+The `upsert=true` flag ensures the item is created if it does not already exist in the database.
+
+---
+
+### PDM-BOM-Parser.ps1
+
+**Purpose:** Parses Creo's fixed-width text BOM and parameter exports.
+
+**Functions:**
+
+#### Parse-BOMFile
+
+Parses a Creo BOM tree export text file into structured data suitable for the bulk BOM API.
+
+**Input format:** Fixed-width columns exported from Creo. The file must contain a `Model Name` header row followed by a separator line of dashes.
+
+Example input:
+```
+Model Name         DESCRIPTION            PROJECT   PRO_MP_MASS   PTC_MASTER_MATERIAL  CUT_LENGTH  SMT_THICKNESS
+---------          -----------            -------   -----------   -----------------    ---------   -----------
+ WMA20120.ASM     Assembly               PROJ1     10.5          Steel                -           -
+   WMP20080.PRT   Bracket                PROJ1     2.5           Steel                500         3.0
+   WMP20090.PRT   Shaft                  PROJ1     1.2           Aluminum             300         2.5
 ```
 
-**Documentation:** See `D:\PDM_COMPLETE_OVERVIEW.md` - BOM-Watcher section
+**Supported columns:** `Model Name`, `DESCRIPTION`, `PROJECT`, `PRO_MP_MASS`, `PTC_MASTER_MATERIAL`, `CUT_LENGTH`, `SMT_THICKNESS`, `CUT_TIME`, `PRICE_EST`
 
----
+**Parsing behavior:**
+- Column positions are calculated dynamically from the header line.
+- The top-level assembly (low indent, `.ASM` extension) becomes the parent item.
+- All other items become children.
+- Duplicate children have their quantity incremented (not duplicated).
+- Skeleton parts (`_SKEL.PRT`), standard features (`ASM_RIGHT`, `ASM_TOP`, etc.), and `zzz`-prefixed reference items are skipped.
+- Numeric values (mass, thickness, cut_length, etc.) are parsed as doubles; non-numeric or placeholder (`-`) values become null.
 
-#### 3. MLBOM-Watcher.ps1
-**Purpose:** Multi-level BOM processing with hierarchical indent support
-
-**What It Does:**
-- Monitors `D:\PDM_Vault\CADData\BOM\MLBOM*.txt` for multi-level BOMs
-- Supports nested assembly hierarchies via indentation levels
-- Extracts pricing information from BOM data
-- Better handling of complex assembly structures
-
-**When to Use:**
-Use when BOM exports include nested subassembly hierarchies with indentation showing relationships.
-
-**Configuration:**
+**Return value:**
 ```powershell
-$Global:BOMPath = "D:\PDM_Vault\CADData\BOM"
+@{
+    parent_item_number = "wma20120"
+    children = @(
+        @{ item_number = "wmp20080"; quantity = 2; name = "Bracket"; material = "Steel"; mass = 2.5; thickness = 3.0; cut_length = 500; cut_time = $null; price_est = $null },
+        @{ item_number = "wmp20090"; quantity = 1; name = "Shaft"; material = "Aluminum"; mass = 1.2; ... }
+    )
+}
 ```
 
-**Documentation:** See `D:\PDM_COMPLETE_OVERVIEW.md` - Services section
+#### Parse-ParameterFile
 
----
+Parses a Creo parameter export for a single item. Uses the same column-based parsing logic as `Parse-BOMFile` but only reads the first data line.
 
-#### 4. Worker-Processor.ps1
-**Purpose:** Task execution engine for automated manufacturing document generation
-
-**What It Does:**
-- Polls `work_queue` table for pending tasks
-- Executes tasks: GENERATE_DXF, GENERATE_SVG
-- Calls FreeCAD batch scripts for document generation
-- Updates task status (Pending → Processing → Completed/Failed)
-- Handles error logging and cleanup
-
-**Supported Tasks:**
-| Task | Purpose | Input | Output |
-|------|---------|-------|--------|
-| `GENERATE_DXF` | Flatten sheet metal | STEP file | DXF pattern |
-| `GENERATE_SVG` | Create technical drawing | STEP file | SVG with dimensions |
-
-**Execution Pattern:**
-1. Fetch oldest pending task
-2. Mark as Processing, set start time
-3. Execute task-specific function
-4. Call appropriate batch file from `D:\FreeCAD\Tools\`
-5. Mark Completed/Failed, set end time
-
-**Configuration:**
+**Return value:**
 ```powershell
-$Global:ToolsPath    = "D:\FreeCAD\Tools"
-$Global:FlattenBat   = "D:\FreeCAD\Tools\flatten_sheetmetal.bat"
-$Global:BendDrawBat  = "D:\FreeCAD\Tools\create_bend_drawing.bat"
-$Global:PollInterval = 5  # seconds
+@{
+    item_number = "csp0030"
+    name        = "Bracket"
+    material    = "Steel"
+    mass        = 2.5
+    thickness   = 3.0
+    cut_length  = 500
+    cut_time    = $null
+    price_est   = $null
+}
 ```
 
-**Documentation:** See `D:\PDM_COMPLETE_OVERVIEW.md` - Worker-Processor section
+#### Get-ColumnValue
+
+Internal helper function that extracts a value from a fixed-width line given start and end column positions. Returns `$null` for empty, `-`, or out-of-range values.
 
 ---
 
-#### 5. Part-Parameter-Watcher.ps1
-**Purpose:** Parameter synchronization for individual parts
+## Deployment Script
 
-**What It Does:**
-- Monitors `D:\PDM_Vault\CADData\ParameterUpdate\` for parameter files
-- Updates item properties from parameter exports
-- Syncs CAD parameters with database
-- Similar to BOM-Watcher but for single-item parameters
+### deploy.ps1
 
-**Use Case:**
-When you need to update properties (thickness, material, cost) for a specific part without a full BOM.
+**Location:** Project root (`deploy.ps1`)
 
-**Configuration:**
-```powershell
-$Global:ParameterPath = "D:\PDM_Vault\CADData\ParameterUpdate"
-```
+**Purpose:** Deploys the PDM-Web application to Fly.io.
 
-**Documentation:** See `D:\PDM_COMPLETE_OVERVIEW.md` - Services section
+**What it does:**
 
----
-
-### 🚧 In Development (Not Yet Production)
-
-#### 6. Release-Watcher.ps1
-**Purpose:** Release workflow and lifecycle state management (IN DEVELOPMENT)
-
-**Current Status:** Stub implementation - handles basic release folder monitoring
-
-**Expected Features:**
-- Lifecycle state transitions (Design → Released → Obsolete)
-- File locking for released items
-- Move to Released\ folder
-- Audit trail creation
-- Revision management
-
-**Note:** Designed for future multi-user support. Currently not used in single-user system.
-
-**Configuration:**
-```powershell
-$Global:ReleasePath = "D:\PDM_Vault\CADData\Release"
-```
-
-**Documentation:** See `D:\PDM_COMPLETE_OVERVIEW.md` - Release-Watcher section
-
----
-
-#### 7. Revise-Watcher.ps1
-**Purpose:** Revision management and item iteration (IN DEVELOPMENT)
-
-**Current Status:** Stub implementation - monitors for revision changes
-
-**Expected Features:**
-- Revision letter increment (A → B → C)
-- Iteration reset to 1 on revision change
-- File archival and versioning
-- Revision history tracking
-
-**Note:** Designed for future multi-user support. Currently not used in single-user system.
-
-**Documentation:** See `D:\PDM_COMPLETE_OVERVIEW.md` - Revise-Watcher section
-
----
-
-## Utility Scripts (Ad-Hoc / Manual Use)
-
-These scripts are run manually when needed for maintenance, analysis, or support tasks.
-
-### 📊 Analysis & Reporting
-
-#### 8. Get-BOMCost.ps1
-**Purpose:** BOM cost rollup and pricing analysis
-
-**What It Does:**
-- Recursively calculates total cost of an assembly
-- Traverses BOM tree summing component costs
-- Detects circular references
-- Displays hierarchical cost breakdown
+1. Loads environment variables from `backend/.env`.
+2. Validates that required variables are set (`SUPABASE_URL`, `SUPABASE_ANON_KEY`).
+3. Runs `flyctl deploy` with Supabase credentials passed as Docker build arguments.
 
 **Usage:**
 ```powershell
-.\Get-BOMCost.ps1 -Assembly "wma20120"
-.\Get-BOMCost.ps1 -Assembly "csp0030" -Quantity 5
+.\deploy.ps1
 ```
 
-**Output:**
-- Color-coded hierarchical display
-- Assembly cost vs. component cost breakdown
-- Total estimated cost
+**Prerequisites:**
+- Fly.io CLI (`flyctl`) installed and authenticated.
+- `backend/.env` file with valid Supabase credentials.
 
-**Features:**
-- Recursive BOM traversal
-- Circular reference detection
-- Cost aggregation by level
-- Multi-quantity cost calculation
-
-**Documentation:** See `D:\PDM_PowerShell\BOM-COST-ROLLUP-GUIDE.md`
+**Build arguments passed to Docker:**
+- `VITE_SUPABASE_URL` -- Used at frontend build time for Supabase client configuration.
+- `VITE_SUPABASE_ANON_KEY` -- Used at frontend build time for Supabase client configuration.
 
 ---
 
-#### 9. Get-McMasterPrint.ps1
-**Purpose:** Supplier documentation and part number retrieval
-
-**What It Does:**
-- Fetches supplier data and documentation
-- Links to McMaster-Carr or other supplier catalogs
-- Helps with procurement and sourcing
-
-**Usage:**
-```powershell
-.\Get-McMasterPrint.ps1 -PartNumber "12345"
-```
-
-**Note:** Specific to McMaster-Carr integration; may need customization for your suppliers
-
----
-
-### 🧹 Maintenance & Cleanup
-
-#### 10. PDM-Database-Cleanup.ps1
-**Purpose:** Database maintenance and orphaned file detection
-
-**What It Does:**
-- Scans database for missing or orphaned files
-- Reports files in database but not on disk
-- Offers cleanup options with safety checks
-- Supports file type filtering
-- Provides dry-run mode for preview
-
-**Usage:**
-```powershell
-# Dry-run: Show what would be cleaned
-.\PDM-Database-Cleanup.ps1 -DryRun
-
-# Clean specific file type
-.\PDM-Database-Cleanup.ps1 -FileType "DXF" -Confirm
-
-# Clean all orphaned entries
-.\PDM-Database-Cleanup.ps1 -All
-```
-
-**Features:**
-- Dry-run mode (preview changes)
-- File type filtering (CAD, STEP, DXF, SVG, PDF, etc.)
-- Confirmation prompts for safety
-- Detailed reporting
-
-**Documentation:** See `D:\PDM_PowerShell\Use Guides\PDM-DATABASE-CLEANUP-GUIDE.md`
-
----
-
-#### 11. Clear-PDM-Data.ps1
-**Purpose:** DESTRUCTIVE - Complete PDM database and file reset
-
-**⚠️ WARNING:** This script deletes all PDM data. Use with extreme caution.
-
-**What It Does:**
-- Empties `D:\PDM_Vault\CADData\` folders
-- Resets `pdm.sqlite` database
-- Clears all items, files, BOMs, and history
-
-**Usage:**
-```powershell
-# Preview what would be deleted
-.\Clear-PDM-Data.ps1 -WhatIf
-
-# Actually delete (with confirmation)
-.\Clear-PDM-Data.ps1 -Confirm
-```
-
-**Safety Features:**
-- `-WhatIf` mode for preview
-- `-Confirm` prompt before execution
-- Requires explicit confirmation
-
-**When to Use:**
-- Development environment reset
-- Complete system reinitialization
-- Testing and validation
-- Clean database restart
-
-**When NOT to Use:**
-- Production systems with important data
-- Without backup
-- By mistake (requires confirmation)
-
----
-
-### 🔍 Comparison & Analysis
-
-#### 12. CompareWorkspace.ps1
-**Purpose:** Creo workspace vs. PDM vault comparison
-
-**What It Does:**
-- Runs as HTTP service on port 8082
-- Compares local Creo workspace with PDM vault
-- Identifies missing or extra files
-- Provides sync recommendations
-- Integrates with Creo browser (CreoJS)
-
-**Usage:**
-```powershell
-# Start comparison service
-.\CompareWorkspace.ps1
-
-# Access via CreoJS in Creo browser
-# Service listens at http://localhost:8082
-```
-
-**Features:**
-- Real-time workspace scanning
-- PDM database comparison
-- Discrepancy reporting
-- Creo integration via web API
-
-**Documentation:** See `D:\Skills\DEVELOPMENT-NOTES-workspace-comparison.md`
-
----
-
-### 🌐 Web Services
-
-#### 13. Start-PartNumbersList.ps1
-**Purpose:** Launch searchable part database web server
-
-**What It Does:**
-- Starts Node.js web server on port 3002
-- Provides searchable interface to part database
-- Quick lookup of item numbers and properties
-
-**Usage:**
-```powershell
-.\Start-PartNumbersList.ps1
-# Access at http://localhost:3002
-```
-
-**Note:** Separate from main PDM Browser on port 3000
-
----
-
-## Service Management Scripts
-
-#### 14. Restart-PDM-Services.ps1
-**Purpose:** Service restart utility for Windows services
-
-**What It Does:**
-- Stops all PDM Windows services
-- Waits for clean shutdown
-- Restarts all services
-
-**Usage:**
-```powershell
-.\Restart-PDM-Services.ps1
-```
-
-**Affected Services:**
-- PDM_CheckInWatcher
-- PDM_BOMWatcher
-- PDM_WorkerProcessor
-- PDM_PartParameterWatcher
-
-**When to Use:**
-- After configuration changes
-- When services hang or become unresponsive
-- For system recovery
-- During maintenance windows
-
----
-
-## Core Library
-
-#### 15. PDM-Library.ps1
-**Purpose:** Shared functions used by all scripts
-
-**Never Run Directly** - This is a library, not a standalone script.
-
-**What It Provides:**
-- Logging functions (`Write-Log`)
-- Database functions (`Exec-SQL`, `Query-SQL`)
-- Configuration variables
-- Error handling helpers
-
-**Key Functions:**
-
-```powershell
-# Logging
-Write-Log "Message text"
-# Logs to: D:\PDM_Vault\logs\pdm.log
-
-# Database operations (INSERT/UPDATE/DELETE)
-Exec-SQL "INSERT INTO items (item_number, revision) VALUES ('csp0030', 'A');"
-
-# Database queries (SELECT)
-$result = Query-SQL "SELECT revision FROM items WHERE item_number='csp0030';"
-
-# Configuration
-$Global:DBPath    = "D:\PDM_Vault\pdm.sqlite"
-$Global:PDMRoot   = "D:\PDM_Vault"
-$Global:LogPath   = "D:\PDM_Vault\logs\pdm.log"
-```
-
-**Dot-Source Usage:**
-All service scripts include:
-```powershell
-. "$PSScriptRoot\..\PDM-Library.ps1"
-```
-
-**Documentation:** See function comments in PDM-Library.ps1
-
----
-
-## Quick Start Guide
-
-### For Development / Testing
-
-**Terminal 1: File Ingestion**
-```powershell
-cd D:\PDM_PowerShell
-.\CheckIn-Watcher.ps1
-```
-
-**Terminal 2: Task Processing**
-```powershell
-cd D:\PDM_PowerShell
-.\Worker-Processor.ps1
-```
-
-**Terminal 3: BOM Processing**
-```powershell
-cd D:\PDM_PowerShell
-.\BOM-Watcher.ps1
-```
-
-**Terminal 4: Web Server**
-```powershell
-cd D:\PDM_WebServer
-node server.js
-```
-
-Then access PDM Browser at: `http://localhost:3000`
-
----
-
-### For Production / Windows Services
-
-See `D:\PDM_COMPLETE_OVERVIEW.md` - Service Management section for Windows Service installation with NSSM.
-
----
-
-## Configuration Reference
-
-All scripts use configuration from PDM-Library.ps1:
-
-```powershell
-# Database
-$Global:DBPath    = "D:\PDM_Vault\pdm.sqlite"
-$Global:SQLiteExe = "sqlite3.exe"
-
-# File system paths
-$Global:PDMRoot      = "D:\PDM_Vault"
-$Global:CADDataRoot  = "D:\PDM_Vault\CADData"
-$Global:CheckInPath  = "D:\PDM_Vault\CADData\CheckIn"
-$Global:BOMPath      = "D:\PDM_Vault\CADData\BOM"
-$Global:ReleasePath  = "D:\PDM_Vault\Release"
-
-# Logging
-$Global:LogPath      = "D:\PDM_Vault\logs\pdm.log"
-
-# Tools
-$Global:FreeCADExe   = "C:\Program Files\FreeCAD 0.21\bin\FreeCAD.exe"
-$Global:ToolsPath    = "D:\FreeCAD\Tools"
-
-# Service timing
-$Global:PollInterval = 5  # seconds (Worker-Processor)
-$Global:FileWatcherDelay = 800  # milliseconds (CheckIn-Watcher)
-```
+## Workflow Examples
+
+### Uploading a STEP File
+
+1. Save `csp0030.step` to `C:\PDM-Upload\`.
+2. The upload service detects the file.
+3. `Get-ItemNumber("csp0030.step")` returns `csp0030`.
+4. `Upload-File` sends a multipart POST to `/api/files/upload` with `item_number=csp0030`.
+5. The API stores the file in Supabase Storage at `pdm-files/csp0030/csp0030.step`.
+6. The API creates or updates the file record in the database.
+7. The local file is deleted.
+
+### Uploading a BOM
+
+1. Export a BOM tree from Creo to `C:\PDM-Upload\BOM.txt`.
+2. The upload service detects `BOM.txt` and routes it to `Upload-BOM`.
+3. `Parse-BOMFile` extracts the parent assembly and child items with quantities and properties.
+4. The parsed data is posted to `/api/bom/bulk`.
+5. The API creates/updates all items, deletes old BOM entries, and creates new relationships.
+6. The local file is deleted.
+
+### Updating Item Parameters
+
+1. Export parameters from Creo to `C:\PDM-Upload\param.txt`.
+2. The upload service detects `param.txt` and routes it to `Update-Parameters`.
+3. `Parse-ParameterFile` extracts the item number and properties.
+4. The data is sent to `PATCH /api/items/{item_number}?upsert=true`.
+5. The API updates (or creates) the item with the new properties.
+6. The local file is deleted.
 
 ---
 
 ## Troubleshooting
 
-### Service Won't Start
-1. Verify path exists: `Test-Path "D:\PDM_Vault\CADData\CheckIn"`
-2. Check logs: `Get-Content "D:\PDM_Vault\logs\pdm.log" -Tail 20`
-3. Verify permissions on folders
+### Upload service not detecting files
 
-### Database Locked
-1. Check for zombie processes: `Get-Process powershell`
-2. Verify no manual sqlite3.exe sessions open
-3. Restart services: `.\Restart-PDM-Services.ps1`
+1. Verify the service is running (PowerShell window is open and showing "File watcher started").
+2. Confirm files are being saved to the correct folder (`C:\PDM-Upload\` by default).
+3. Check the log file at `C:\PDM-Upload\pdm-upload.log`.
 
-### File Not Being Processed
-1. Check CheckIn-Watcher is running
-2. Monitor logs in real-time: `Get-Content "D:\PDM_Vault\logs\pdm.log" -Wait -Tail 50`
-3. Verify file naming convention (must start with item number)
+### File upload fails with 404
 
-### DXF/SVG Not Generating
-1. Check Worker-Processor is running
-2. Verify FreeCAD path is correct
-3. Check task status: `sqlite3.exe "D:\PDM_Vault\pdm.sqlite" "SELECT * FROM work_queue WHERE status='Failed';"`
+The item must exist in the database before a file can be uploaded. The upload bridge extracts the item number from the filename and sends it with the upload request. If the item does not exist, the API returns 404.
 
----
+**Solution:** Upload a BOM or parameter file first to create the item, or create the item manually through the web UI.
 
-## Related Documentation
+### BOM parsing returns no children
 
-- **Complete System Overview:** `D:\PDM_COMPLETE_OVERVIEW.md`
-- **Database Schema:** `D:\Skills\database_schema.md`
-- **Services Reference:** `D:\Skills\services.md`
-- **FreeCAD Automation:** `D:\Skills\freecad_automation.md`
-- **Web Server:** `D:\PDM_WebServer\README.md`
-- **System Map:** `D:\PDM_SYSTEM_MAP.md`
+1. Verify the BOM file has the expected fixed-width format with a `Model Name` header.
+2. Check that the separator line (dashes) appears after the header.
+3. Confirm child items have valid item number patterns (3 letters + 4-6 digits).
+4. Review the `Failed\` folder for the moved file.
 
----
+### Files appearing in Failed folder
 
-## Script Statistics
+Check the log file for the error message. Common causes:
 
-| Category | Count | Status |
-|----------|-------|--------|
-| Production Services | 5 | ✅ Active |
-| Development Services | 2 | 🚧 In Development |
-| Utility Scripts | 6 | ✅ Active |
-| Management Scripts | 1 | ✅ Active |
-| Core Library | 1 | ✅ Essential |
-| **Total** | **15** | |
+- API is not running (connection refused).
+- Item number could not be extracted from filename.
+- File format does not match expected patterns.
+- Network timeout.
+
+### Changing the API URL
+
+Edit `scripts/pdm-upload/PDM-Upload-Config.ps1` and update the `ApiUrl` value. Restart the service after changing configuration.
 
 ---
 
-**Last Updated:** 2025-01-03
-**For individual script documentation, see the "Documentation" column in each script section**
+**Last Updated:** 2026-01-29

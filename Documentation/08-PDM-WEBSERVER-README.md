@@ -1,409 +1,367 @@
-# PDM Web Server - Setup Guide
+# PDM-Web Frontend Application Guide
 
-A production-ready Node.js web server that serves both the PDM Browser and MRP system interfaces, providing a clean web-based interface to explore items, view details, navigate BOMs, and check lifecycle history.
-
-## Features
-
-- **Item Table View**: Browse all items with sorting and filtering
-- **Search & Filter**: Search by item number, description, or project. Filter by lifecycle state and project
-- **Detail Panel**: Click any item to view:
-  - Full item information (description, material, mass, dimensions)
-  - All associated files (CAD, STEP, DXF, SVG, PDF)
-  - Bill of Materials (child components)
-  - Where-Used (parent assemblies)
-  - Lifecycle history
-  - Checkout status
-- **BOM Navigation**: Click on child/parent items to navigate through assemblies
-- **Real-time Data**: Direct SQLite database queries for current information
-
-## PDM & MRP System Integration
-
-The PDM Web Server serves as the unified web interface for both the PDM (Product Data Management) system and MRP (Manufacturing Resource Planning) system:
-
-### PDM System (Primary)
-- **Database:** `D:\PDM_Vault\pdm.sqlite`
-- **Default Port:** `http://localhost:3000`
-- **Features:**
-  - Item and assembly browsing
-  - BOM (Bill of Materials) tree navigation
-  - File tracking (STEP, DXF, SVG, PDF)
-  - Lifecycle state management
-  - Where-used analysis
-  - Revision/iteration history
-
-### MRP System Integration
-- **Database:** Configured via `PDM_DB_PATH` or environment variables
-- **Shared Infrastructure:** Node.js/Express backend can serve multiple databases
-- **Scalability:** API endpoints support custom queries for MRP data
-- **Access Pattern:** Same web server infrastructure, different data sources
-
-### Multi-Database Configuration
-To serve both PDM and MRP systems simultaneously:
-
-1. **Option A: Separate Instances**
-   ```powershell
-   # Terminal 1: PDM on port 3000
-   $env:PDM_DB_PATH = "D:\PDM_Vault\pdm.sqlite"
-   node server.js
-
-   # Terminal 2: MRP on port 3001
-   $env:PDM_DB_PATH = "D:\MRP_System\mrp.sqlite"
-   $env:PORT = 3001
-   node server.js
-   ```
-
-2. **Option B: Single Instance with Routing**
-   Modify `server.js` to detect database path and route requests accordingly
-
-3. **Option C: Database Switching**
-   Add API endpoints to switch databases at runtime
-
-### API Flexibility
-The Node.js backend is flexible and can query any SQLite database. To extend for MRP:
-- Add new API endpoints in `server.js`
-- Create corresponding UI components in `public/index.html`
-- Configure database connection via environment variables
+A desktop-first Vue 3 single-page application for browsing items, navigating Bills of Materials, managing files, and tracking manufacturing data in the PDM system.
 
 ---
 
-## Installation
+## Technology Stack
 
-### 1. Choose Installation Directory
+| Layer | Technology | Version | Purpose |
+|-------|-----------|---------|---------|
+| Framework | Vue 3 | 3.5+ | Reactive UI with Composition API |
+| Language | TypeScript | 5.9+ | Type-safe development |
+| Build Tool | Vite | 7.x | Fast bundling and HMR dev server |
+| Routing | Vue Router | 4.6+ | Client-side SPA routing with auth guards |
+| State | Pinia | 3.x | Centralized state management |
+| UI Library | PrimeVue | 4.5+ | Component library (Aura theme) |
+| Icons | PrimeIcons | 7.x | Icon set used across the UI |
+| Auth | Supabase JS | 2.93+ | Authentication and database client |
+| Utilities | VueUse | 14.x | Composable utilities (debounce, etc.) |
 
-Create a folder on your D: drive for the web server:
+---
+
+## Project Structure
+
 ```
-D:\PDM_WebServer\
+frontend/
+├── public/                      # Static assets (served as-is)
+├── src/
+│   ├── main.ts                  # App entry point, plugin registration
+│   ├── App.vue                  # Root component (auth init, router-view)
+│   ├── style.css                # Global CSS variables and base styles
+│   ├── router/
+│   │   └── index.ts             # Route definitions and auth navigation guards
+│   ├── stores/
+│   │   ├── auth.ts              # Auth state, login/logout, session management
+│   │   └── items.ts             # Items CRUD, BOM tree, where-used, history
+│   ├── services/
+│   │   ├── supabase.ts          # Supabase client init, API helper with auth
+│   │   └── storage.ts           # File upload/download, signed URLs, bucket logic
+│   ├── types/
+│   │   └── index.ts             # TypeScript interfaces (User, Item, File, BOM, Task)
+│   ├── views/
+│   │   ├── LoginView.vue        # Email/password login form
+│   │   ├── HomeView.vue         # Dashboard with PDM and MRP tool cards
+│   │   ├── ItemsView.vue        # PDM Browser - searchable item table with detail panel
+│   │   ├── ItemDetailView.vue   # Full item detail with tabs (files, BOM, where-used, history)
+│   │   ├── PartNumbersView.vue  # Next available part numbers per prefix
+│   │   ├── ProjectsView.vue     # Project listing
+│   │   ├── TasksView.vue        # Work queue / background task monitor
+│   │   ├── MrpDashboardView.vue # MRP production order overview
+│   │   ├── MrpRoutingView.vue   # Production routing editor
+│   │   ├── MrpShopView.vue      # Shop floor terminal interface
+│   │   ├── MrpPartLookupView.vue       # Part lookup with routing ops and PDF viewer
+│   │   ├── MrpProjectTrackingView.vue  # Gantt-style project progress tracking
+│   │   └── MrpRawMaterialsView.vue     # Raw materials inventory management
+│   └── components/
+│       ├── FileCheckIn.vue      # File check-in component
+│       └── HelloWorld.vue       # Template placeholder
+├── .env                         # Environment variables (Supabase keys)
+├── package.json                 # Dependencies and scripts
+├── vite.config.ts               # Vite configuration (port, plugins)
+├── tsconfig.json                # TypeScript configuration
+└── index.html                   # HTML entry point
 ```
 
-### 2. Copy Files
+---
 
-Copy these files to `D:\PDM_WebServer\`:
-- `server.js`
-- `package.json`
+## Views
 
-Create a `public` subdirectory:
+### Login (`/login`)
+
+Email and password authentication form using Supabase Auth. On successful login, redirects to the page the user originally requested (via `?redirect=` query param) or to the home dashboard.
+
+### Home Dashboard (`/`)
+
+Landing page after login. Displays two sections of clickable tool cards:
+
+**PDM Tools:**
+- PDM Browser -- item browsing and search
+- Part Number Generator -- next available numbers per prefix
+- Projects -- project management
+- Work Queue -- background task monitoring
+
+**MRP Tools:**
+- MRP Dashboard -- production order tracking
+- Routing Editor -- define production routings
+- Shop Terminal -- shop floor operator interface
+- Part Lookup -- search parts by project with routing operations
+- Project Tracking -- Gantt timeline with part hierarchy
+- Raw Materials -- inventory management with inline editing
+
+### PDM Browser (`/pdm-browser`)
+
+The primary item browsing interface, modeled after professional PLM systems (Windchill-style). Features:
+
+- **Controls bar** at the top with search input, lifecycle state filter dropdown, project filter dropdown, item count, and user/logout controls.
+- **Sortable table** showing item number, description, project, revision, lifecycle state, material, modified date, and mass. Click any column header to sort.
+- **Slide-in detail panel** on the right when an item row is clicked. Shows full item metadata, associated files (with signed URL download links), BOM children, and where-used parent assemblies. Click any BOM or where-used item to navigate directly.
+- **Keyboard support**: press Escape to close the detail panel.
+- Loads up to 1000 items on mount with client-side filtering for instant responsiveness.
+
+### Item Detail (`/items/:itemNumber`)
+
+Full-page detail view for a single item. Displays:
+
+- Item number, lifecycle state badge, and revision
+- Metadata: name, description, material, thickness, mass, cut length
+- Tabbed interface:
+  - **Files** -- list of associated files with type, size, and date
+  - **BOM** -- child components with quantity (click to navigate)
+  - **Where Used** -- parent assemblies (click to navigate)
+  - **History** -- lifecycle state change log with timestamps
+
+Engineer/admin users see Edit and Upload File action buttons.
+
+### Part Numbers (`/part-numbers`)
+
+Displays a table of all standard prefixes (CSA, CSP, HBL, STA, STP, XXA, XXP, WMA, WMP) with the highest existing number and count. Click to copy the next available number to clipboard for use in CAD.
+
+### Projects (`/projects`)
+
+Lists all projects fetched from the FastAPI backend (`/api/projects`). Shows project name, description, and status with color-coded badges.
+
+### Tasks (`/tasks`)
+
+Work queue monitor. Lists the most recent 50 background tasks (DXF generation, SVG generation, param sync) with status badges (pending, processing, completed, failed) and error messages.
+
+### MRP Views
+
+| View | Route | Purpose |
+|------|-------|---------|
+| MrpDashboardView | `/mrp/dashboard` | Production orders, work packets, project status |
+| MrpRoutingView | `/mrp/routing` | Create/edit routings, workstation assignment |
+| MrpShopView | `/mrp/shop` | Shop floor operator terminal, workstation queues |
+| MrpPartLookupView | `/mrp/parts` | Part search by project, routing operations, PDF viewer |
+| MrpProjectTrackingView | `/mrp/tracking` | Gantt-style progress visualization per project |
+| MrpRawMaterialsView | `/mrp/materials` | Inventory tracking, inline editing, batch updates |
+
+---
+
+## State Management (Pinia Stores)
+
+### Auth Store (`stores/auth.ts`)
+
+Manages Supabase authentication state using the Composition API pattern.
+
+**State:**
+- `user` -- current user object (or null)
+- `loading` -- operation in progress flag
+- `error` -- last error message
+- `initialized` -- whether auth has been initialized
+
+**Computed:**
+- `isAuthenticated` -- true if user is logged in
+- `isEngineer` -- true if role is `engineer` or `admin`
+- `isAdmin` -- true if role is `admin`
+
+**Actions:**
+- `initialize()` -- called once at app mount; gets session, fetches user profile from `/api/auth/me`, sets up `onAuthStateChange` listener for sign-in, sign-out, and token refresh events. Uses a promise guard to prevent duplicate initialization.
+- `login(email, password)` -- signs in via `supabase.auth.signInWithPassword`, then fetches the user profile.
+- `logout()` -- signs out via `supabase.auth.signOut` and clears user state.
+
+### Items Store (`stores/items.ts`)
+
+Manages items data and CRUD operations.
+
+**State:**
+- `items` -- array of all loaded items
+- `currentItem` -- currently viewed item (with files)
+- `loading`, `error` -- standard loading/error flags
+- `searchQuery`, `lifecycleFilter`, `projectFilter` -- filter state
+
+**Actions:**
+- `fetchItems(params?)` -- queries Supabase `items` table with optional filters (lifecycle_state, project_id, search text) and joins `projects` for the project name.
+- `fetchItem(itemNumber)` -- fetches a single item by item_number with its associated files.
+- `createItem(item)` -- inserts a new item.
+- `updateItem(itemNumber, updates)` -- patches an existing item.
+- `deleteItem(itemNumber)` -- removes an item.
+- `getBOMTree(itemNumber)` -- fetches BOM children for an item using foreign key joins.
+- `getWhereUsed(itemNumber)` -- fetches parent assemblies where this item is used.
+- `getItemHistory(itemNumber)` -- fetches lifecycle history entries.
+
+---
+
+## Services
+
+### Supabase Client (`services/supabase.ts`)
+
+Initializes the Supabase client with:
+- URL and anon key from `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` environment variables
+- Auth configured with persistent sessions, auto token refresh, implicit flow, and custom storage key `pdm-web-auth`
+
+Also provides:
+- `API_BASE_URL` -- dynamically resolved FastAPI backend URL:
+  - If `VITE_API_URL` is set, uses that explicitly.
+  - In production (`import.meta.env.PROD`), uses `window.location.origin/api` (same-origin, single container).
+  - In development, uses `{protocol}//{hostname}:8001/api` (separate backend port).
+- `apiCall<T>(endpoint, options, retry)` -- authenticated fetch wrapper that:
+  - Gets the current session token from Supabase
+  - Adds `Authorization: Bearer {token}` header
+  - On 401 response, attempts session refresh and retries once
+  - Parses JSON responses and throws on errors
+
+### Storage Service (`services/storage.ts`)
+
+Manages file operations with Supabase Storage. Key functions:
+- `getBucketForFile(filename)` -- maps file extensions to buckets (`pdm-cad`, `pdm-exports`, `pdm-drawings`, `pdm-other`)
+- `getSignedUrl(bucket, path)` and `getSignedUrlFromPath(fullPath)` -- generates time-limited download URLs
+- `uploadFile(file, itemNumber, revision, iteration)` -- uploads to the correct bucket using the path convention `{item_number}/{revision}/{iteration}/{filename}`
+- `uploadFileWithRecord(...)` -- uploads and creates the database record in one operation
+- `downloadFileToDevice(bucket, path, filename)` -- triggers browser download
+- `deleteFile(fileId, storagePath)` -- removes from storage and database
+
+Storage buckets:
+| Extension | Bucket | Category |
+|-----------|--------|----------|
+| `.prt`, `.asm` | `pdm-cad` | Native CAD files |
+| `.step`, `.stp`, `.dxf`, `.svg` | `pdm-exports` | Export formats |
+| `.pdf` | `pdm-drawings` | Drawings and documents |
+| Other | `pdm-other` | Miscellaneous files |
+
+---
+
+## Routing and Auth Flow
+
+### Route Definitions
+
+All routes are lazy-loaded using dynamic imports for code splitting:
+
+```typescript
+{
+  path: '/pdm-browser',
+  name: 'pdm-browser',
+  component: () => import('../views/ItemsView.vue'),
+  meta: { requiresAuth: true }
+}
 ```
-D:\PDM_WebServer\public\
+
+### Navigation Guards
+
+The router has a `beforeEach` guard that:
+1. Waits for `authStore.initialize()` to complete (ensures session is checked before any route decision).
+2. If the route requires auth (`meta.requiresAuth: true`) and the user is not authenticated, redirects to `/login` with the original path as a `redirect` query parameter.
+3. If the user is already authenticated and navigates to `/login`, redirects to `/` (home).
+
+### Auth Flow Sequence
+
+```
+1. User opens any URL
+   |
+2. Router beforeEach fires
+   |
+3. authStore.initialize() called
+   |  - Gets current session from Supabase (auto-refreshes expired tokens)
+   |  - If session exists, fetches user profile from /api/auth/me
+   |  - Sets up onAuthStateChange listener
+   |
+4. Guard checks: requiresAuth && !isAuthenticated?
+   |-- Yes --> Redirect to /login?redirect={originalPath}
+   |-- No  --> Continue to requested route
+   |
+5. On /login page, user submits email + password
+   |
+6. authStore.login() calls supabase.auth.signInWithPassword()
+   |  - Supabase returns session with JWT
+   |  - Fetches user profile from backend
+   |
+7. Redirect to original path (or /)
 ```
 
-Copy this file to `D:\PDM_WebServer\public\`:
-- `index.html`
+---
 
-Your final structure should look like:
-```
-D:\PDM_WebServer\
-├── server.js
-├── package.json
-└── public\
-    └── index.html
-```
+## TypeScript Types
 
-### 3. Install Node.js
+Defined in `types/index.ts`:
 
-If not already installed:
-1. Download Node.js from https://nodejs.org/ (LTS version recommended)
-2. Run the installer
-3. Verify installation:
-   ```powershell
-   node --version
-   npm --version
-   ```
+| Interface | Key Fields |
+|-----------|------------|
+| `User` | `id`, `username`, `email`, `role` (`admin` / `engineer` / `viewer`) |
+| `Project` | `id`, `name`, `description`, `status` (`active` / `archived` / `completed`) |
+| `Item` | `id`, `item_number`, `name`, `revision`, `iteration`, `lifecycle_state`, `material`, `mass`, `thickness`, `cut_length`, `files?` |
+| `FileInfo` | `id`, `item_id`, `file_type`, `file_name`, `file_path`, `file_size`, `revision`, `iteration` |
+| `BOMEntry` | `id`, `parent_item_id`, `child_item_id`, `quantity`, `source_file` |
+| `BOMTreeNode` | `item` (Item), `quantity`, `children` (BOMTreeNode[]) |
+| `Task` | `id`, `item_id`, `file_id`, `task_type`, `status`, `error_message` |
+| `LifecycleEntry` | `id`, `item_id`, `old_state`, `new_state`, `changed_by`, `changed_at` |
 
-### 4. Install Dependencies
+---
 
-Open PowerShell in `D:\PDM_WebServer\` and run:
-```powershell
+## Setup Instructions
+
+### Prerequisites
+
+- Node.js 20+ (LTS recommended)
+- npm 9+
+- Access to the Supabase project (URL and anon key)
+- FastAPI backend running (see Deployment Guide)
+
+### Installation
+
+```bash
+cd frontend
 npm install
 ```
 
-This will install:
-- `express` - Web server framework
-- `sqlite3` - SQLite database driver
+### Environment Configuration
 
-## Configuration
+Create or edit `frontend/.env`:
 
-### Database Path
-
-By default, the server looks for the database at:
-```
-D:\PDM_Vault\pdm.sqlite
+```env
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your_anon_key_here
+# Optional: override auto-detected backend URL
+# VITE_API_URL=http://localhost:8001/api
 ```
 
-To use a different path, set the `PDM_DB_PATH` environment variable:
-```powershell
-$env:PDM_DB_PATH = "C:\Your\Custom\Path\pdm.sqlite"
-node server.js
-```
+The `VITE_API_URL` variable is optional. By default, the frontend detects the backend URL automatically:
+- In development: `http://{current-hostname}:8001/api`
+- In production: `{current-origin}/api` (same container)
 
-Or edit `server.js` line 8:
-```javascript
-const DB_PATH = process.env.PDM_DB_PATH || 'D:\\PDM_Vault\\pdm.sqlite';
-```
+### Development Server
 
-## Running the Server
-
-### Manual Start
-
-Open PowerShell in `D:\PDM_WebServer\` and run:
-```powershell
-node server.js
-```
-
-You should see:
-```
-PDM Browser Server running on http://localhost:3000
-Database: D:\PDM_Vault\pdm.sqlite
-Press Ctrl+C to stop
-```
-
-Open your web browser and navigate to:
-```
-http://localhost:3000
-```
-
-### Run on Startup (Windows Service)
-
-To run the PDM Browser as a Windows service that starts automatically:
-
-#### Option 1: Using NSSM (Non-Sucking Service Manager)
-
-1. Download NSSM from https://nssm.cc/download
-2. Extract to a folder (e.g., `C:\Tools\nssm\`)
-3. Open PowerShell as Administrator
-4. Install the service:
-   ```powershell
-   C:\Tools\nssm\nssm.exe install PDM-Browser "C:\Program Files\nodejs\node.exe" "D:\PDM_WebServer\server.js"
-   C:\Tools\nssm\nssm.exe set PDM-Browser AppDirectory "D:\PDM_WebServer"
-   C:\Tools\nssm\nssm.exe set PDM-Browser DisplayName "PDM Browser Web Server"
-   C:\Tools\nssm\nssm.exe set PDM-Browser Description "Web interface for PDM System item browsing"
-   C:\Tools\nssm\nssm.exe set PDM-Browser Start SERVICE_AUTO_START
-   ```
-
-5. Start the service:
-   ```powershell
-   Start-Service PDM-Browser
-   ```
-
-6. Check status:
-   ```powershell
-   Get-Service PDM-Browser
-   ```
-
-#### Option 2: Using node-windows
-
-1. Install node-windows globally:
-   ```powershell
-   npm install -g node-windows
-   ```
-
-2. Create a service install script (`install-service.js`):
-   ```javascript
-   var Service = require('node-windows').Service;
-   
-   var svc = new Service({
-     name: 'PDM Browser',
-     description: 'Web interface for PDM System item browsing',
-     script: 'D:\\PDM_WebServer\\server.js'
-   });
-   
-   svc.on('install', function() {
-     svc.start();
-   });
-   
-   svc.install();
-   ```
-
-3. Run as Administrator:
-   ```powershell
-   node install-service.js
-   ```
-
-### Service Management Commands
-
-Start service:
-```powershell
-Start-Service PDM-Browser
-```
-
-Stop service:
-```powershell
-Stop-Service PDM-Browser
-```
-
-Restart service:
-```powershell
-Restart-Service PDM-Browser
-```
-
-Check status:
-```powershell
-Get-Service PDM-Browser
-```
-
-Remove service (NSSM):
-```powershell
-C:\Tools\nssm\nssm.exe remove PDM-Browser confirm
-```
-
-## Usage
-
-### Main Interface
-
-1. **Search Box**: Type to filter items by number, description, or project
-2. **State Filter**: Filter by lifecycle state (Design, Released, Obsolete)
-3. **Project Filter**: Filter by specific project
-4. **Table Headers**: Click to sort by that column (click again to reverse)
-5. **Item Rows**: Click any row to open the detail panel
-
-### Detail Panel
-
-The right-side panel shows complete information about the selected item:
-
-- **Item Information**: All metadata including material, mass, dimensions
-- **Files**: All associated files with types (CAD, STEP, DXF, SVG, PDF)
-- **Bill of Materials**: Click child items to navigate down the assembly tree
-- **Where Used**: Click parent assemblies to navigate up
-- **Lifecycle History**: Complete audit trail of state changes
-- **Checkout Status**: Warning if item is currently checked out
-
-### Keyboard Shortcuts
-
-- **Escape**: Close detail panel
-- **Click outside panel**: Close detail panel
-
-## Troubleshooting
-
-### Server won't start
-
-**Problem**: Error about port already in use
-```
-Error: listen EADDRINUSE: address already in use :::3000
-```
-
-**Solution**: Either:
-1. Stop the other process using port 3000
-2. Change the port in `server.js` (line 5):
-   ```javascript
-   const PORT = 3001; // Or any other available port
-   ```
-
-### Database errors
-
-**Problem**: Cannot open database
-```
-Database connection error: SQLITE_CANTOPEN
-```
-
-**Solution**: 
-1. Verify database path is correct
-2. Check file permissions
-3. Ensure database file exists at the specified location
-
-### No items showing
-
-**Problem**: Table loads but shows "No items found"
-
-**Solution**:
-1. Check if database has items:
-   ```powershell
-   sqlite3 D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM items;"
-   ```
-2. Check browser console (F12) for JavaScript errors
-3. Verify server logs for database query errors
-
-### Service won't start automatically
-
-**Problem**: Service installed but doesn't start on boot
-
-**Solution** (NSSM):
-```powershell
-# Check service configuration
-C:\Tools\nssm\nssm.exe edit PDM-Browser
-
-# Set to Automatic startup
-C:\Tools\nssm\nssm.exe set PDM-Browser Start SERVICE_AUTO_START
-
-# Check service status
-Get-Service PDM-Browser | Select-Object Name, Status, StartType
-```
-
-## API Endpoints
-
-The server provides these API endpoints:
-
-- `GET /api/items` - Get all items
-- `GET /api/items/:itemNumber` - Get detailed info for specific item
-- `GET /api/files/info?path=<filepath>` - Get file information
-- `GET /api/health` - Health check endpoint
-
-## Development
-
-### Development Mode with Auto-Reload
-
-Install nodemon (already in devDependencies):
-```powershell
-npm install
-```
-
-Run with auto-reload:
-```powershell
+```bash
+cd frontend
 npm run dev
 ```
 
-Server will automatically restart when you modify `server.js`.
+Starts the Vite dev server on `http://localhost:5174` with hot module replacement. The server listens on all interfaces (`host: true` in vite.config.ts) so it is accessible via LAN/Tailnet IP addresses.
 
-### Customization
+### Production Build
 
-**Change Port**:
-Edit `server.js` line 5:
-```javascript
-const PORT = 3001;
+```bash
+cd frontend
+npm run build
 ```
 
-**Modify Styling**:
-Edit CSS in `public/index.html` inside the `<style>` tag
+Runs TypeScript checking (`vue-tsc -b`) then builds optimized static files to `frontend/dist/`. The output can be deployed to any static file host or served by the FastAPI backend in production.
 
-**Add Features**:
-- Add new API endpoints in `server.js`
-- Add new UI elements in `public/index.html`
-- Database queries follow standard SQLite syntax
+### Preview Production Build
 
-## Security Notes
+```bash
+cd frontend
+npm run preview
+```
 
-- This server is designed for local network use only
-- No authentication is implemented
-- Database is accessed read-only
-- Do not expose to the internet without additional security measures
+Serves the built `dist/` folder locally using Vite's preview server.
 
-## Performance
+---
 
-- Typical load time: <1 second for 1000+ items
-- Detail panel loads instantly (single query)
-- No pagination needed for most datasets
-- All filtering/sorting happens client-side for snappy UX
+## Users
 
-## Future Enhancements
+| User | Email | Role | Access |
+|------|-------|------|--------|
+| Jack | jack@pdm.local | admin | Full access -- CRUD, file upload, all tools |
+| Dan | dan@pdm.local | engineer | View and track projects, engineering access |
+| Shop | shop@pdm.local | viewer | View drawings, BOMs, shop terminal |
 
-Potential additions:
-- [ ] Export to Excel/CSV
-- [ ] Print-friendly views
-- [ ] File preview for PDFs/images
-- [ ] Advanced BOM analysis (total rollup, cost calculation)
-- [ ] Comparison between revisions
-- [ ] Task queue monitoring
-- [ ] Recent activity feed
+---
 
-## Support
+## Browser Compatibility
 
-For issues or questions:
-1. Check this documentation
-2. Review browser console (F12) for errors
-3. Check server console output
-4. Verify database connectivity with `sqlite3.exe`
+Tested and supported on modern desktop browsers:
+- Chrome (recommended)
+- Edge
+- Firefox
 
-## Credits
-
-Built using:
-- Node.js & Express
-- SQLite3
-- Modern vanilla JavaScript (no frameworks needed!)
+The interface is designed for desktop and large tablet screens. It is not optimized for mobile devices.

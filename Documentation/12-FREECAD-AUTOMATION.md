@@ -2,300 +2,411 @@
 
 ## Overview
 
-FreeCAD automation scripts run headless to convert STEP files into manufacturing documents (DXF flat patterns and SVG technical drawings). Called by Worker-Processor service via batch files.
+FreeCAD automation scripts run headless inside a Docker container to convert STEP files into manufacturing documents. The system produces two output types:
 
-## Batch File Architecture
+- **DXF flat patterns** -- 2D sheet metal unfolded geometry for laser/plasma cutting
+- **SVG bend drawings** -- Technical drawings with bend line annotations and dimensions
 
-### flatten_sheetmetal.bat
-**Location:** `D:\FreeCAD\Tools\flatten_sheetmetal.bat`
+The Docker-based approach replaces the previous local FreeCAD installation, providing a consistent and reproducible environment regardless of the host machine.
 
-**Purpose:** Convert 3D sheet metal STEP file into flattened 2D DXF pattern for manufacturing.
+## Docker Architecture
 
-**Usage:**
-```batch
-flatten_sheetmetal.bat "input.step" "output.dxf"
+### Docker Image
+
+**Base Image:** `amrit3701/freecad-cli:latest`
+
+This image provides a headless FreeCAD installation (`freecadcmd`) suitable for automated processing without a GUI. The PDM-Web project extends this with custom scripts and the SheetMetal addon.
+
+### Dockerfile
+
+Located at `worker/Dockerfile`:
+
+```dockerfile
+FROM amrit3701/freecad-cli:latest
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH="/root/.FreeCAD/Mod/sheetmetal:${PYTHONPATH}"
+
+RUN mkdir -p /data/input /data/output /scripts
+
+# SheetMetal addon for unfold/flatten operations
+COPY FreeCAD/Mod/sheetmetal /root/.FreeCAD/Mod/sheetmetal
+
+# Processing scripts
+COPY FreeCAD/Tools/*.py /scripts/
+COPY worker/scripts/*.py /scripts/
+
+WORKDIR /data
+CMD ["tail", "-f", "/dev/null"]
 ```
+
+The container runs indefinitely (`tail -f /dev/null`), waiting for jobs to be executed via `docker exec`.
+
+### Docker Compose Configuration
+
+Defined in `docker-compose.yml` at the project root:
+
+```yaml
+services:
+  freecad-worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: pdm-freecad-worker
+    volumes:
+      - ./files:/data/files
+      - ./FreeCAD/Tools:/scripts/tools:ro
+      - ./worker/scripts:/scripts/worker:ro
+      - ./FreeCAD/Mod/sheetmetal:/root/.FreeCAD/Mod/sheetmetal:ro
+    environment:
+      - PYTHONPATH=/usr/local/lib:/root/.FreeCAD/Mod/sheetmetal:/scripts/worker
+    working_dir: /data
+    command: ["tail", "-f", "/dev/null"]
+```
+
+**Volume mounts:**
+
+| Host Path | Container Path | Purpose |
+|---|---|---|
+| `./files` | `/data/files` | Input/output file staging area |
+| `./FreeCAD/Tools` | `/scripts/tools` | FreeCAD Python automation scripts (read-only) |
+| `./worker/scripts` | `/scripts/worker` | Worker helper scripts (read-only) |
+| `./FreeCAD/Mod/sheetmetal` | `/root/.FreeCAD/Mod/sheetmetal` | SheetMetal workbench addon (read-only) |
+
+## Available Scripts
+
+### flatten_sheetmetal.py
+
+**Location:** `worker/scripts/flatten_sheetmetal.py`
+
+**Purpose:** Convert a 3D sheet metal STEP file into a flattened 2D DXF pattern for manufacturing (laser/plasma cutting).
 
 **Process:**
-1. Accepts STEP file path as input
-2. Calls FreeCAD Python script (headless mode)
-3. Script uses SheetMetal workbench to unfold 3D model
-4. Exports flattened geometry as DXF
-5. Returns exit code: 0 = success, non-zero = failure
 
-**Called by:** Worker-Processor `Generate-DXF` function
-
-### create_bend_drawing.bat
-**Location:** `D:\FreeCAD\Tools\create_bend_drawing.bat`
-
-**Purpose:** Generate technical drawing (SVG) from STEP file with dimensions and annotations.
+1. Imports STEP file into FreeCAD
+2. Identifies the largest face as the base face for unfolding
+3. Uses the SheetMetal workbench `SheetMetalUnfolder.getUnfold()` to unfold the part
+4. Extracts the outer wire and inner wires (holes) from the flat face
+5. Projects 3D geometry to 2D based on face orientation (XY, XZ, or YZ plane)
+6. Handles lines, arcs, and circles in the outline
+7. Scales geometry for DXF export (mm to inches compensation)
+8. Exports the 2D compound to DXF format
 
 **Usage:**
-```batch
-create_bend_drawing.bat "input.step" "output.svg"
+
+```bash
+docker exec pdm-freecad-worker freecadcmd /scripts/flatten_sheetmetal.py \
+  /data/files/csp0030.stp /data/files/csp0030_flat.dxf
 ```
+
+**Arguments:**
+
+| Argument | Required | Description |
+|---|---|---|
+| `input.step` | Yes | Path to input STEP file (inside container) |
+| `output.dxf` | No | Path for output DXF (defaults to `{input}_flat.dxf`) |
+| `k_factor` | No | Bend K-factor (default: 0.35) |
+
+### bend_drawing.py (Create bend drawing portable.py)
+
+**Location:** `worker/scripts/bend_drawing.py` (wrapper), `FreeCAD/Tools/Create bend drawing portable.py` (core logic)
+
+**Purpose:** Generate a technical SVG drawing from a STEP file showing bend lines, dimensions, and annotations for shop floor reference.
 
 **Process:**
-1. Accepts STEP file path as input
-2. Calls FreeCAD Python script (headless mode)
-3. Script creates TechDraw page with views
-4. Adds dimensions and annotations
-5. Exports as SVG
-6. Returns exit code: 0 = success, non-zero = failure
 
-**Called by:** Worker-Processor `Generate-SVG` function
+1. Imports STEP file into FreeCAD
+2. Creates a TechDraw page with views (front, top, side as needed)
+3. Generates dimensions and annotations programmatically
+4. Handles arc direction for proper SVG rendering
+5. Applies iterative scale reduction to fit drawings on page
+6. Exports the page as SVG
 
-## FreeCAD Python Scripts
+**Usage:**
 
-### Current Development: Technical Drawing Generation
-
-**Active Work:** Creating SVG technical drawings from sheet metal STEP files with automatic dimensioning and proper page layout.
-
-**Key Features Being Developed:**
-1. **SVG Output with Proper Arc Direction:**
-   - Arcs must be clockwise for proper rendering
-   - Arc direction control in export
-
-2. **Dimension Placement:**
-   - Automatic dimension line placement
-   - Collision detection between dimensions
-   - Iterative spacing adjustment
-
-3. **Page Layout Optimization:**
-   - Iterative scale reduction to fit drawings on page
-   - Multiple views (front, top, side) as needed
-   - Title block integration (planned)
-
-4. **Dimension Line Spacing:**
-   - Minimum spacing between parallel dimension lines
-   - Collision avoidance with part geometry
-   - Readable text placement
-
-**Technical Challenges:**
-
-1. **Headless Operation:**
-   - FreeCAD runs without GUI via `FreeCADCmd.exe` or `FreeCAD.exe -c`
-   - No visual feedback for debugging
-   - Console output captured to temp files
-
-2. **SheetMetal Workbench Integration:**
-   - API for unfolding operations
-   - Coordinate transformations for 2D projection
-   - Handling complex bend geometries
-
-3. **TechDraw API:**
-   - Programmatic view creation
-   - Dimension generation and placement
-   - SVG export configuration
-
-4. **Coordinate Transformations:**
-   - Converting 3D STEP coordinates to 2D drawing space
-   - Proper scaling and units
-   - View orientation (front, top, side)
-
-## Script Location Conventions
-
-**Batch Files:**
-- Primary: `D:\FreeCAD\Tools\`
-- Batch files are thin wrappers that call Python scripts
-
-**Python Scripts:**
-- Location determined by batch file implementation
-- Typically in same `Tools\` folder or FreeCAD macro directory
-- May be embedded directly in batch file or separate .py files
-
-## Execution Pattern
-
-**From Worker-Processor:**
-```powershell
-Push-Location $Global:ToolsPath  # D:\FreeCAD\Tools
-$process = Start-Process -FilePath $Global:FlattenBat `
-                         -ArgumentList "`"$CADFilePath`" `"$outputDXF`"" `
-                         -NoNewWindow `
-                         -Wait `
-                         -PassThru `
-                         -RedirectStandardOutput "$env:TEMP\dxf_stdout.txt" `
-                         -RedirectStandardError "$env:TEMP\dxf_stderr.txt"
-Pop-Location
-
-# Check exit code
-if ($process.ExitCode -eq 0) {
-    Write-Log "Success"
-} else {
-    Write-Log "Failed: exit code $($process.ExitCode)"
-}
+```bash
+docker exec pdm-freecad-worker freecadcmd /scripts/bend_drawing.py \
+  /data/files/csp0030.stp /data/files/csp0030_bends.svg
 ```
 
-**Key Points:**
-- Working directory: `D:\FreeCAD\Tools\`
-- stdout/stderr captured for debugging
-- Exit code determines success/failure
-- Output files written to CheckIn folder
+**Arguments:**
 
-## FreeCAD Installation
+| Argument | Required | Description |
+|---|---|---|
+| `input.step` | Yes | Path to input STEP file (inside container) |
+| `output.svg` | No | Path for output SVG (defaults to `{input}_bends.svg`) |
+| `k_factor` | No | Bend K-factor (default: 0.35) |
 
-**Current Version:** FreeCAD 0.21
+### run_job.py
 
-**Installation Path:** `C:\Program Files\FreeCAD 0.21\bin\`
+**Location:** `worker/scripts/run_job.py`
 
-**Executables:**
-- `FreeCAD.exe` - GUI version (can run with `-c` for console mode)
-- `FreeCADCmd.exe` - Headless console version (preferred for automation)
+**Purpose:** General-purpose job dispatcher that routes processing requests to the appropriate script.
 
-**Configuration in CheckIn-Watcher:**
-```powershell
-$Global:FreeCADExe = "C:\Program Files\FreeCAD 0.21\bin\FreeCAD.exe"
+**Supported job types:**
+
+| Job Type | Script Called | Output |
+|---|---|---|
+| `flatten` | `Flatten sheetmetal portable.py` | DXF flat pattern |
+| `bend_drawing` | `Create bend drawing portable.py` | SVG bend drawing |
+| `convert_stl` | `convert_to_stl.py` | STL mesh |
+| `convert_obj` | `convert_to_obj.py` | OBJ mesh |
+
+**Usage:**
+
+```bash
+docker exec pdm-freecad-worker python3 /scripts/run_job.py flatten /data/files/part.step
+docker exec pdm-freecad-worker python3 /scripts/run_job.py bend_drawing /data/files/part.step /data/files/part_bends.svg 0.4
 ```
 
-## Debugging FreeCAD Scripts
+## Work Queue Integration
 
-**Capture Console Output:**
-```powershell
-# stdout and stderr saved by Worker-Processor
-Get-Content "$env:TEMP\dxf_stdout.txt"
-Get-Content "$env:TEMP\dxf_stderr.txt"
+The FreeCAD worker integrates with the PDM-Web backend through the `work_queue` database table and the Tasks API.
+
+### Task Types
+
+| Task Type | Description | Input | Output |
+|---|---|---|---|
+| `GENERATE_DXF` | Create DXF flat pattern | STEP file in Supabase Storage | DXF uploaded to Supabase Storage |
+| `GENERATE_SVG` | Create SVG bend drawing | STEP file in Supabase Storage | SVG uploaded to Supabase Storage |
+
+### Queueing Tasks via API
+
+**Queue DXF generation:**
+
+```
+POST /api/tasks/generate-dxf/{item_number}
 ```
 
-**Test Batch Script Manually:**
-```batch
-cd D:\FreeCAD\Tools
-flatten_sheetmetal.bat "C:\Path\To\test.step" "C:\Path\To\output.dxf"
-echo Exit code: %ERRORLEVEL%
+**Queue SVG generation:**
+
+```
+POST /api/tasks/generate-svg/{item_number}
 ```
 
-**Run FreeCAD Interactively:**
-```batch
-# Open FreeCAD GUI and run Python script manually
-FreeCAD.exe
-# In Python console, paste script code
+These endpoints automatically look up the item's STEP file and create a pending task in the `work_queue` table.
+
+### Task Lifecycle
+
+1. **Pending** -- Task created in `work_queue` with `status: "pending"`
+2. **Processing** -- Worker picks up task, marks `status: "processing"` via `PATCH /api/tasks/{id}/start`
+3. **Completed** or **Failed** -- Worker marks final status via `PATCH /api/tasks/{id}/complete`
+
+### Monitoring Tasks
+
+View pending tasks:
+
+```
+GET /api/tasks/pending
+GET /api/tasks/pending?task_type=GENERATE_DXF
 ```
 
-**Common Issues:**
+View all tasks with filtering:
 
-1. **Import Errors:**
-   - Workbench not installed (SheetMetal, TechDraw)
-   - Module import failures
-   - Solution: Verify workbenches in FreeCAD GUI
-
-2. **File Path Issues:**
-   - Spaces in paths (must be quoted)
-   - Backslash escaping in Python strings
-   - Relative vs absolute paths
-
-3. **Memory Issues:**
-   - Large STEP files consume significant RAM
-   - Process files individually
-   - Clear FreeCAD document after each operation
-
-4. **Coordinate System Issues:**
-   - STEP import orientation varies
-   - Need to verify placement and rotation
-   - Debug with simplified test geometry
-
-## Integration with PDM Workflow
-
-**Automatic Regeneration:**
-When a STEP file is updated (checked into CheckIn folder):
-1. CheckIn-Watcher checks if DXF/SVG exist for this item
-2. If they exist, queues `GENERATE_DXF` and `GENERATE_SVG` tasks
-3. Worker-Processor picks up tasks and regenerates files
-4. New DXF/SVG appear in CheckIn folder
-5. CheckIn-Watcher detects and moves to appropriate folders
-6. File iterations bumped in database
-
-**Manual Regeneration:**
-Insert task directly into work_queue:
-```sql
-INSERT INTO work_queue (item_number, file_path, task_type, status)
-VALUES ('csp0030', 'D:\PDM_Vault\CADData\STEP\csp0030.step', 'GENERATE_SVG', 'Pending');
+```
+GET /api/tasks?status=failed
+GET /api/tasks?task_type=GENERATE_SVG
 ```
 
-## Performance Considerations
+The frontend Work Queue view (`/tasks`) provides a visual interface for monitoring task status and errors.
 
-**Batch Processing:**
-- FreeCAD startup overhead (~2-5 seconds per file)
-- Consider batching multiple operations in single FreeCAD session
-- Currently: One file per batch script call
+## DXF/SVG Generation Pipeline
 
-**Concurrent Processing:**
-- Worker-Processor processes one task at a time
-- FreeCAD not thread-safe for automation
-- Multiple Worker-Processor instances not recommended
+The complete file processing pipeline:
 
-**File Size Limits:**
-- Complex STEP files (>10MB) may take 30+ seconds
-- Very complex assemblies may fail due to memory
-- Consider timeout mechanism for stuck processes
+```
+1. STEP file uploaded to Supabase Storage
+   (via web UI or PDM Upload Service)
+         |
+2. Task created in work_queue
+   (via API endpoint or automatic trigger)
+         |
+3. STEP file downloaded from Supabase Storage
+   to Docker container's /data/files/ volume
+         |
+4. FreeCAD script processes STEP file
+   (flatten_sheetmetal.py or bend_drawing.py)
+         |
+5. Output file (DXF/SVG) written to /data/files/
+         |
+6. Output file uploaded to Supabase Storage
+   and file record created/updated in database
+         |
+7. Task marked as completed (or failed with error)
+```
 
-## Future Enhancements
+## Running the FreeCAD Worker
 
-**Planned Features:**
-1. Title block automation
-2. Multiple view layouts (front+top, isometric)
-3. Automatic bend table generation
-4. Material and thickness callouts
-5. Custom dimension styles and standards
+### Start the worker container
 
-**Code Organization:**
-- Move Python scripts from batch files to separate .py files
-- Create reusable Python module for common operations
-- Add logging within Python scripts
-- Implement retry logic for failed operations
+```bash
+docker-compose up -d freecad-worker
+```
 
-## FreeCAD Python API Notes
+### Verify the container is running
 
-**Importing Modules:**
+```bash
+docker ps | grep pdm-freecad
+```
+
+### Run a test job manually
+
+```bash
+# Flatten a STEP file to DXF
+docker exec pdm-freecad-worker freecadcmd /scripts/flatten_sheetmetal.py \
+  /data/files/test_part.stp /data/files/test_part_flat.dxf
+
+# Create a bend drawing SVG
+docker exec pdm-freecad-worker freecadcmd /scripts/bend_drawing.py \
+  /data/files/test_part.stp /data/files/test_part_bends.svg
+
+# Use the job runner
+docker exec pdm-freecad-worker python3 /scripts/run_job.py flatten \
+  /data/files/test_part.stp
+```
+
+### View container logs
+
+```bash
+docker logs pdm-freecad-worker
+```
+
+### Rebuild after script changes
+
+```bash
+docker-compose build freecad-worker
+docker-compose up -d freecad-worker
+```
+
+## FreeCAD Python API Reference
+
+### Importing Modules
+
 ```python
 import FreeCAD
 import Part
-import TechDraw
-import Spreadsheet  # For bend tables
-# SheetMetal workbench
-try:
-    import SheetMetalUnfolder
-except ImportError:
-    print("SheetMetal workbench not installed")
+import Import
+import importDXF
+
+# SheetMetal workbench (must be on PYTHONPATH)
+import SheetMetalUnfolder
 ```
 
-**Opening STEP Files:**
+### Opening STEP Files
+
 ```python
-doc = FreeCAD.newDocument()
-Part.insert(step_file_path, doc.Name)
-FreeCAD.setActiveDocument(doc.Name)
+doc = FreeCAD.newDocument("ProcessingDoc")
+Import.insert(step_file_path, doc.Name)
+imported_obj = doc.Objects[0]
 ```
 
-**Creating TechDraw Page:**
+### Sheet Metal Unfolding
+
 ```python
-page = doc.addObject('TechDraw::DrawPage', 'Page')
-template = doc.addObject('TechDraw::DrawSVGTemplate', 'Template')
-template.Template = '/path/to/template.svg'
-page.Template = template
+import SheetMetalUnfolder
+
+# Identify the base face (typically the largest)
+faces = imported_obj.Shape.Faces
+largest_face = max(faces, key=lambda f: f.Area)
+face_index = faces.index(largest_face)
+face_name = f"Face{face_index + 1}"
+
+# Build K-factor lookup and unfold
+k_factor_lookup = {0.0: 0.35, 1.0: 0.35, 10.0: 0.35}
+unfold_result = SheetMetalUnfolder.getUnfold(
+    k_factor_lookup, imported_obj, face_name, 0.35
+)
 ```
 
-**Exporting SVG:**
+### DXF Export
+
 ```python
-page.ViewObject.saveAs(output_svg_path)
-# or
-import TechDrawGui
-TechDrawGui.exportPageAsSvg(page, output_svg_path)
+import importDXF
+
+export_obj = doc.addObject("Part::Feature", "FlatPattern2D")
+export_obj.Shape = compound_shape
+doc.recompute()
+
+importDXF.export([export_obj], output_dxf_path)
 ```
 
-## Current Development Status
+### Cleanup
 
-**Working:**
-- STEP import and basic view creation
-- SVG export functionality
-- Dimension generation
-- Basic page layout
+```python
+FreeCAD.closeDocument(doc.Name)
+```
 
-**In Progress:**
-- Arc direction control for proper SVG rendering
-- Iterative dimension collision detection and spacing
-- Page scale optimization (iterative reduction to fit)
-- Dimension line spacing refinement
+## Technical Details
 
-**Planned:**
-- Title block integration
-- Bend table automation
-- Multiple sheet support
-- Batch processing optimization
+### Coordinate System Handling
+
+The flattening script detects the face orientation and projects 3D coordinates to 2D accordingly:
+
+- **XY plane** (face normal along Z): uses X and Y coordinates
+- **XZ plane** (face normal along Y): uses X and Z coordinates
+- **YZ plane** (face normal along X): uses Y and Z coordinates
+
+### DXF Scaling
+
+DXF files are scaled by `1/25.4` before export to compensate for DXF importers that assume inch units. When opened in CAD or cutting software that reads in inches, the geometry will display at the correct millimeter dimensions.
+
+### Geometry Types Handled
+
+- **Lines** -- Straight edges between vertices
+- **Arcs** -- Circular arc segments, constructed via three-point method (start, midpoint, end)
+- **Circles** -- Full circles (typically holes)
+- **Inner wires** -- Hole outlines are included in the DXF output
+
+## Debugging
+
+### Test with a known-good part
+
+Test parts are available in `FreeCAD/Tools/Test Parts/`:
+
+```bash
+docker exec pdm-freecad-worker freecadcmd /scripts/flatten_sheetmetal.py \
+  /scripts/tools/Test\ Parts/ccp0871.stp /data/files/test_output.dxf
+```
+
+### Capture full output
+
+```bash
+docker exec pdm-freecad-worker freecadcmd /scripts/flatten_sheetmetal.py \
+  /data/files/input.stp /data/files/output.dxf 2>&1 | tee freecad_output.log
+```
+
+### Interactive debugging
+
+```bash
+docker exec -it pdm-freecad-worker bash
+freecadcmd
+# Then type Python commands interactively
+```
+
+### Common Issues
+
+| Issue | Cause | Solution |
+|---|---|---|
+| `ModuleNotFoundError: SheetMetalUnfolder` | SheetMetal addon not on path | Verify `PYTHONPATH` includes `/root/.FreeCAD/Mod/sheetmetal` |
+| `FileNotFoundError` | Input file not in mounted volume | Ensure file is in `./files/` on host (maps to `/data/files/` in container) |
+| Empty DXF output | Face orientation not detected | Check face normal in script output; may need geometry adjustment |
+| Large memory usage | Complex STEP assembly | Process individual parts rather than full assemblies |
+| Script timeout | Very complex geometry | Increase timeout; consider simpler geometry |
+
+## Performance Considerations
+
+- FreeCAD startup overhead is approximately 2-5 seconds per invocation
+- Complex STEP files (>10MB) may take 30+ seconds to process
+- The container runs persistently to avoid repeated Docker startup overhead
+- FreeCAD is not thread-safe; process one file at a time
+- Memory usage scales with STEP file complexity; monitor container memory for large files
+
+## Test Parts
+
+Test STEP files are included in `FreeCAD/Tools/Test Parts/` for development and validation:
+
+- `ccp0871.stp`, `ccp0890.stp` -- Standalone STEP files
+- `ccp0840_prt.stp` through `ccp0910_prt.stp` -- Part-level STEP exports
+
+These can be used to verify that the Docker container and scripts are working correctly after any changes.

@@ -1,440 +1,533 @@
-# PDM System - Security Hardening Guide
+# PDM-Web - Security Hardening Guide
 
-**Production Security Implementation & Best Practices**
-**Related Docs:** [README.md](README.md), [23-SYSTEM-CONFIGURATION.md](23-SYSTEM-CONFIGURATION.md), [21-BACKUP-RECOVERY-GUIDE.md](21-BACKUP-RECOVERY-GUIDE.md)
-
----
-
-## 🔒 Security Levels
-
-### **Level 1: Basic (Development/Testing)**
-- Single-user local access only
-- Default passwords acceptable
-- No encryption required
-- **Current Status:** v2.0 operates at this level
-
-### **Level 2: Standard (Small Business)**
-- Network access
-- User authentication
-- Database backups encrypted
-- Audit logging
-- **Target:** v3.0 support
-
-### **Level 3: Enterprise (Large Organizations)**
-- Multi-user authentication
-- Role-based access control
-- End-to-end encryption
-- Comprehensive audit trails
-- Compliance certifications
-- **Target:** v4.0 support
+**Security Architecture and Best Practices**
+**Related Docs:** [23-SYSTEM-CONFIGURATION.md](23-SYSTEM-CONFIGURATION.md), [21-BACKUP-RECOVERY-GUIDE.md](21-BACKUP-RECOVERY-GUIDE.md)
 
 ---
 
-## ✅ Current Security (v2.0)
+## Security Architecture Overview
 
-**What's Secure:**
-- ✅ Local file system access only
-- ✅ No network exposure (default)
-- ✅ Database on local drive
-- ✅ Service account isolation (SYSTEM)
+PDM-Web delegates authentication, authorization, and data protection to Supabase, a managed platform built on PostgreSQL. This significantly reduces the security surface compared to self-hosted systems.
 
-**What's Not Secure:**
-- ❌ No user authentication
-- ❌ No encryption at rest
-- ❌ No network authentication
-- ❌ Limited audit logging
+### Security Layers
 
-**Recommendation:** v2.0 is suitable for single-user, local-only systems
+| Layer | Responsibility | Technology |
+|-------|---------------|------------|
+| Authentication | User identity verification | Supabase Auth (JWT-based) |
+| Authorization | Data access control | Row Level Security (RLS) in PostgreSQL |
+| Transport | Encrypted communication | HTTPS (Supabase), CORS (FastAPI) |
+| API Access | Key-based access control | Anon key (public) + Service role key (admin) |
+| Input Validation | Request sanitization | Pydantic schemas (FastAPI) |
+| Session Management | Token lifecycle | Supabase Auth client (auto-refresh, persist) |
+| Secret Management | Environment isolation | `.env` files, never committed to git |
 
 ---
 
-## 🔐 Basic Security Hardening (Now)
+## Supabase Auth Security
 
-### **1. File System Security**
+### How Authentication Works
 
-**Restrict PDM Vault Access:**
+1. The user enters their email and password in the Vue frontend
+2. The Supabase JavaScript client sends credentials directly to Supabase Auth (HTTPS)
+3. Supabase Auth verifies the credentials and returns a JWT access token and refresh token
+4. The frontend stores the session in `localStorage` under the key `pdm-web-auth`
+5. Subsequent API calls include the JWT in the `Authorization: Bearer <token>` header
+6. The backend verifies the token via `supabase.auth.get_user(token)`
 
-```powershell
-# Remove public access, keep only service account
-$acl = Get-Acl "D:\PDM_Vault"
-
-# Remove "Everyone" if present
-$ace = $acl.Access | Where-Object {$_.IdentityReference -match "Everyone"}
-if ($ace) {
-    $acl.RemoveAccessRule($ace)
+```typescript
+// frontend/src/stores/auth.ts -- login flow
+async function login(email: string, password: string) {
+  const { error: authError } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  })
+  if (authError) throw authError
+  await fetchUser()
 }
+```
 
-# Add SYSTEM (service account) with full access
-$rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-    "SYSTEM",
-    "FullControl",
-    "ContainerInherit,ObjectInherit",
-    "None",
-    "Allow"
+### JWT Token Security
+
+Supabase Auth issues JWTs signed with your project's JWT secret. Key properties:
+
+- **Access tokens** expire after the configured JWT expiry time (default: 3600 seconds / 1 hour)
+- **Refresh tokens** are long-lived and used to obtain new access tokens
+- The frontend automatically refreshes expired tokens via `autoRefreshToken: true`
+- Tokens are validated on every API call -- expired or tampered tokens are rejected
+
+```typescript
+// frontend/src/services/supabase.ts -- auto-retry on 401
+if (response.status === 401 && retry) {
+  const { data: { session: newSession } } = await supabase.auth.refreshSession()
+  if (newSession) {
+    return apiCall<T>(endpoint, options, false)  // Retry with new token
+  }
+}
+```
+
+### Password Security
+
+Supabase Auth handles password storage and verification. Passwords are:
+
+- Hashed using bcrypt with a strong work factor
+- Never stored in plaintext
+- Never transmitted to or processed by the PDM-Web backend
+
+**Recommended password policy** (configure in Supabase Dashboard > Authentication > Policies):
+
+- Minimum 8 characters (Supabase default)
+- Require mix of character types if desired
+- Consider enabling rate limiting on login attempts
+
+### Session Management
+
+The auth store in `frontend/src/stores/auth.ts` manages the session lifecycle:
+
+- **Initialization:** On app load, `initialize()` checks for an existing session
+- **Auth state changes:** `onAuthStateChange` listener handles `SIGNED_IN`, `SIGNED_OUT`, and `TOKEN_REFRESHED` events
+- **Session persistence:** Sessions are stored in `localStorage` and survive page refreshes
+- **Logout:** Clears the session both locally and on the Supabase server
+
+```typescript
+supabase.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'SIGNED_IN' && session) {
+    await fetchUser()
+  } else if (event === 'SIGNED_OUT') {
+    user.value = null
+  } else if (event === 'TOKEN_REFRESHED' && session) {
+    await fetchUser()
+  }
+})
+```
+
+---
+
+## API Key Management
+
+PDM-Web uses two Supabase API keys with different privilege levels. Understanding the difference is critical for security.
+
+### Anon Key (Public / Publishable)
+
+- **Purpose:** Client-side operations, user-level database access
+- **Used by:** Frontend (embedded at build time), backend (user-level queries)
+- **Access level:** Restricted by Row Level Security policies
+- **Safe to expose:** Yes -- this key is designed for client-side use
+- **Configuration:** `VITE_SUPABASE_ANON_KEY` (frontend), `SUPABASE_ANON_KEY` (backend)
+
+### Service Role Key (Admin / Secret)
+
+- **Purpose:** Server-side operations that bypass RLS
+- **Used by:** Backend only (file uploads, bulk BOM operations, admin queries)
+- **Access level:** Full database access, bypasses all RLS policies
+- **Safe to expose:** NO -- never expose in frontend code, URLs, or client responses
+- **Configuration:** `SUPABASE_SERVICE_KEY` (backend only)
+
+### Where Each Key is Used
+
+```python
+# backend/app/services/supabase.py
+def get_supabase_client() -> Client:
+    """Anon key -- respects RLS policies."""
+    return create_client(settings.supabase_url, settings.supabase_anon_key)
+
+def get_supabase_admin() -> Client:
+    """Service role key -- bypasses RLS for admin operations."""
+    return create_client(settings.supabase_url, settings.supabase_service_key)
+```
+
+The admin client is used in specific routes:
+- `POST /api/files/upload` -- File upload from the bridge script (bypasses RLS to write file records)
+- `POST /api/bom/bulk` -- Bulk BOM import (creates items and BOM entries)
+- `GET /api/auth/me` -- User lookup by auth_id (reads from users table with admin privileges)
+- `PATCH /api/items/{item_number}?upsert=true` -- Upsert operations from trusted services
+
+### Key Rotation
+
+If a key is compromised:
+
+1. **Anon key compromised:** Generate a new anon key in Supabase Dashboard > Settings > API. Update `frontend/.env` and `backend/.env`. Rebuild and redeploy the frontend.
+
+2. **Service role key compromised:** This is a critical incident. Immediately:
+   - Generate a new service role key in Supabase Dashboard
+   - Update `backend/.env`
+   - Restart the backend
+   - Review database logs for unauthorized writes
+   - Check for unexpected data modifications
+
+---
+
+## Row Level Security (RLS)
+
+Row Level Security is PostgreSQL's built-in mechanism for controlling which rows a user can read, insert, update, or delete. In Supabase, RLS is enforced when using the anon key; it is bypassed when using the service role key.
+
+### RLS Policy Design
+
+RLS policies should be enabled on all tables that contain user data. Policies should follow the principle of least privilege.
+
+**Example policies for the PDM-Web schema:**
+
+```sql
+-- Enable RLS on tables
+ALTER TABLE items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bom ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE lifecycle_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+
+-- Items: All authenticated users can read, engineers can write
+CREATE POLICY "items_select" ON items FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "items_insert" ON items FOR INSERT
+  TO authenticated WITH CHECK (true);
+
+CREATE POLICY "items_update" ON items FOR UPDATE
+  TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "items_delete" ON items FOR DELETE
+  TO authenticated USING (true);
+
+-- Files: All authenticated users can read, engineers can write
+CREATE POLICY "files_select" ON files FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "files_insert" ON files FOR INSERT
+  TO authenticated WITH CHECK (true);
+
+-- Users: Users can read all users, but only update their own record
+CREATE POLICY "users_select" ON users FOR SELECT
+  TO authenticated USING (true);
+
+CREATE POLICY "users_update_own" ON users FOR UPDATE
+  TO authenticated USING (auth.uid() = auth_id);
+```
+
+### Checking RLS Status
+
+Use the Supabase Dashboard or SQL Editor to verify RLS is enabled:
+
+```sql
+SELECT tablename, rowsecurity
+FROM pg_tables
+WHERE schemaname = 'public';
+```
+
+### RLS and the Service Role Key
+
+Operations using `get_supabase_admin()` bypass RLS entirely. This is intentional for:
+- Backend-to-database writes from trusted services (upload bridge)
+- Admin operations that need to access all data
+- User creation/linking during authentication
+
+Keep the service role key strictly on the backend. Never use it in frontend code.
+
+---
+
+## Transport Security (HTTPS)
+
+### Supabase Connections
+
+All communication with Supabase services uses HTTPS:
+
+- **Database API:** `https://<ref>.supabase.co/rest/v1/` (PostgREST)
+- **Auth API:** `https://<ref>.supabase.co/auth/v1/`
+- **Storage API:** `https://<ref>.supabase.co/storage/v1/`
+
+TLS certificates are managed by Supabase. No configuration is needed.
+
+### Frontend to Backend
+
+In development, the frontend communicates with the backend over HTTP (`http://localhost:8001`). This is acceptable for local development and Tailnet (which provides its own encryption layer).
+
+In production with a single container deployment:
+- The backend serves both the API and frontend on the same origin
+- HTTPS should be terminated at the hosting provider's load balancer or reverse proxy (e.g., Fly.io provides automatic TLS)
+- All external traffic should be HTTPS-only
+
+### Signed URLs
+
+File downloads use signed URLs generated by Supabase Storage. These URLs:
+
+- Are time-limited (default: 1 hour)
+- Are cryptographically signed -- cannot be forged
+- Grant access to a specific file path only
+- Expire automatically after the configured duration
+
+```typescript
+// frontend/src/services/storage.ts
+const { data, error } = await supabase.storage
+  .from(bucket)
+  .createSignedUrl(path, 3600)  // Valid for 1 hour
+```
+
+---
+
+## CORS Configuration
+
+CORS (Cross-Origin Resource Sharing) controls which web origins can make requests to the FastAPI backend.
+
+### Current Configuration
+
+```python
+# backend/app/main.py
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if settings.cors_allow_all else settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-$acl.AddAccessRule($rule)
-
-# Add local admin with modify access
-$rule2 = New-Object System.Security.AccessControl.FileSystemAccessRule(
-    "BUILTIN\Administrators",
-    "Modify",
-    "ContainerInherit,ObjectInherit",
-    "None",
-    "Allow"
-)
-$acl.AddAccessRule($rule2)
-
-Set-Acl "D:\PDM_Vault" $acl
-Write-Host "Permissions updated"
 ```
 
-### **2. Database Access**
+### Security Recommendations
 
-**Backup Encryption:**
+- **Development:** `CORS_ALLOW_ALL=true` is acceptable when running locally or on a private Tailnet
+- **Production (separate frontend/backend):** Set `CORS_ALLOW_ALL=false` and list specific allowed origins in `config.py`
+- **Production (single container):** CORS is not needed because the frontend and API share the same origin
 
-```powershell
-# Encrypt backup files
-function Encrypt-Backup {
-    param([string]$BackupPath)
-
-    # Use Windows EFS (Encrypting File System)
-    cipher /e "$BackupPath"
-    Write-Host "Backup encrypted: $BackupPath"
-}
-
-# Use when backing up
-Encrypt-Backup "D:\PDM_Backups\2025-01-03"
-```
-
-### **3. Log File Security**
-
-**Restrict Log Access:**
-
-```powershell
-# Only SYSTEM and Admins can read logs
-$logFile = "D:\PDM_Vault\logs\pdm.log"
-$acl = Get-Acl $logFile
-
-# Remove public access
-$acl.SetAccessRuleProtection($true, $false)
-
-# Add SYSTEM and Admins only
-$rules = @(
-    [System.Security.AccessControl.FileSystemAccessRule]::new(
-        "SYSTEM",
-        "FullControl",
-        "None",
-        "None",
-        "Allow"
-    ),
-    [System.Security.AccessControl.FileSystemAccessRule]::new(
-        "BUILTIN\Administrators",
-        "Modify",
-        "None",
-        "None",
-        "Allow"
-    )
-)
-
-foreach ($rule in $rules) {
-    $acl.AddAccessRule($rule)
-}
-
-Set-Acl $logFile $acl
-```
+CORS does not apply to:
+- Server-to-server requests (the upload bridge script)
+- Direct Supabase client calls from the frontend (these go to `*.supabase.co`, which has its own CORS configuration)
 
 ---
 
-## 🔐 User Authentication (v3.0 Preparation)
+## Frontend Security
 
-### **Planned Multi-User Authentication**
+### No Secrets in Client Code
 
-When v3.0 adds multi-user support:
+The frontend contains only the Supabase anon key, which is designed to be public. The following should never appear in frontend code:
 
-```powershell
-# Users will authenticate with username/password
-# Service will verify against user database
-# Audit logs track who accessed what/when
+- `SUPABASE_SERVICE_KEY` or any service role key
+- Database connection strings or passwords
+- Admin API tokens
+- Any key that grants elevated privileges
 
-# Session management:
-# - Session timeout after 30 minutes
-# - Automatic logout on browser close
-# - Re-authentication for sensitive operations
-```
+The anon key provides:
+- Authentication (login/logout)
+- Read/write access controlled by RLS policies
+- Storage access controlled by storage policies
 
-### **Preparation Steps (Now)**
+### Input Sanitization
 
-1. **Plan user structure**
-   ```
-   Admin Users:
-   - Full system access
-   - Can release items
-   - Can delete items
-   - Can manage users
+Vue 3's template system automatically escapes HTML output, preventing XSS (Cross-Site Scripting) attacks. Do not use `v-html` with user-provided content.
 
-   Power Users:
-   - Can create/edit items
-   - Can check in files
-   - Can process BOMs
-   - Cannot delete items
-   - Cannot manage users
+### Session Storage
 
-   View-Only Users:
-   - Can view items
-   - Can view BOMs
-   - Can run reports
-   - Cannot modify anything
-   ```
-
-2. **Plan database schema for users**
-   ```sql
-   CREATE TABLE users (
-       user_id INTEGER PRIMARY KEY,
-       username TEXT UNIQUE NOT NULL,
-       password_hash TEXT NOT NULL,
-       email TEXT,
-       role TEXT,  -- admin, power_user, viewer
-       created_at TEXT,
-       last_login TEXT,
-       active BOOLEAN DEFAULT 1
-   );
-
-   CREATE TABLE audit_log (
-       log_id INTEGER PRIMARY KEY,
-       user_id INTEGER NOT NULL,
-       action TEXT NOT NULL,
-       item_number TEXT,
-       timestamp TEXT,
-       FOREIGN KEY(user_id) REFERENCES users(user_id)
-   );
-   ```
-
-3. **Plan password policy**
-   - Minimum 12 characters
-   - Uppercase + lowercase + numbers + special chars
-   - 90-day expiration
-   - Password history (no reuse of last 5)
+Auth sessions are stored in `localStorage` under the key `pdm-web-auth`. This means:
+- Sessions persist across browser tabs and page refreshes
+- Sessions are cleared on explicit logout
+- `localStorage` is origin-scoped -- other domains cannot access the session
 
 ---
 
-## 🛡️ Network Security (If Exposing to Network)
+## Backend Security
 
-### **Web Server Security**
+### Input Validation with Pydantic
 
-**Do NOT expose PDM directly to internet without:**
+All API endpoints validate input using Pydantic schemas defined in `backend/app/models/schemas.py`. This prevents:
 
-```javascript
-// 1. HTTPS/TLS encryption
-const https = require('https');
-const fs = require('fs');
+- SQL injection (data is parameterized by the Supabase client)
+- Invalid data types reaching the database
+- Malformed item numbers (enforced by regex)
 
-const options = {
-    key: fs.readFileSync('/path/to/key.pem'),
-    cert: fs.readFileSync('/path/to/cert.pem')
-};
-
-https.createServer(options, app).listen(443);
-
-// 2. Authentication middleware
-app.use(requireAuth);
-
-// 3. Rate limiting
-const rateLimit = require('express-rate-limit');
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,  // 15 minutes
-    max: 100  // limit each IP to 100 requests per windowMs
-});
-app.use(limiter);
-
-// 4. CORS restrictions
-const cors = require('cors');
-app.use(cors({
-    origin: ['https://yourdomain.com'],
-    credentials: true
-}));
+```python
+class ItemBase(BaseModel):
+    item_number: str = Field(..., pattern=r"^[a-z]{3}\d{4,6}$")
+    name: Optional[str] = None
+    revision: str = "A"
+    iteration: int = 1
+    lifecycle_state: str = "Design"
+    # ... additional fields with type validation
 ```
 
-### **API Security**
+**Key validations:**
+- `item_number` must match the pattern `^[a-z]{3}\d{4,6}$` (3 lowercase letters + 4-6 digits)
+- UUIDs are validated as proper UUID format
+- Numeric fields (mass, thickness, etc.) are validated as `float`
+- String fields reject non-string input
 
-```javascript
-// API Key validation
-const apiKeyAuth = (req, res, next) => {
-    const apiKey = req.headers['x-api-key'];
-    const validKeys = process.env.API_KEYS.split(',');
+### Authentication Verification
 
-    if (!apiKey || !validKeys.includes(apiKey)) {
-        return res.status(401).json({ error: 'Invalid API key' });
-    }
+The `/api/auth/me` endpoint verifies JWT tokens from the frontend:
 
-    next();
-};
+```python
+@router.get("/me", response_model=User)
+async def get_current_user(authorization: Optional[str] = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
-app.use('/api/', apiKeyAuth);
+    token = authorization.split(" ")[1]
+    auth_user = supabase.auth.get_user(token)
+
+    if not auth_user or not auth_user.user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    # ... user lookup logic
 ```
+
+### Error Handling
+
+The backend avoids leaking internal details in error responses. Database errors are caught and returned with generic messages:
+
+```python
+except Exception as e:
+    if "duplicate key" in str(e).lower():
+        raise HTTPException(status_code=409, detail=f"Item {item.item_number} already exists")
+    raise HTTPException(status_code=400, detail=str(e))
+```
+
+For production, consider further restricting error messages to avoid exposing database constraint names or internal paths.
+
+### File Upload Security
+
+File uploads via `/api/files/upload` include these protections:
+
+- File content type is validated
+- Files are uploaded to Supabase Storage (not stored on the local filesystem)
+- The item must exist in the database before files can be uploaded for it
+- The upload uses the admin client, which is only accessible from the backend
 
 ---
 
-## 🔍 Audit & Compliance
+## Environment Variable Protection
 
-### **Audit Logging**
+### .env Files
 
-```powershell
-# Enhanced logging for compliance
-function Write-AuditLog {
-    param(
-        [string]$Action,
-        [string]$ItemNumber,
-        [string]$User,
-        [string]$Result
-    )
+Environment files containing secrets must never be committed to git.
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp | User: $User | Action: $Action | Item: $ItemNumber | Result: $Result"
-
-    Add-Content "D:\PDM_Vault\logs\audit.log" $logEntry
-}
-
-# Usage
-Write-AuditLog -Action "ItemCreated" -ItemNumber "csp0030" -User "admin" -Result "Success"
-Write-AuditLog -Action "ItemReleased" -ItemNumber "csp0030" -User "admin" -Result "Success"
-Write-AuditLog -Action "DataExport" -ItemNumber "All" -User "admin" -Result "Success"
+**Verify `.gitignore` includes:**
+```
+.env
+backend/.env
+frontend/.env
 ```
 
-### **Compliance Requirements**
+**Verify secrets are not in version history:**
+```bash
+git log --all --oneline -- backend/.env
+# Should return no results
+```
 
-**For regulated industries:**
+### Secret Access Patterns
 
-- [ ] User authentication required
-- [ ] Audit log for all changes
-- [ ] Immutable backup copies
-- [ ] Encryption of data at rest
-- [ ] Encryption of data in transit
-- [ ] Regular security audits
-- [ ] Disaster recovery plan
-- [ ] User access reviews
-- [ ] Password policy enforcement
-- [ ] Data retention policies
+| Secret | Used By | How Accessed |
+|--------|---------|-------------|
+| `SUPABASE_SERVICE_KEY` | Backend only | `backend/.env` -> `config.py` -> `get_supabase_admin()` |
+| `SUPABASE_ANON_KEY` | Backend + Frontend | `.env` files, embedded in frontend build |
+| `SUPABASE_URL` | Backend + Frontend | `.env` files, embedded in frontend build |
 
----
+### Production Secret Management
 
-## 🚨 Security Incident Response
+For production deployments:
 
-### **Compromised System Recovery**
-
-**If system is compromised:**
-
-1. **Immediate Actions:**
-   ```powershell
-   # 1. Stop all services
-   Get-Service | Where-Object {$_.Name -like "PDM_*"} | Stop-Service
-
-   # 2. Isolate network (if network-connected)
-   # Disconnect cable or disable network
-
-   # 3. Preserve evidence (don't clear logs)
-   Copy-Item "D:\PDM_Vault" "D:\PDM_Vault.compromised_backup" -Recurse
-
-   # 4. Notify stakeholders
-   Write-Host "SECURITY INCIDENT: System compromised - contacting administrators"
+1. **Fly.io:** Use `fly secrets set` to inject environment variables:
+   ```bash
+   fly secrets set SUPABASE_SERVICE_KEY="eyJ..."
+   fly secrets set SUPABASE_ANON_KEY="eyJ..."
+   fly secrets set SUPABASE_URL="https://..."
    ```
 
-2. **Assessment:**
-   - Check access logs for unauthorized access
-   - Review recent file modifications
-   - Check for data exfiltration
-   - Verify database integrity
+2. **Docker:** Pass secrets via environment variables in `docker-compose.yml` or `docker run -e`:
+   ```yaml
+   environment:
+     - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+   ```
 
-3. **Recovery:**
-   - Restore from known-good backup
-   - Change all passwords
-   - Update access controls
-   - Re-test all services
-   - Document incident
+3. **Never** store secrets in:
+   - Source code
+   - Docker images (Dockerfile `ENV` or `ARG`)
+   - Git commits
+   - Frontend JavaScript bundles (except the anon key, which is public)
 
 ---
 
-## 🔑 Key Management
+## Security Monitoring
 
-### **API Keys & Secrets**
+### Supabase Dashboard
 
-**Never hardcode secrets!**
+Monitor security events in the Supabase Dashboard:
 
-```powershell
-# BAD - Don't do this
-$apiKey = "abc123def456"
+- **Auth > Users:** View registered users, last sign-in times
+- **Auth > Logs:** View authentication events (logins, failed attempts, token refreshes)
+- **Database > Logs:** View query logs and errors (Pro plan)
+- **Storage > Logs:** View file access patterns
 
-# GOOD - Use environment variables
-$apiKey = $env:PDM_API_KEY
+### Audit Trail
 
-# BETTER - Use secure vaults
-# (PowerShell Credential Manager, Azure Key Vault, etc.)
+The `lifecycle_history` table provides an audit trail for item state changes:
+
+```sql
+SELECT
+  lh.changed_at,
+  i.item_number,
+  lh.old_state,
+  lh.new_state,
+  lh.old_revision,
+  lh.new_revision,
+  u.username as changed_by
+FROM lifecycle_history lh
+JOIN items i ON i.id = lh.item_id
+LEFT JOIN users u ON u.id = lh.changed_by
+ORDER BY lh.changed_at DESC
+LIMIT 50;
 ```
 
-**Set environment variable:**
-```powershell
-# One-time (current session)
-$env:PDM_API_KEY = "your-secret-key"
+### Advisors
 
-# Permanently (requires admin)
-[Environment]::SetEnvironmentVariable("PDM_API_KEY", "your-secret-key", "Machine")
-```
-
----
-
-## ✓ Security Checklist
-
-### **Basic Security (Do Now)**
-- [ ] Restrict PDM_Vault NTFS permissions
-- [ ] Restrict log file access
-- [ ] Enable database backups
-- [ ] Encrypt backup storage
-- [ ] Document access procedures
-- [ ] Create incident response plan
-
-### **Standard Security (v3.0)**
-- [ ] User authentication system
-- [ ] Audit logging for all changes
-- [ ] Role-based access control
-- [ ] Session management
-- [ ] Password policy enforcement
-- [ ] Regular security audits
-
-### **Enterprise Security (v4.0)**
-- [ ] Encryption at rest (database)
-- [ ] Encryption in transit (TLS)
-- [ ] Advanced threat detection
-- [ ] Compliance certifications
-- [ ] Penetration testing
-- [ ] Security operations center
+Run security advisors via the Supabase Dashboard or MCP tools to check for:
+- Tables without RLS enabled
+- Missing indexes
+- Unused indexes
+- Other security recommendations
 
 ---
 
-## 📋 Security Documentation
+## Security Checklist
 
-**Document these items:**
-- [ ] Access procedures
-- [ ] Password reset process
-- [ ] Data backup procedures
-- [ ] Disaster recovery plan
-- [ ] Incident response plan
-- [ ] Security policies
-- [ ] Audit procedures
-- [ ] Compliance requirements
+### Initial Setup
+
+- [ ] Verify `backend/.env` is in `.gitignore`
+- [ ] Verify `frontend/.env` is in `.gitignore`
+- [ ] Verify service role key is not present in any frontend file
+- [ ] Enable RLS on all public schema tables
+- [ ] Create appropriate RLS policies for each table
+- [ ] Configure CORS for production origins
+- [ ] Set `CORS_ALLOW_ALL=false` for production
+- [ ] Verify storage buckets are private (not public)
+- [ ] Store a secure backup of API keys (see [21-BACKUP-RECOVERY-GUIDE.md](21-BACKUP-RECOVERY-GUIDE.md))
+
+### Ongoing
+
+- [ ] Review Supabase Auth logs for suspicious login activity monthly
+- [ ] Verify no secrets have been committed to git
+- [ ] Rotate API keys if team membership changes
+- [ ] Review and update RLS policies when schema changes
+- [ ] Keep backend dependencies updated (`pip install --upgrade`)
+- [ ] Keep frontend dependencies updated (`npm update`)
+- [ ] Review Supabase security advisors periodically
+
+### Incident Response
+
+If a security incident is suspected:
+
+1. **Contain:** Rotate the compromised key immediately in Supabase Dashboard
+2. **Assess:** Review Supabase Auth logs and database logs for unauthorized access
+3. **Remediate:** Update all `.env` files, restart services, rebuild frontend
+4. **Recover:** Restore from backup if data was modified (see [21-BACKUP-RECOVERY-GUIDE.md](21-BACKUP-RECOVERY-GUIDE.md))
+5. **Document:** Record what happened, what was affected, and what was done to resolve it
 
 ---
 
-## 🔗 Security Resources
+## Security Resources
 
+- **Supabase Security:** https://supabase.com/docs/guides/platform/going-into-prod
+- **Supabase RLS:** https://supabase.com/docs/guides/database/postgres/row-level-security
+- **FastAPI Security:** https://fastapi.tiangolo.com/tutorial/security/
 - **OWASP Top 10:** https://owasp.org/www-project-top-ten/
-- **Windows Security:** https://docs.microsoft.com/en-us/windows/security/
-- **PowerShell Security:** https://learn.microsoft.com/powershell/scripting/learn/security/
-- **SQLite Security:** https://www.sqlite.org/security.html
-- **Express.js Security:** https://expressjs.com/en/advanced/best-practice-security.html
+- **Vue Security:** https://vuejs.org/guide/best-practices/security
 
 ---
 
-**Last Updated:** 2025-01-03
-**Version:** 2.0
-**Security Level:** Basic (Development-Safe)
-**Next Review:** When implementing multi-user features
+**Last Updated:** 2025-01-29
+**Version:** 3.0
 **Related:** [23-SYSTEM-CONFIGURATION.md](23-SYSTEM-CONFIGURATION.md), [21-BACKUP-RECOVERY-GUIDE.md](21-BACKUP-RECOVERY-GUIDE.md)

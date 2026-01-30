@@ -1,13 +1,26 @@
-# PDM System - Glossary of Terms
+# PDM-Web System - Glossary of Terms
 
-**Quick Reference for PDM Terminology**
-**Related Docs:** [01-PDM-SYSTEM-MAP.md](01-PDM-SYSTEM-MAP.md), [02-PDM-COMPLETE-OVERVIEW.md](02-PDM-COMPLETE-OVERVIEW.md)
+**Quick reference for PDM-Web terminology and technology stack**
+**Related Docs:** [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md), [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md)
 
 ---
 
-## 📖 Complete Glossary
+## Complete Glossary
 
 ### A
+
+**Anon Key**
+- Supabase public API key used for client-side operations
+- Respects Row Level Security (RLS) policies
+- Safe to expose in frontend code
+- Configured via `SUPABASE_ANON_KEY` environment variable
+- See also: Service Key, RLS
+
+**APIRouter**
+- FastAPI class for defining route groups
+- Each module (items, files, bom) uses its own router with a prefix
+- Registered in `main.py` via `app.include_router()`
+- Example: `APIRouter(prefix="/items", tags=["items"])`
 
 **Assembly**
 - A product made up of multiple component parts
@@ -17,434 +30,419 @@
 
 **Audit Trail**
 - Complete record of all changes to an item
-- Stored in `lifecycle_history` table
+- Stored in `lifecycle_history` table in Supabase PostgreSQL
 - Shows who changed what, when, and from/to what state
-- Used for compliance and traceability
+- Queried via `GET /api/items/{item_number}/history`
 
 ### B
 
+**BaseModel**
+- Pydantic base class for data validation and serialization
+- All API request/response schemas inherit from `BaseModel`
+- Provides automatic validation, JSON serialization, and OpenAPI schema generation
+- See also: Pydantic
+
 **BOM** (Bill of Materials)
 - List of all parts and assemblies that make up a product
-- Stored in `bom` table
-- Single-level: Only direct children of assembly (not grandchildren)
-- Multi-level: Shows full hierarchy including subassemblies
-- Created from Creo tree exports
+- Stored in `bom` table with `parent_item_id` and `child_item_id` foreign keys
+- Single-level: Direct children only (`GET /api/bom/{item_number}`)
+- Multi-level (tree): Full hierarchy (`GET /api/bom/{item_number}/tree`)
+- Created from Creo BOM text file exports, uploaded via the BOM upload endpoint
 
-**BOM-Watcher**
-- PowerShell service that processes BOM files
-- Monitors: `D:\PDM_Vault\CADData\BOM\` folder
-- Extracts parent/child relationships
-- Updates item properties (material, mass, cost, etc.)
+**BOM Upload**
+- Process of sending a parsed BOM file to the API
+- Endpoint: `POST /api/bom/bulk`
+- Accepts parent item number and list of children with quantities and properties
+- Replaces the entire BOM for the parent assembly (delete-then-insert)
+- Handled by `PDM-BOM-Parser.ps1` in the upload bridge
 
-**Batch File**
-- Windows script file (.bat) that executes commands
-- Example: `flatten_sheetmetal.bat` (calls FreeCAD for DXF generation)
+**Bucket**
+- Supabase Storage container for files
+- PDM uses the `pdm-files` bucket
+- Files are organized by item number: `pdm-files/{item_number}/{filename}`
+- See also: Signed URL, Supabase Storage
 
 ### C
 
 **CAD** (Computer-Aided Design)
-- Digital design files (Creo, AutoCAD, etc.)
-- PDM supports: Creo `.prt`, `.asm`, `.drw` files
-- Stored in: `D:\PDM_Vault\CADData\`
+- Digital design files created in Creo or similar software
+- PDM supports: `.prt` (part), `.asm` (assembly), `.drw` (drawing)
+- Stored in Supabase Storage under the `pdm-files` bucket
 
-**CheckIn** (or Check-In)
-- Process of submitting a new file to PDM
-- Files placed in: `D:\PDM_Vault\CADData\CheckIn\`
-- CheckIn-Watcher automatically processes them
-- Creates or updates items in database
-
-**CheckIn-Watcher**
-- PowerShell service that monitors check-in folder
-- Monitors: `D:\PDM_Vault\CADData\CheckIn\`
-- Classifies files by type
-- Registers files in database
-- Queues DXF/SVG generation if needed
+**Checkout** (or Check-Out)
+- Locks an item for editing to prevent concurrent modification
+- Stored in `checkouts` table
+- Row deleted when item is checked back in
 
 **Circular Reference**
 - When an item contains itself (directly or indirectly) in its BOM
-- Causes infinite loops in cost calculations
-- Example: Assembly A contains Assembly A (invalid)
-- PDM detects and skips circular references
+- Causes infinite loops in tree traversal and cost calculations
+- The BOM tree endpoint guards against this with a `max_depth` parameter
+- Example: Assembly A contains Assembly B which contains Assembly A (invalid)
 
-**Checkout** (or Check-Out)
-- Locks an item for editing
-- Prevents concurrent access by multiple users
-- Stored in `checkouts` table
-- Row deleted when item checked back in
+**Composition API**
+- Vue 3 programming model used throughout the frontend
+- Uses `setup()` function (or `<script setup>`) instead of Options API
+- Provides `ref()`, `computed()`, `watch()`, `onMounted()` for reactive programming
+- See also: Vue 3
 
-**CreoJS**
-- JavaScript interface for Creo applications
-- Allows web-based interaction with Creo
-- Used in workspace comparison tool
+**CORS** (Cross-Origin Resource Sharing)
+- HTTP mechanism allowing the frontend (port 5173) to call the backend (port 8000)
+- Configured in FastAPI middleware in `main.py`
+- Development allows `localhost` origins; production is configurable via environment
+
+**Computed Property**
+- Vue 3 reactive value derived from other reactive state
+- Created with `computed()` from the Composition API
+- Automatically recalculates when dependencies change
+- Example: `filteredItems` computed from `items` and `searchInput`
 
 ### D
 
 **Design** (Lifecycle State)
-- Initial state when item is created
-- Item is under active development
-- Can be modified, revised, iterated
-- Transition: Design → Released → Obsolete
+- Initial state when an item is created
+- Item is under active development and can be modified
+- Transition: Design -> Released -> Obsolete
 
 **DXF** (Drawing Exchange Format)
 - 2D flat pattern file for sheet metal parts
-- Generated from STEP files via FreeCAD
-- Contains outline, holes, bend lines
-- Sent to manufacturing for cutting/bending
-
-**DXF Generation**
-- Automated process creating flat patterns from 3D STEP files
-- Handles sheet metal unfolding
-- Uses FreeCAD SheetMetal workbench
-- Task: `GENERATE_DXF` in work_queue
+- Generated from STEP files via FreeCAD Docker container
+- Contains outline, holes, bend lines for manufacturing
+- Classified as file type `DXF` in the files table
 
 ### E
 
-**Execution Policy**
-- PowerShell security setting
-- Controls which scripts can run
-- PDM requires: `RemoteSigned` or `Unrestricted`
-- Set with: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned`
+**Endpoint**
+- A specific URL path that the FastAPI backend responds to
+- Examples: `GET /api/items`, `POST /api/files/upload`, `GET /api/bom/{item_number}/tree`
+- Documented automatically at `/docs` (Swagger UI) and `/redoc`
+
+**Environment Variables**
+- Configuration values loaded from `.env` file or deployment platform
+- Required: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`
+- Optional: `API_HOST`, `API_PORT`, `DEBUG`, `CORS_ALLOW_ALL`
+- Managed via Pydantic Settings in `backend/app/config.py`
 
 ### F
 
-**FreeCAD**
-- Open-source 3D CAD software
-- Used for DXF/SVG generation from STEP files
-- Runs headless (no GUI) for automation
-- Located: `C:\Program Files\FreeCAD 0.21\bin\`
-
-**File Iteration**
-- Version number for individual files
-- Increments each time file is overwritten
-- Example: File 1.1, 1.2, 1.3 (file version 1, iterations 1-3)
-- Different from: Item iteration
+**FastAPI**
+- Python web framework used for the backend API
+- Provides automatic OpenAPI documentation, request validation via Pydantic, and async support
+- Application entry point: `backend/app/main.py`
+- Run with: `uvicorn app.main:app --reload`
 
 **File Type**
-- Classification of file
-- Values: CAD, STEP, DXF, SVG, PDF, NEUTRAL_ASM, ARCHIVE, OTHER
-- Determines destination folder
-- Example: `.step` → STEP folder
+- Classification of uploaded files in the `files` table
+- Values: `CAD`, `STEP`, `DXF`, `SVG`, `PDF`, `IMAGE`, `OTHER`
+- Determined automatically from file extension during upload
 
-**FileSystemWatcher**
-- PowerShell object that monitors folders
-- Triggers on file creation, deletion, modification
-- Used by CheckIn-Watcher, BOM-Watcher, etc.
-- Provides real-time file monitoring
+**FreeCAD**
+- Open-source 3D CAD software used for DXF/SVG generation
+- Runs headless in a Docker container (`amrit3701/freecad-cli:latest`)
+- Custom scripts in `FreeCAD/Tools/` handle sheet metal flattening and bend drawings
+- See also: SheetMetal Workbench, TechDraw Workbench
 
 ### G
 
 **Gauge**
 - Standard thickness measurement for sheet metal
-- Example: 16 gauge steel
-- Noted on manufacturing documents (SVG)
+- Noted on manufacturing documents (SVG bend drawings)
+- Stored as `thickness` (numeric mm value) in the items table
 
 ### H
 
-**Headless Mode**
-- Running application without GUI (graphical interface)
-- FreeCAD runs headless via `FreeCADCmd.exe`
-- Enables batch processing and automation
-- No visual feedback; output via console
+**HMR** (Hot Module Replacement)
+- Vite development feature that updates the browser instantly when source files change
+- No full page reload needed -- preserves application state during development
+- Enabled by default with `npm run dev`
+- See also: Vite
 
 ### I
+
+**Item**
+- Single product component or assembly in the PDM system
+- Identified by item number (e.g., `csp0030`)
+- Stored in `items` table in Supabase PostgreSQL
+- Can have multiple associated files (STEP, DXF, SVG, PDF, CAD)
+- Retrieved via `GET /api/items/{item_number}`
+
+**Item Number**
+- Unique identifier for a part or assembly
+- Format: 3 lowercase letters + 4 to 6 digits
+- Pattern: `[a-z]{3}\d{4,6}`
+- Examples: `csp0030`, `wma20120`, `stp01000`
+- Always normalized to lowercase throughout the system
+- Special prefixes: `mmc` (McMaster-Carr), `spn` (supplier), `zzz` (reference only)
 
 **Iteration**
 - Version number within a revision
 - Format: Revision.Iteration (e.g., A.1, A.2, B.1)
-- Item iteration increments on major changes
-- File iteration increments on file overwrites
-- Example: Item csp0030 A.1 has file csp0030_flat.dxf version 1
+- Item iteration stored in `items.iteration`
+- File iteration stored in `files.iteration` (increments on file re-upload)
 
-**Item**
-- Single product component or assembly
-- Identified by item number (e.g., csp0030)
-- Stored in `items` table
-- Can have multiple files (STEP, DXF, SVG, PDF, etc.)
+### J
 
-**Item Number**
-- Unique identifier for a part or assembly
-- Format: 3 letters + 4-6 digits
-- Examples: csp0030, wma20120, stp00100
-- Normalized to lowercase in database
-- Must match filename pattern for auto-linking
-
-**Item Iteration**
-- Version number within an item revision
-- Increments when item significantly changes
-- Stored in `items.iteration` field
-- Example: Item A.1, A.2, A.3 (revision A, iterations 1-3)
-- Different from: File iteration
+**JWT** (JSON Web Token)
+- Authentication token issued by Supabase Auth on login
+- Sent in the `Authorization: Bearer <token>` header for API requests
+- Contains user identity and expiration time
+- Frontend stores the session via Supabase client library
+- See also: Supabase Auth
 
 ### K
 
 **K-Factor**
-- Bend compensation value for sheet metal
-- Accounts for material springback
+- Bend compensation value for sheet metal flat pattern generation
+- Accounts for material springback during bending
 - Default: 0.35
-- Affects flat pattern accuracy
-- Configurable in DXF generation scripts
+- Configured in FreeCAD DXF generation scripts
 
 ### L
 
 **Lifecycle History**
-- Audit trail table (`lifecycle_history`)
-- Records every state transition
-- Fields: old_state, new_state, old_revision, new_revision, changed_by, changed_at
-- Used for compliance and traceability
+- Audit trail table (`lifecycle_history`) in Supabase PostgreSQL
+- Records every state transition with old/new values
+- Fields: `old_state`, `new_state`, `old_revision`, `new_revision`, `changed_by`, `changed_at`
+- Queried via `GET /api/items/{item_number}/history`
 
 **Lifecycle State**
-- Current status of an item
-- Values: Design, Released, Obsolete (extensible)
+- Current status of an item in the PDM workflow
+- Values: `Design`, `Review`, `Released`, `Obsolete`
 - Stored in `items.lifecycle_state`
-- Controls access and modification rights
-- Transitions: Design → Released → Obsolete
+- Displayed as color-coded badges in the frontend
 
 ### M
 
-**Manufacturing Document**
-- Drawings and specifications for production
-- Examples: DXF (flat patterns), SVG (technical drawings), PDF (specs)
-- Generated automatically from CAD files
-- Contains dimensions, materials, notes
-
-**McMaster-Carr**
-- Online supplier of standard parts
-- PDM can fetch supplier info via Get-McMasterPrint.ps1
-- Used for sourcing fasteners, stock parts
-- Integration optional
-
 **MLBOM** (Multi-Level BOM)
-- BOM with nested subassembly hierarchy
-- Shows all levels of assembly tree
-- Processed by MLBOM-Watcher.ps1
-- More complex than single-level BOM
+- BOM with nested subassembly hierarchy showing all levels
+- Retrieved via `GET /api/bom/{item_number}/tree`
+- Rendered recursively in the frontend BOM tree view
 
 **MRP** (Manufacturing Resource Planning)
 - System for managing manufacturing operations
-- PDM web server can serve MRP data
-- Integrates with PDM for inventory, BOM, costing
-- Related: ERP (Enterprise Resource Planning)
-
-### N
-
-**NEU** (Neutral File)
-- Creo neutral format file
-- Extensions: `.neu` (part), `_asm.neu` (assembly)
-- Contains BOM data from Creo
-- Processed by CheckIn-Watcher for BOM extraction
-- Automatically deleted after processing
-
-**Node.js**
-- JavaScript runtime for server applications
-- Used for PDM web server backend
-- LTS (Long-Term Support) version recommended
-- Installation: `https://nodejs.org/`
-
-**NSSM** (Non-Sucking Service Manager)
-- Windows utility for managing services
-- Converts scripts/applications to Windows services
-- Used to install PDM services to run on boot
-- Download: `https://nssm.cc/`
+- PDM-Web includes MRP views: dashboard, routing, shop, parts lookup, tracking, materials
+- API endpoints under `/api/mrp/`
+- Frontend routes under `/mrp/`
 
 ### O
 
 **Obsolete** (Lifecycle State)
-- Final state for deprecated items
-- Item no longer manufactured
-- Kept for historical records
-- Read-only in many systems
-- Transition: Designed → Released → Obsolete
+- Final state for deprecated items no longer manufactured
+- Kept for historical records and traceability
+- Transition: Design -> Released -> Obsolete
+
+**OpenAPI**
+- API specification standard automatically generated by FastAPI
+- Interactive documentation at `/docs` (Swagger UI)
+- Alternative documentation at `/redoc` (ReDoc)
+- Generated from route definitions and Pydantic models
 
 ### P
 
-**PARAM_SYNC** (Task Type)
-- Work queue task for parameter synchronization
-- Updates item properties from CAD parameters
-- Queued by CheckIn-Watcher when CAD files checked in
-- Processed by Worker-Processor
-
-**Part-Parameter-Watcher**
-- PowerShell service for parameter updates
-- Monitors: `D:\PDM_Vault\CADData\ParameterUpdate\`
-- Updates individual item properties
-- Similar to BOM-Watcher but for single items
-
 **Part** (vs Assembly)
-- Single manufactured component
-- No children in BOM
-- Examples: bolt, bearing, flat sheet metal
+- Single manufactured component with no children in BOM
+- Examples: bolt, bearing, flat sheet metal piece
 - Opposite: Assembly
 
 **PDF**
-- Portable Document Format
-- Used for documentation, specs, drawings
-- PDM stores in: `D:\PDM_Vault\CADData\PDF\`
+- Portable Document Format used for documentation and specifications
+- Classified as file type `PDF` in the files table
+- Viewed via signed URLs from Supabase Storage
 
-**PowerShell**
-- Windows command-line scripting language
-- Used for all PDM automation
-- Version 5.1+ required
-- Script extension: `.ps1`
+**Pinia**
+- State management library for Vue 3
+- Used for shared application state (items, auth, etc.)
+- Stores defined in `frontend/src/stores/`
+- Accessed in components via composable functions: `useItemsStore()`, `useAuthStore()`
 
-### Q
-
-**Query** (SQL)
-- Database request to retrieve, insert, update, or delete data
-- Example: `SELECT * FROM items WHERE item_number='csp0030'`
-- PDM uses SQLite queries
-- Executed via `Query-SQL` or `sqlite3.exe`
+**Pydantic**
+- Python library for data validation and settings management
+- All API schemas are Pydantic `BaseModel` subclasses
+- Provides automatic JSON serialization, validation, and OpenAPI schema generation
+- Settings loaded from environment via `pydantic_settings.BaseSettings`
+- See also: BaseModel
 
 ### R
 
+**Ref**
+- Vue 3 Composition API function for creating reactive mutable state
+- Created with `ref()`: `const searchInput = ref('')`
+- Accessed with `.value` in script, directly in template
+- See also: Composition API, Computed Property
+
 **Released** (Lifecycle State)
 - Item has been approved for production
-- Files are locked/read-only
-- Cannot be modified without revision
-- Stored in: `D:\PDM_Vault\Released\`
-
-**Release-Watcher**
-- PowerShell service for release workflows (IN DEVELOPMENT)
-- Will handle Design → Released transitions
-- Not yet used in single-user systems
-- Planned for multi-user support
+- Represents a stable, locked version
+- Transition: Design -> Released -> Obsolete
 
 **Revision**
 - Letter designation for major changes (A, B, C, etc.)
-- Different from iteration
+- Different from iteration (which tracks minor changes within a revision)
 - Format: Revision.Iteration (e.g., A.2, B.1)
-- Incremented by Revise-Watcher (in development)
-- Starts at A for new items
+- Starts at `A` for new items
 
-**Revise-Watcher**
-- PowerShell service for revision management (IN DEVELOPMENT)
-- Will increment revision letters (A → B → C)
-- Not yet used in single-user systems
-- Planned for multi-user support
+**RLS** (Row Level Security)
+- Supabase/PostgreSQL feature that restricts data access based on user identity
+- Policies defined at the database level control which rows users can read/write
+- The anon client respects RLS; the service (admin) client bypasses it
+- Important: Internal service endpoints must use the admin client to bypass RLS
+
+**Router** (Vue Router)
+- Client-side routing library for Vue 3 single-page applications
+- Defines URL paths and their corresponding Vue components
+- Configuration in `frontend/src/router/index.ts`
+- Uses `createWebHistory()` for clean URLs (no hash)
+- Navigation guards enforce authentication requirements
 
 ### S
 
-**Service** (Windows Service)
-- Background process running on Windows
-- Starts automatically on boot
-- PDM services: CheckIn-Watcher, Worker-Processor, BOM-Watcher, etc.
-- Managed via `Get-Service`, `Start-Service`, `Stop-Service`
+**Service Key**
+- Supabase secret API key with full database access
+- Bypasses all Row Level Security policies
+- Must never be exposed to frontend code or client-side JavaScript
+- Used only in backend for trusted internal operations
+- Configured via `SUPABASE_SERVICE_KEY` environment variable
+- See also: Anon Key, RLS
 
 **SheetMetal Workbench**
 - FreeCAD module for sheet metal operations
-- Handles unfolding 3D parts into 2D patterns
-- Used in `flatten_sheetmetal.bat`
-- Generates DXF output
+- Handles unfolding 3D parts into 2D flat patterns
+- Used in DXF generation via Docker container
+- Generates cutting profiles for manufacturing
 
-**SQLite** (or SQLite3)
-- Lightweight SQL database engine
-- File-based (single file: `pdm.sqlite`)
-- No server required
-- Tool: `sqlite3.exe`
+**Signed URL**
+- Time-limited URL for accessing files in Supabase Storage
+- Generated via `supabase.storage.from_(bucket).create_signed_url(path, expiry_seconds)`
+- Default expiry: 3600 seconds (1 hour)
+- Used for file downloads and PDF/image viewing in the frontend
+- Endpoint: `GET /api/files/{file_id}/download`
 
-**SQL** (Structured Query Language)
-- Language for database queries
-- PDM uses: SELECT, INSERT, UPDATE, DELETE
-- Syntax: `SELECT * FROM table_name WHERE condition`
+**SPA** (Single-Page Application)
+- Frontend architecture where Vue Router handles navigation without full page reloads
+- FastAPI serves `index.html` for all non-API routes in production
+- Catch-all route in `main.py` enables SPA routing
 
 **STEP** (Standard for the Exchange of Product Data)
-- 3D model file format (.step, .stp)
-- Universal CAD format
-- Contains 3D geometry and metadata
-- Source for DXF and SVG generation
+- 3D model file format (`.step`, `.stp`)
+- Universal CAD interchange format containing geometry and metadata
+- Source for DXF and SVG generation via FreeCAD
+- Classified as file type `STEP` in the files table
+
+**Supabase**
+- Open-source Backend-as-a-Service platform built on PostgreSQL
+- Provides: PostgreSQL database, authentication (JWT), file storage, and real-time subscriptions
+- PDM-Web uses Supabase for all data persistence, auth, and file storage
+- Project URL and keys configured via environment variables
+- Dashboard available at `https://supabase.com/dashboard`
+
+**Supabase Auth**
+- Authentication service providing JWT-based login
+- Supports email/password authentication
+- Frontend uses `supabase.auth.signInWithPassword()` for login
+- Session tokens managed automatically by the Supabase client library
+- Login endpoint: `POST /api/auth/login`
+
+**Supabase Storage**
+- File storage service with bucket-based organization
+- PDM uses the `pdm-files` bucket
+- Files accessed via signed URLs (time-limited)
+- Upload via `POST /api/files/upload` (multipart form data)
 
 **SVG** (Scalable Vector Graphics)
-- 2D vector drawing format
-- Used for technical drawings
-- Contains dimensions, annotations, bend lines
-- Generated from STEP files via FreeCAD
-
-**SVG Generation**
-- Automated process creating technical drawings from STEP files
-- Includes dimensions, material callouts, bend annotations
-- Task: `GENERATE_SVG` in work_queue
-- Uses FreeCAD TechDraw workbench
+- 2D vector drawing format used for technical/bend drawings
+- Contains dimensions, annotations, bend lines, material callouts
+- Generated from STEP files via FreeCAD TechDraw workbench
+- Classified as file type `SVG` in the files table
 
 ### T
 
 **Task** (Work Queue)
 - Automated job queued for processing
-- Types: GENERATE_DXF, GENERATE_SVG, PARAM_SYNC, SYNC
-- States: Pending, Processing, Completed, Failed
-- Processed by Worker-Processor service
+- Types: `GENERATE_DXF`, `GENERATE_SVG`, `PARAM_SYNC`
+- States: `pending`, `processing`, `completed`, `failed`
+- Stored in `work_queue` table
+- Viewed via `GET /api/tasks`
 
 **TechDraw Workbench**
 - FreeCAD module for creating technical drawings
-- Generates 2D views from 3D models
-- Creates dimensions and annotations
-- Used in `create_bend_drawing.bat`
+- Generates 2D views from 3D models with dimensions and annotations
+- Used for SVG bend drawing generation
 
 ### U
 
-**Unit**
-- Measurement unit for dimensions
-- PDM uses: millimeters (mm) for DXF, mixed for SVG
-- Specified in DXF header
-- Important for manufacturing accuracy
+**Upload Bridge**
+- PowerShell scripts in `scripts/pdm-upload/` that bridge local files to the web API
+- `PDM-Upload-Service.ps1` -- Watches local folders and uploads files to the API
+- `PDM-BOM-Parser.ps1` -- Parses BOM text files and uploads via bulk BOM endpoint
+- `PDM-Upload-Functions.ps1` -- Shared functions (item number extraction, API calls)
+- `PDM-Upload-Config.ps1` -- Configuration (API URL, watched folders)
+- Replaces the legacy CheckIn-Watcher and BOM-Watcher Windows services
+
+**Upsert**
+- Database operation that inserts a new row or updates an existing one
+- PDM implements this as a try-update-then-insert pattern
+- Triggered via `PATCH /api/items/{item_number}?upsert=true`
+- Used by the upload bridge to create items on first encounter and update on subsequent uploads
+
+**Uvicorn**
+- ASGI server that runs the FastAPI application
+- Development: `uvicorn app.main:app --reload` (auto-restart on file changes)
+- Production: runs without `--reload` flag
+- Default port: 8000 (dev) or 8080 (production)
+
+### V
+
+**Vite**
+- Frontend build tool and development server for Vue 3
+- Provides instant HMR (Hot Module Replacement) during development
+- Builds optimized static assets for production
+- Development server: `npm run dev` (default port 5173)
+- Production build: `npm run build`
+
+**Vue 3**
+- JavaScript framework for building the frontend user interface
+- Uses Composition API with `<script setup>` syntax
+- TypeScript enabled for type safety
+- Components in `frontend/src/views/` and `frontend/src/components/`
+- State management via Pinia stores
+
+**Vue Router**
+- See: Router (Vue Router)
 
 ### W
 
-**Watcher** (Service)
-- PowerShell service that monitors a folder
-- Triggers on file events (create, modify, delete)
-- Examples: CheckIn-Watcher, BOM-Watcher, Release-Watcher
-- Real-time automation
-
 **Where-Used**
-- Reverse BOM lookup: which assemblies contain this part?
-- Example: Part X is used in Assembly A, Assembly B, Assembly C
-- Stored in `bom` table (query child_item)
-- Displayed in web interface
-
-**Worker-Processor**
-- PowerShell service for task execution
-- Monitors: `work_queue` table
-- Executes: GENERATE_DXF, GENERATE_SVG tasks
-- Calls: FreeCAD batch scripts for document generation
-
-**Workflow**
-- Series of steps to accomplish a task
-- Example: Check-in → Classify → Register → Queue → Generate → Register
-- Examples: [COMMON-WORKFLOWS.md](COMMON-WORKFLOWS.md)
+- Reverse BOM lookup: which assemblies contain a given part?
+- Endpoint: `GET /api/bom/{item_number}/where-used`
+- Displayed in the item detail panel in the frontend
+- Queries `bom` table for rows where `child_item_id` matches the item
 
 **Work Queue**
-- Task queue table in database
-- Stores tasks to be processed: `work_queue` table
-- Fields: task_id, item_number, file_path, task_type, status
-- Populated by CheckIn-Watcher, processed by Worker-Processor
-
-### Z
-
-**Zone** (Time Zone)
-- Relevant for timestamps in logs
-- PDM logs stored with timestamps
-- Important for troubleshooting and auditing
+- Task queue table (`work_queue`) in Supabase PostgreSQL
+- Stores tasks for asynchronous processing (DXF/SVG generation, parameter sync)
+- Fields: `id`, `item_id`, `file_id`, `task_type`, `status`, `payload`, `error_message`
+- Viewed in the frontend at `/tasks`
 
 ---
 
-## 📊 Quick Reference Tables
+## Quick Reference Tables
 
 ### File Type Classifications
 
-| Extension | File Type | Destination |
+| Extension | File Type | Description |
 |-----------|-----------|-------------|
-| .prt, .asm, .drw | CAD | CADData\ |
-| .step, .stp | STEP | STEP\ |
-| .dxf | DXF | DXF\ |
-| .svg | SVG | SVG\ |
-| .pdf | PDF | PDF\ |
-| .neu | NEUTRAL_ASM | Neutral\ |
-| _asm.neu | NEUTRAL_ASM | Neutral\ |
-| other | ARCHIVE | Archive\ |
+| .prt, .asm, .drw | CAD | Creo native files |
+| .step, .stp | STEP | 3D interchange format |
+| .dxf | DXF | Flat pattern for manufacturing |
+| .svg | SVG | Technical/bend drawings |
+| .pdf | PDF | Documentation, specifications |
+| .png, .jpg, .jpeg | IMAGE | Images and screenshots |
+| other | OTHER | Miscellaneous files |
 
 ### Lifecycle State Progression
 
 ```
-Design (Initial) → Released (Approved) → Obsolete (Deprecated)
+Design (Initial) -> Released (Approved) -> Obsolete (Deprecated)
 ```
 
 ### Item Number Format
@@ -452,66 +450,87 @@ Design (Initial) → Released (Approved) → Obsolete (Deprecated)
 ```
 csp0030    = 3 letters + 4-6 digits
 wma20120   = Pattern: [a-z]{3}\d{4,6}
-stp01000   = Normalized to lowercase
+stp01000   = Always normalized to lowercase
+mmc00100   = McMaster-Carr supplier part
+spn00200   = Other supplier part
+zzz00001   = Reference only (not created as real items)
 ```
 
-### Revision & Iteration Format
+### API Endpoints Summary
 
-```
-A.1 = Revision A, Iteration 1
-B.3 = Revision B, Iteration 3
-C.2 = Revision C, Iteration 2
-```
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | /api/auth/login | User authentication |
+| GET | /api/items | List items with filtering |
+| POST | /api/items | Create item |
+| GET | /api/items/{item_number} | Get item with files |
+| PATCH | /api/items/{item_number} | Update or upsert item |
+| DELETE | /api/items/{item_number} | Delete item |
+| POST | /api/files/upload | Upload file to storage |
+| GET | /api/files/{file_id}/download | Get signed download URL |
+| GET | /api/bom/{item_number} | Single-level BOM |
+| GET | /api/bom/{item_number}/tree | Multi-level BOM tree |
+| GET | /api/bom/{item_number}/where-used | Reverse BOM lookup |
+| POST | /api/bom/bulk | Bulk BOM upload |
+| GET | /api/tasks | List work queue tasks |
+
+### Frontend Routes
+
+| Path | View | Purpose |
+|------|------|---------|
+| /login | LoginView | Authentication |
+| / | HomeView | Dashboard/landing page |
+| /pdm-browser | ItemsView | Main item browser table |
+| /items/:itemNumber | ItemDetailView | Item detail page |
+| /part-numbers | PartNumbersView | Part number listing |
+| /projects | ProjectsView | Project management |
+| /tasks | TasksView | Work queue viewer |
+| /mrp/dashboard | MrpDashboardView | MRP overview |
+| /mrp/routing | MrpRoutingView | Manufacturing routing |
+| /mrp/shop | MrpShopView | Shop floor view |
+| /mrp/parts | MrpPartLookupView | MRP part lookup |
+| /mrp/tracking | MrpProjectTrackingView | Project tracking |
+| /mrp/materials | MrpRawMaterialsView | Raw materials |
 
 ### Database Tables Summary
 
 | Table | Purpose |
 |-------|---------|
 | items | Part/assembly metadata |
-| files | File tracking |
+| files | File tracking (linked to items via item_id) |
 | bom | Parent/child relationships |
-| work_queue | Task queue |
+| work_queue | Task queue for async processing |
 | lifecycle_history | State change audit trail |
-| checkouts | Active checkouts |
+| checkouts | Active item checkouts |
+| projects | Project grouping |
+| users | User accounts (linked to Supabase Auth) |
 
-### Service Names & Purpose
+### Development Ports
 
-| Service | Purpose |
-|---------|---------|
-| CheckIn-Watcher | File ingestion |
-| BOM-Watcher | BOM processing |
-| Worker-Processor | Task execution |
-| Part-Parameter-Watcher | Parameter updates |
-| Release-Watcher | Release workflow (in dev) |
-| Revise-Watcher | Revision management (in dev) |
-
-### Web Server Ports
-
-| Port | Service |
-|------|---------|
-| 3000 | PDM Browser |
-| 3002 | Part Numbers List |
-| 8082 | Workspace Comparison |
+| Port | Service | Context |
+|------|---------|---------|
+| 5173 | Vite dev server | Frontend development |
+| 8000 | Uvicorn | Backend development |
+| 8080 | Uvicorn | Production (default) |
 
 ---
 
-## 🔍 Finding Definitions
+## Finding Definitions
 
 **By Category:**
 - **File Types:** See "File Type Classifications" table
-- **Services:** See "Service Names & Purpose" table
+- **API:** See "API Endpoints Summary" table
+- **Frontend:** See "Frontend Routes" table
+- **Database:** See "Database Tables Summary" table
 - **States:** See "Lifecycle State Progression"
-- **Database:** See "Database Tables Summary"
 
-**Alphabetically:** Use Ctrl+F to search this document
-
-**By Task:** See related guides
-- Check-in operations: [COMMON-WORKFLOWS.md](COMMON-WORKFLOWS.md)
-- Service management: [05-POWERSHELL-SCRIPTS-INDEX.md](05-POWERSHELL-SCRIPTS-INDEX.md)
-- Web server: [08-PDM-WEBSERVER-README.md](08-PDM-WEBSERVER-README.md)
+**By Task:**
+- Development setup: [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md)
+- Troubleshooting: [19-TROUBLESHOOTING-DECISION-TREE.md](19-TROUBLESHOOTING-DECISION-TREE.md)
+- Architecture: [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md)
 
 ---
 
-**Last Updated:** 2025-01-03
-**Version:** 2.0
-**Related:** [02-PDM-COMPLETE-OVERVIEW.md](02-PDM-COMPLETE-OVERVIEW.md), [01-PDM-SYSTEM-MAP.md](01-PDM-SYSTEM-MAP.md)
+**Last Updated:** 2025-01-29
+**Version:** 3.0
+**Related:** [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md), [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md)

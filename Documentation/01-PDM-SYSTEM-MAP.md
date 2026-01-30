@@ -1,316 +1,271 @@
-# PDM System File Map & Directory Structure
+# PDM-Web System Architecture Map
 
-**Quick Reference Guide for AI Models and Users to Locate PDM Components**
+**Quick reference for system layout, data flow, and component locations.**
 
 ---
 
-## Directory Structure Overview
+## Architecture Overview
 
 ```
-D:\
-├── PDM_Vault/                    ← Core system data & database
-│   ├── CADData/                  ← Ingested CAD files organized by type
-│   │   ├── CheckIn/              ← Drop files here for ingestion
-│   │   ├── STEP/                 ← 3D models
-│   │   ├── DXF/                  ← Flat patterns
-│   │   ├── SVG/                  ← Technical drawings
-│   │   ├── PDF/                  ← Documentation
-│   │   ├── Archive/              ← Other files
-│   │   ├── Neutral/              ← Creo neutral files
-│   │   ├── ParameterUpdate/      ← Parameter change tracking
-│   │   ├── BOM/                  ← Bill of Materials text exports
-│   │   ├── Release/              ← Items pending release
-│   │   └── [Native CAD]/         ← Creo native files (.prt, .asm)
-│   ├── Released/                 ← Locked/released items
-│   ├── Transfer/                 ← Remote work staging
-│   ├── logs/                     ← System logs (pdm.log)
-│   ├── pdm.sqlite                ← Central SQLite database
-│   └── schema.sql                ← Database schema definition
-│
-├── PDM_PowerShell/               ← Automation services
-│   ├── CheckIn-Watcher.ps1       ← File ingestion service
-│   ├── BOM-Watcher.ps1           ← BOM processing service
-│   ├── MLBOM-Watcher.ps1         ← Multi-level BOM processing
-│   ├── Worker-Processor.ps1      ← Task execution service
-│   ├── Release-Watcher.ps1       ← Release workflow (in development)
-│   ├── Revise-Watcher.ps1        ← Revision management (in development)
-│   ├── Part-Parameter-Watcher.ps1 ← Parameter sync service
-│   ├── PDM-Library.ps1           ← Core shared functions
-│   ├── Get-BOMCost.ps1           ← BOM cost rollup tool
-│   ├── Get-McMasterPrint.ps1     ← Supplier data retrieval
-│   ├── PDM-Database-Cleanup.ps1  ← Database maintenance
-│   ├── CompareWorkspace.ps1      ← Creo workspace comparison
-│   ├── Restart-PDM-Services.ps1  ← Service management
-│   ├── Start-PartNumbersList.ps1 ← Part search web server
-│   ├── Clear-PDM-Data.ps1        ← DESTRUCTIVE - data reset
-│   ├── README.md                 ← Script index & descriptions
-│   ├── Use Guides/               ← Documentation
-│   │   └── PDM-DATABASE-CLEANUP-GUIDE.md
-│   ├── SQLite/                   ← SQLite libraries & tools
-│   ├── Backups/                  ← Previous versions
-│   └── logs/                     ← Runtime logs
-│
-├── PDM_WebServer/                ← Web interface (PDM + MRP)
-│   ├── server.js                 ← Node.js backend
-│   ├── package.json              ← Dependencies
-│   ├── public/                   ← Frontend files
-│   │   └── index.html            ← UI
-│   ├── README.md                 ← Setup & installation
-│   ├── DEPLOYMENT.md             ← Quick deployment guide
-│   ├── OVERVIEW.md               ← UI/UX design
-│   └── QUICK-REFERENCE.md        ← User guide
-│
-├── FreeCAD/                      ← CAD automation engine
-│   └── Tools/
-│       ├── flatten_sheetmetal.bat ← DXF generation wrapper
-│       ├── Flatten_sheetmetal_portable.py ← DXF generation script
-│       ├── create_bend_drawing.bat ← SVG generation wrapper
-│       └── Create_bend_drawing_portable.py ← SVG generation script
-│
-├── Local_Creo_Files/             ← Creo integration
-│   └── Powershell/
-│       └── LOCAL_PDM_SERVICES_GUIDE.md
-│
-├── MRP_System/                   ← Manufacturing resource planning
-│
-├── PDM-Libraries/                ← External libraries
-│
-├── Documentation/                ← Complete documentation (26 files)
-│   ├── README.md                 ← Documentation index & navigation
-│   ├── 00-TABLE-OF-CONTENTS.md   ← Original comprehensive index
-│   ├── 01-PDM-SYSTEM-MAP.md      ← This file (system overview)
-│   ├── 02-PDM-COMPLETE-OVERVIEW.md ← Master system reference
-│   ├── 03-DATABASE-SCHEMA.md     ← Database structures
-│   ├── 04-SERVICES-REFERENCE.md  ← Service configuration
-│   ├── 05-POWERSHELL-SCRIPTS-INDEX.md ← Script inventory (15 scripts)
-│   ├── 06-BOM-COST-ROLLUP-GUIDE.md ← Cost calculation tool
-│   ├── 07-PDM-DATABASE-CLEANUP-GUIDE.md ← Database maintenance
-│   ├── 08-PDM-WEBSERVER-README.md ← Web server setup & PDM+MRP
-│   ├── 09-PDM-WEBSERVER-DEPLOYMENT.md ← Quick deployment
-│   ├── 10-PDM-WEBSERVER-OVERVIEW.md ← UI design
-│   ├── 11-PDM-WEBSERVER-QUICK-REFERENCE.md ← Daily operations
-│   ├── 12-FREECAD-AUTOMATION.md  ← DXF/SVG generation
-│   ├── 13-LOCAL-PDM-SERVICES-GUIDE.md ← Creo integration
-│   ├── 14-SKILL-DEFINITION.md    ← AI skill definition
-│   ├── 15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md ← Development notes
-│   ├── 16-DOCUMENTATION-UPDATES-SUMMARY.md ← Change log
-│   ├── 17-QUICK-START-CHECKLIST.md ← First-time setup
-│   ├── 18-GLOSSARY-TERMS.md      ← Terminology reference
-│   ├── 19-TROUBLESHOOTING-DECISION-TREE.md ← Problem solving
-│   ├── 20-COMMON-WORKFLOWS.md    ← Step-by-step guides
-│   ├── 21-BACKUP-RECOVERY-GUIDE.md ← Data protection
-│   ├── 22-PERFORMANCE-TUNING-GUIDE.md ← Optimization
-│   ├── 23-SYSTEM-CONFIGURATION.md ← Configuration reference
-│   ├── 24-VERSION-HISTORY.md     ← Release notes
-│   ├── 25-INTEGRATION-EXAMPLES.md ← Custom extensions
-│   └── 26-SECURITY-HARDENING.md  ← Security guide
-│
-├── Skills/                       ← AI skill definitions & references
-│   ├── SKILL.md                  ← Claude AI skill definition
-│   ├── database_schema.md        ← Database table structures
-│   ├── services.md               ← Service configuration reference
-│   ├── freecad_automation.md     ← FreeCAD automation reference
-│   └── DEVELOPMENT-NOTES-workspace-comparison.md ← Development session notes
-│
-└── Google_Drive_Converter/       ← Utility
+                        +---------------------------+
+                        |       Users / Browser     |
+                        |  (Jack, Dan, Shop)        |
+                        +------------+--------------+
+                                     |
+                                     | HTTPS
+                                     v
+                        +---------------------------+
+                        |    Vue 3 Frontend (SPA)   |
+                        |   Vite dev / static build |
+                        |   Pinia state management  |
+                        |   Vue Router navigation   |
+                        +------------+--------------+
+                                     |
+                       +-------------+-------------+
+                       |                           |
+                       v                           v
+          +---------------------+     +------------------------+
+          |   FastAPI Backend   |     |   Supabase Auth        |
+          |   Python 3 / REST  |     |   JWT tokens           |
+          |   Port 8080        |     |   Email/password login |
+          +----------+----------+     +------------------------+
+                     |
+          +----------+----------+
+          |                     |
+          v                     v
++-------------------+  +-------------------+
+| Supabase Database |  | Supabase Storage  |
+| PostgreSQL (cloud)|  | File buckets      |
+| Tables: items,    |  | Bucket: pdm-files |
+| files, bom,       |  | Signed URLs for   |
+| work_queue, etc.  |  | downloads         |
++-------------------+  +-------------------+
+
+          +---------------------------+
+          |   Upload Bridge           |
+          |   (Local workstation)     |
+          |   PowerShell scripts      |
+          |   Watches C:\PDM-Upload   |
+          |   POSTs to FastAPI API    |
+          +---------------------------+
+
+          +---------------------------+
+          |   FreeCAD Docker Worker   |
+          |   Container: pdm-freecad  |
+          |   DXF flat patterns       |
+          |   SVG bend drawings       |
+          +---------------------------+
 ```
 
 ---
 
-## Core Documentation Files
+## Technology Layers
 
-### Master Reference
-| File | Location | Purpose |
-|------|----------|---------|
-| **PDM System Complete Overview** | `D:\PDM_COMPLETE_OVERVIEW.md` | Full system architecture, all services, workflows, database schema |
-| **System Map (This File)** | `D:\PDM_SYSTEM_MAP.md` | Directory structure and file locations for quick reference |
-
-### Service Documentation
-| Service | Primary Doc | Reference | Status |
-|---------|------------|-----------|--------|
-| **CheckIn-Watcher** | `D:\PDM_COMPLETE_OVERVIEW.md` | `D:\Skills\services.md` | Production |
-| **BOM-Watcher** | `D:\PDM_COMPLETE_OVERVIEW.md` | `D:\Skills\services.md` | Production |
-| **Worker-Processor** | `D:\PDM_COMPLETE_OVERVIEW.md` | `D:\Skills\services.md` | Production |
-| **Part-Parameter-Watcher** | `D:\PDM_COMPLETE_OVERVIEW.md` | `D:\Skills\services.md` | Production |
-| **Release-Watcher** | `D:\PDM_COMPLETE_OVERVIEW.md` | `D:\Skills\services.md` | In Development |
-| **Revise-Watcher** | `D:\PDM_COMPLETE_OVERVIEW.md` | `D:\Skills\services.md` | In Development |
-
-### Web Interface Documentation
-| Doc | Location | Purpose |
-|-----|----------|---------|
-| **Setup Guide** | `D:\PDM_WebServer\README.md` | Installation, configuration, service management |
-| **Deployment** | `D:\PDM_WebServer\DEPLOYMENT.md` | Quick 5-minute setup checklist |
-| **UI Overview** | `D:\PDM_WebServer\OVERVIEW.md` | Visual design, features, architecture |
-| **Quick Reference** | `D:\PDM_WebServer\QUICK-REFERENCE.md` | Daily operations, shortcuts, troubleshooting |
-
-### Database Documentation
-| Doc | Location | Purpose |
-|-----|----------|---------|
-| **Schema Reference** | `D:\Skills\database_schema.md` | Table structures, SQL patterns, queries |
-| **Database Cleanup** | `D:\PDM_PowerShell\Use Guides\PDM-DATABASE-CLEANUP-GUIDE.md` | Orphaned file cleanup, maintenance |
-
-### Tools Documentation
-| Tool | Location | Documentation |
-|------|----------|-----------------|
-| **BOM Cost Rollup** | `D:\PDM_PowerShell\Get-BOMCost.ps1` | `D:\PDM_PowerShell\README.md` |
-| **FreeCAD Automation** | `D:\FreeCAD\Tools\` | `D:\Skills\freecad_automation.md` |
-| **Creo Integration** | `D:\Local_Creo_Files\Powershell\` | `D:\Local_Creo_Files\Powershell\LOCAL_PDM_SERVICES_GUIDE.md` |
-| **PowerShell Scripts** | `D:\PDM_PowerShell\` | `D:\PDM_PowerShell\README.md` |
-
-### Advanced References
-| Doc | Location | Purpose |
-|-----|----------|---------|
-| **AI Skill Definition** | `D:\Skills\SKILL.md` | Claude AI skill triggers and system info |
-| **Development Notes** | `D:\Skills\DEVELOPMENT-NOTES-workspace-comparison.md` | Workspace comparison tool development |
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Frontend** | Vue 3 + Vite + TypeScript | Single-page application, desktop-first UI |
+| **State Management** | Pinia | Reactive stores for auth and items |
+| **Routing** | Vue Router | Client-side navigation with auth guards |
+| **Backend API** | FastAPI (Python 3) | REST API, business logic, file upload handling |
+| **Database** | Supabase PostgreSQL | Cloud-hosted relational database |
+| **Authentication** | Supabase Auth | JWT-based email/password authentication |
+| **File Storage** | Supabase Storage | Cloud file storage with signed URL access |
+| **CAD Processing** | FreeCAD Docker | Headless FreeCAD for DXF/SVG generation |
+| **Upload Bridge** | PowerShell scripts | Local file watcher that uploads to the API |
 
 ---
 
-## Key Locations Quick Lookup
+## Project Structure
 
-### Where to Drop Files
-- **CAD Files for Ingestion:** `D:\PDM_Vault\CADData\CheckIn\`
-- **BOM Exports:** `D:\PDM_Vault\CADData\BOM\`
-- **Parameter Updates:** `D:\PDM_Vault\CADData\ParameterUpdate\`
-- **Items for Release:** `D:\PDM_Vault\Release\`
-
-### Where to Find Data
-- **Database:** `D:\PDM_Vault\pdm.sqlite`
-- **Processed Files:** `D:\PDM_Vault\CADData\STEP\`, `DXF\`, `SVG\`, `PDF\`
-- **Locked Files:** `D:\PDM_Vault\Released\`
-- **System Logs:** `D:\PDM_Vault\logs\pdm.log`
-
-### Where to Run Services
-- **Windows Services:** Start from `D:\PDM_PowerShell\` scripts
-- **Web Server:** Run from `D:\PDM_WebServer\`
-- **Web Server (Part Search):** Run `D:\PDM_PowerShell\Start-PartNumbersList.ps1`
-
-### Where to Find Tools
-- **BOM Cost Rollup:** `D:\PDM_PowerShell\Get-BOMCost.ps1`
-- **Database Cleanup:** `D:\PDM_PowerShell\PDM-Database-Cleanup.ps1`
-- **Workspace Comparison:** `D:\PDM_PowerShell\CompareWorkspace.ps1`
-- **FreeCAD Scripts:** `D:\FreeCAD\Tools\`
+```
+pdm-web/
+|
++-- frontend/                        Vue 3 + Vite application
+|   +-- src/
+|   |   +-- views/                   Page-level components
+|   |   |   +-- HomeView.vue             Dashboard / landing page
+|   |   |   +-- LoginView.vue            Authentication page
+|   |   |   +-- ItemsView.vue            PDM item browser (search, filter, table)
+|   |   |   +-- ItemDetailView.vue       Single item: metadata, files, BOM, history
+|   |   |   +-- PartNumbersView.vue      Quick part number lookup list
+|   |   |   +-- ProjectsView.vue         Project management
+|   |   |   +-- TasksView.vue            Work queue / task monitor
+|   |   |   +-- MrpDashboardView.vue     MRP dashboard overview
+|   |   |   +-- MrpRoutingView.vue       Manufacturing routing
+|   |   |   +-- MrpShopView.vue          Shop floor view
+|   |   |   +-- MrpPartLookupView.vue    MRP part search
+|   |   |   +-- MrpProjectTrackingView.vue  Project tracking
+|   |   |   +-- MrpRawMaterialsView.vue  Raw materials inventory
+|   |   |
+|   |   +-- components/              Reusable UI components
+|   |   +-- stores/                  Pinia state management
+|   |   |   +-- auth.ts                 Authentication state, JWT handling
+|   |   |   +-- items.ts                Item data caching and operations
+|   |   +-- services/                External service clients
+|   |   |   +-- supabase.ts             Supabase client configuration
+|   |   |   +-- storage.ts              Storage helper utilities
+|   |   +-- router/
+|   |       +-- index.ts                Route definitions and auth guards
+|   +-- package.json
+|   +-- vite.config.ts
+|
++-- backend/                         FastAPI Python application
+|   +-- app/
+|   |   +-- main.py                  FastAPI app, CORS, router registration, static serving
+|   |   +-- config.py                Pydantic settings (env vars, Supabase keys, CORS)
+|   |   +-- routes/                  API route modules
+|   |   |   +-- items.py                Item CRUD, search, filtering, upsert
+|   |   |   +-- files.py                File upload, download (signed URLs), metadata
+|   |   |   +-- bom.py                  BOM CRUD, tree traversal, where-used, bulk upload
+|   |   |   +-- auth.py                 Login, logout, current user, user listing
+|   |   |   +-- tasks.py                Work queue: list, create, start, complete tasks
+|   |   |   +-- projects.py             Project management
+|   |   |   +-- mrp.py                  MRP endpoints (print packets)
+|   |   +-- models/
+|   |   |   +-- schemas.py              Pydantic request/response models
+|   |   +-- services/
+|   |       +-- supabase.py             Supabase client (anon + admin/service key)
+|   |       +-- print_packet.py         MRP print packet generation
+|   +-- requirements.txt
+|   +-- .env                         Environment variables (not committed)
+|
++-- scripts/                         Local upload bridge
+|   +-- pdm-upload/
+|       +-- PDM-Upload-Service.ps1   File watcher: monitors folder, uploads to API
+|       +-- PDM-Upload-Functions.ps1 Helper functions for HTTP upload, item upsert
+|       +-- PDM-BOM-Parser.ps1       BOM text file parser (Creo tree exports)
+|       +-- PDM-Upload-Config.ps1    Configuration: API URL, watch folder, log path
+|
++-- worker/                          FreeCAD Docker worker
+|   +-- Dockerfile                   Based on amrit3701/freecad-cli:latest
+|   +-- scripts/                     Worker helper scripts
+|
++-- FreeCAD/                         FreeCAD processing scripts
+|   +-- Tools/
+|   |   +-- Flatten_sheetmetal_portable.py    DXF flat pattern generation
+|   |   +-- Create_bend_drawing_portable.py   SVG bend drawing generation
+|   +-- Mod/
+|       +-- sheetmetal/              SheetMetal workbench addon
+|
++-- files/                           Local file staging (Docker volume mount)
++-- docker-compose.yml               FreeCAD worker container definition
++-- Documentation/                   System documentation
++-- Legacy/                          Archived previous system (reference only)
++-- CLAUDE.md                        AI assistant project context
+```
 
 ---
 
-## Web Server (PDM + MRP)
+## Data Flow
 
-### PDM Browser
-- **Served on:** `http://localhost:3000`
-- **Location:** `D:\PDM_WebServer\`
-- **Database:** `D:\PDM_Vault\pdm.sqlite`
-- **Features:** Item browsing, BOM navigation, lifecycle history, file tracking
+### File Upload Flow (via Upload Bridge)
 
-### MRP System Integration
-- **Status:** Shared web server infrastructure
-- **Database:** Can connect to MRP system databases
-- **Configuration:** `D:\PDM_WebServer\server.js`
-- **Scalability:** Node.js backend supports multiple database connections
+```
+Local Workstation                    PDM-Web Backend              Supabase
++------------------+                +------------------+         +----------------+
+| C:\PDM-Upload\   |   HTTP POST   | POST /api/files/ |         |                |
+| file dropped     | ------------> | upload           | ------> | Storage bucket |
+| (STEP, PDF, etc) |               |                  |         | pdm-files/     |
++------------------+               | POST /api/items/ |         |                |
+                                   | (upsert item)    | ------> | items table    |
+                                   +------------------+         | files table    |
+                                                                +----------------+
+```
 
-### Part Numbers List (Search Web)
-- **Served on:** `http://localhost:3002`
-- **Launcher:** `D:\PDM_PowerShell\Start-PartNumbersList.ps1`
-- **Purpose:** Quick searchable part database interface
+### BOM Upload Flow
+
+```
+Local Workstation                    PDM-Web Backend              Supabase
++------------------+                +------------------+         +----------------+
+| C:\PDM-Upload\   |   HTTP POST   | POST /api/bom/   |         |                |
+| BOM.txt dropped  | ------------> | bulk             | ------> | items table    |
+| (Creo tree       |               |                  |         | bom table      |
+|  export)         |               | Creates/updates  |         |                |
++------------------+               | parent + children|         +----------------+
+                                   +------------------+
+```
+
+### User Browsing Flow
+
+```
+Browser                Vue Frontend          FastAPI Backend        Supabase
++--------+            +-------------+       +----------------+    +----------+
+| User   | ---------> | ItemsView   | ----> | GET /api/items | -> | items    |
+| clicks |            |             | <---- | JSON response  | <- | table    |
+| item   | ---------> | ItemDetail  | ----> | GET /api/items | -> | items +  |
+|        |            | View        | <---- | /{item_number} | <- | files +  |
+|        |            |             |       |                |    | bom      |
+| views  | ---------> | PDF viewer  | ----> | GET /api/files | -> | Storage  |
+| file   |            |             | <---- | /{id}/download | <- | signed   |
++--------+            +-------------+       +----------------+    | URL      |
+                                                                  +----------+
+```
 
 ---
 
 ## Database Tables
 
-| Table | Location in DB | Purpose |
-|-------|---|---------|
-| **items** | `D:\PDM_Vault\pdm.sqlite` | Part metadata, revision/iteration, lifecycle state, pricing |
-| **files** | `D:\PDM_Vault\pdm.sqlite` | File paths, types, version info |
-| **bom** | `D:\PDM_Vault\pdm.sqlite` | Parent/child relationships, quantities |
-| **work_queue** | `D:\PDM_Vault\pdm.sqlite` | Tasks for Worker-Processor (DXF/SVG generation) |
-| **lifecycle_history** | `D:\PDM_Vault\pdm.sqlite` | Audit trail of state changes |
-| **checkouts** | `D:\PDM_Vault\pdm.sqlite` | Active item checkouts |
+| Table | Primary Key | Purpose |
+|-------|-------------|---------|
+| **users** | id (UUID) | User accounts linked to Supabase Auth |
+| **projects** | id (UUID) | Project groupings for items |
+| **items** | id (UUID) | Part metadata, revision, lifecycle, properties |
+| **files** | id (UUID) | File records with Supabase Storage paths |
+| **bom** | id (UUID) | Parent-child assembly relationships with quantities |
+| **work_queue** | id (UUID) | Async task queue (DXF/SVG generation, sync) |
+| **lifecycle_history** | id (UUID) | Audit trail for item state changes |
+| **checkouts** | item_id + user_id | Active item checkout tracking |
 
 ---
 
-## Service Startup Commands
+## API Route Map
 
-### Manual Startup (Development)
-```powershell
-# Terminal 1: File ingestion
-powershell -File "D:\PDM_PowerShell\CheckIn-Watcher.ps1"
+All routes are prefixed with `/api`.
 
-# Terminal 2: Task processing
-powershell -File "D:\PDM_PowerShell\Worker-Processor.ps1"
+| Module | Prefix | Key Endpoints |
+|--------|--------|---------------|
+| **auth** | `/api/auth` | `POST /login`, `POST /logout`, `GET /me`, `GET /users` |
+| **items** | `/api/items` | `GET /`, `POST /`, `GET /{item_number}`, `PATCH /{item_number}`, `DELETE /{item_number}`, `GET /{item_number}/history` |
+| **files** | `/api/files` | `GET /`, `POST /upload`, `GET /{file_id}`, `GET /{file_id}/download`, `DELETE /{file_id}` |
+| **bom** | `/api/bom` | `GET /{item_number}`, `GET /{item_number}/tree`, `GET /{item_number}/where-used`, `POST /`, `POST /bulk`, `PATCH /{bom_id}`, `DELETE /{bom_id}` |
+| **projects** | `/api/projects` | Project CRUD |
+| **tasks** | `/api/tasks` | `GET /`, `GET /pending`, `POST /`, `POST /generate-dxf/{item_number}`, `POST /generate-svg/{item_number}`, `PATCH /{task_id}/start`, `PATCH /{task_id}/complete` |
+| **mrp** | `/api/mrp` | `POST /projects/{project_id}/print-packet` |
+| **health** | `/health` | `GET /` -- health check |
 
-# Terminal 3: BOM processing
-powershell -File "D:\PDM_PowerShell\BOM-Watcher.ps1"
+---
 
-# Terminal 4: Web server
-cd D:\PDM_WebServer
-node server.js
+## Configuration Reference
+
+| Component | Config Location | Key Settings |
+|-----------|----------------|-------------|
+| Backend | `backend/.env` | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `API_PORT`, `CORS_ALLOW_ALL` |
+| Frontend | `frontend/src/services/supabase.ts` | Supabase URL and anon key |
+| Upload Bridge | `scripts/pdm-upload/PDM-Upload-Config.ps1` | API URL, watch folder path, log path |
+| Docker | `docker-compose.yml` | Volume mounts, container name |
+
+---
+
+## Development Commands
+
+```bash
+# Start backend (development with auto-reload)
+cd backend && uvicorn app.main:app --reload --port 8080
+
+# Start frontend (development with hot-reload)
+cd frontend && npm run dev
+
+# Start FreeCAD Docker worker
+docker-compose up -d freecad-worker
+
+# Run FreeCAD processing manually
+docker exec pdm-freecad-worker python3 /scripts/tools/Flatten_sheetmetal_portable.py /data/files/part.stp
+
+# View API documentation
+# Navigate to http://localhost:8080/docs (Swagger UI)
+# Navigate to http://localhost:8080/redoc (ReDoc)
 ```
 
-### Windows Service Installation
-See `D:\PDM_COMPLETE_OVERVIEW.md` - Service Management section
-
-### Web Server as Service
-See `D:\PDM_WebServer\README.md` - Running the Server section
-
 ---
 
-## Documentation Hierarchy for AI Models
-
-### Level 1: System Overview
-Start with `D:\PDM_COMPLETE_OVERVIEW.md` for architecture and workflow understanding
-
-### Level 2: Component Details
-- Services: `D:\Skills\services.md`
-- Database: `D:\Skills\database_schema.md`
-- FreeCAD: `D:\Skills\freecad_automation.md`
-
-### Level 3: Operational Guides
-- Web Server: `D:\PDM_WebServer\README.md`
-- Cleanup: `D:\PDM_PowerShell\Use Guides\PDM-DATABASE-CLEANUP-GUIDE.md`
-- Scripts: `D:\PDM_PowerShell\README.md`
-
-### Level 4: Advanced References
-- Creo Integration: `D:\Local_Creo_Files\Powershell\LOCAL_PDM_SERVICES_GUIDE.md`
-- Development: `D:\Skills\DEVELOPMENT-NOTES-workspace-comparison.md`
-
----
-
-## File Type Summary
-
-| Type | Quantity | Location |
-|------|----------|----------|
-| Markdown Documentation | 13 files | Various |
-| PowerShell Scripts | 15 active | `D:\PDM_PowerShell\` |
-| FreeCAD Python Scripts | 2 | `D:\FreeCAD\Tools\` |
-| Batch Files | 2 | `D:\FreeCAD\Tools\` |
-| Node.js Web Server | 3 files | `D:\PDM_WebServer\` |
-| Database | 1 file | `D:\PDM_Vault\pdm.sqlite` |
-
----
-
-## Version Information
-
-**System Version:** v2.0 (2025-01-01)
-- DXF scaling fix resolved
-- Manual DXF generation with explicit units
-- Enhanced Worker-Processor logging
-- Part-Parameter-Watcher added
-
-**Key Dependencies:**
-- PowerShell 5.1+
-- Node.js (LTS)
-- FreeCAD 0.20+
-- SQLite 3.x
-- Creo Parametric (optional)
-
----
-
-## Related Systems
-
-- **MRP System:** `D:\MRP_System\` (integrated via web server)
-- **FreeCAD:** CAD automation for DXF/SVG generation
-- **Creo Parametric:** Native CAD integration (optional)
-- **SQLite:** Core database
-
----
-
-**Last Updated:** 2025-01-03
-**For Quick Navigation:** Use this map to locate any PDM component or documentation
+**Last Updated:** 2026-01-29

@@ -1,184 +1,374 @@
+# System Capabilities Reference
+
+PDM-Web is a web-based Product Data Management system for managing CAD files, Bills of Materials, lifecycle tracking, and manufacturing document generation. This document describes the system's capabilities organized by functional area.
+
+## Technology Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Vue 3 + Vite + Pinia + PrimeVue |
+| Backend | FastAPI (Python) |
+| Database | Supabase PostgreSQL |
+| Authentication | Supabase Auth (JWT) |
+| File Storage | Supabase Storage |
+| CAD Processing | FreeCAD Docker container (`amrit3701/freecad-cli:latest`) |
+| Upload Bridge | PowerShell scripts (`scripts/pdm-upload/`) |
+
 ---
-name: pdm-system
-description: Folder-based Product Data Management system with SQLite tracking, automated PowerShell services, and FreeCAD/CAD integration. Use when working with Jack's PDM system for tasks involving part numbers, revisions, file processing workflows, database queries, service management, or CAD automation scripts. Triggers include references to items, lifecycle states, CheckIn folder, CADData folders (STEP/DXF/SVG/PDF/BOM), work_queue, CheckIn-Watcher/BOM-Watcher/Release-Watcher/Worker-Processor services, FreeCAD batch processing, or BOM extraction from tree tool exports.
+
+## Item Management
+
+Items are the core entity in the PDM system. Each item represents a part, assembly, or purchased component.
+
+### Capabilities
+
+- **Create items** with item number, name, description, revision, lifecycle state, project assignment, and material properties
+- **Edit items** including all metadata fields: material, mass, thickness, cut length, cut time, price estimate, supplier info
+- **Delete items** and cascade removal of associated records
+- **Search and filter** by item number, name, lifecycle state, project, and supplier status
+- **Sort items** by any column in the items table (item number, description, project, revision, state, material, date, mass)
+- **Upsert items** -- create or update in a single operation (used by the upload bridge for bulk data import)
+- **Supplier parts** -- items with `mmc` or `spn` prefixes are automatically flagged as supplier parts with optional supplier name and part number fields
+
+### Item Numbering
+
+- Format: 3 lowercase letters + 4-6 digits (e.g., `csp0030`, `wma20120`)
+- Normalized to lowercase on creation
+- Special prefixes: `mmc` (McMaster-Carr), `spn` (supplier), `zzz` (reference/excluded)
+- Part Number Generator view shows next available numbers for each prefix
+
+### Lifecycle States
+
+Items progress through defined lifecycle states:
+
+| State | Description |
+|---|---|
+| Design | Active engineering work |
+| Review | Pending approval |
+| Released | Approved for production |
+| Obsolete | No longer active |
+
+Lifecycle transitions are tracked in the `lifecycle_history` table with timestamps and user attribution.
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/items` | List items with optional search, filter, pagination |
+| GET | `/api/items/{item_number}` | Get item with associated files |
+| POST | `/api/items` | Create a new item |
+| PATCH | `/api/items/{item_number}` | Update item (supports `?upsert=true`) |
+| DELETE | `/api/items/{item_number}` | Delete an item |
+| GET | `/api/items/{item_number}/history` | Get lifecycle history |
+
+### Frontend Views
+
+- **PDM Browser** (`/pdm-browser`) -- Full item table with search, filter, sort, and detail panel
+- **Item Detail** (`/items/{itemNumber}`) -- Dedicated detail page with files, BOM, where-used
+- **Part Number Generator** (`/part-numbers`) -- Shows next available numbers per prefix
+
 ---
 
-# PDM System
+## File Management
 
-Jack's custom folder-based Product Data Management (PDM) system for managing CAD files, lifecycle tracking, and automated manufacturing document generation.
+Files are associated with items and stored in Supabase Storage. The system tracks file metadata in the database and serves files via signed URLs.
 
-## System Architecture
+### Capabilities
 
-### Folder Structure
-```
-D:\PDM_Vault\
-├── CADData\
-│   ├── CheckIn\         (monitored by CheckIn-Watcher)
-│   ├── BOM\             (monitored by BOM-Watcher - tree exports)
-│   ├── STEP\           (3D models)
-│   ├── DXF\            (flattened patterns)
-│   ├── SVG\            (technical drawings)
-│   ├── PDF\            (documentation)
-│   ├── Archive\        (other files)
-│   └── [CAD native files - .prt, .asm, .drw]
-├── logs\
-│   └── pdm.log
-└── pdm.sqlite          (database)
+- **Upload files** via web UI or the PDM Upload Service (PowerShell bridge)
+- **Download files** through time-limited signed URLs (1-hour expiry)
+- **Preview files** in the browser -- PDFs, images (PNG, JPG), and SVGs open in new tabs
+- **Track file metadata** including type, size, revision, iteration, and upload timestamp
+- **Automatic iteration bumping** -- re-uploading a file with the same name increments the iteration counter
+- **File type classification** -- automatic detection from extension (STEP, DXF, SVG, PDF, CAD, IMAGE, OTHER)
 
-D:\PDM_PowerShell\      (service scripts)
-D:\FreeCAD\Tools\       (batch automation scripts)
-```
+### Supported File Types
 
-### File Types Tracked
-- **CAD**: .prt, .asm, .drw (Creo Parametric native)
-- **STEP**: .step, .stp (3D interchange format)
-- **DXF**: .dxf (2D flat patterns for manufacturing)
-- **SVG**: .svg (technical drawings with dimensions)
-- **PDF**: .pdf (documentation)
+| Extension | Type Classification | Description |
+|---|---|---|
+| `.stp`, `.step` | STEP | 3D model interchange format |
+| `.prt`, `.asm`, `.drw` | CAD | Creo Parametric native files |
+| `.dxf` | DXF | 2D flat patterns for manufacturing |
+| `.svg` | SVG | Technical drawings |
+| `.pdf` | PDF | Documentation |
+| `.png`, `.jpg`, `.jpeg` | IMAGE | Images |
 
-### Item Numbering Convention
-Format: `ABC####` or `ABC#####` (3 letters + 4-6 digits, e.g., `csp0030`, `wma20120`)
-- Lowercase normalized in database
-- Base filename determines item linkage
+### Storage Architecture
 
-## Database Schema
+- **Bucket:** `pdm-files` in Supabase Storage
+- **Path format:** `{item_number}/{filename}` (e.g., `csp0030/csp0030.step`)
+- **Access:** Signed URLs generated server-side for authorized download
 
-See `references/database_schema.md` for complete table structure. Key tables:
-- **items**: Part metadata, lifecycle state, revision/iteration
-- **files**: File tracking with paths, types, timestamps
-- **work_queue**: Task queue for automated processing
-- **bom**: Bill of Materials relationships
-- **lifecycle_history**: State change audit trail
-- **checkouts**: File checkout tracking
+### API Endpoints
 
-## PowerShell Services
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/files` | List files with optional filtering by item or type |
+| GET | `/api/files/{file_id}` | Get file metadata |
+| POST | `/api/files/upload` | Upload file (multipart form: file + item_number) |
+| GET | `/api/files/{file_id}/download` | Get signed download URL |
+| DELETE | `/api/files/{file_id}` | Delete file from storage and database |
 
-Four Windows services handle automation:
+---
 
-### CheckIn-Watcher
-**Purpose:** Monitors CheckIn folder, classifies files, triggers processing
+## BOM Management
 
-**Key Functions:**
-- File classification by extension and naming
-- Auto-creates item records (starts at A.1, Design state)
-- Moves files to appropriate folders (STEP/, DXF/, SVG/, etc.)
-- Registers files in database
-- Queues DXF/SVG regeneration when STEP files update
+Bill of Materials (BOM) tracks parent-child relationships between assemblies and their component parts.
 
-**Special Handling:**
-- **DXF/SVG**: Filename parsed to link to base item (e.g., `csp0030_flat.dxf` → `csp0030`)
-- **File overwrites**: Bumps file iteration, not item iteration
+### Capabilities
 
-### BOM-Watcher
-**Purpose:** Processes BOM tree exports from Creo mapkey
+- **Single-level BOM** -- view direct children of an assembly
+- **Multi-level BOM tree** -- recursive tree with configurable depth (default: 10 levels)
+- **Where-used queries** -- find all assemblies that contain a given part
+- **Bulk BOM upload** -- replace an entire assembly's BOM in one operation (used by the Creo BOM export pipeline)
+- **Individual BOM entry management** -- add, update quantity, or delete individual parent-child relationships
+- **Auto-create items** -- bulk BOM upload creates new item records for any child parts not yet in the system
+- **Property sync** -- BOM upload updates child item properties (name, material, mass, thickness, cut length, price estimate)
 
-**Process:**
-1. Monitors `BOM\` folder for .txt files (tree tool exports)
-2. Parses header for parent assembly
-3. Extracts child parts (3+ leading spaces to exclude parent)
-4. Parses columns by fixed positions: Description, Project, Material, Mass, Thickness, Cut Length
-5. Auto-creates items if they don't exist
-6. Deletes old BOM entries for assembly
-7. Inserts new BOM relationships with quantities
-8. Updates item properties (description, material, mass, thickness, project, cut_length)
-9. Deletes processed txt file
+### BOM Upload Pipeline
 
-**Column Parsing:**
-- Fixed positions based on header alignment
-- Handles missing/empty columns correctly
-- Material, mass, thickness extracted from tree export
+The BOM upload pipeline bridges Creo Parametric to the web system:
 
-### Worker-Processor
-**Purpose:** Executes queued tasks from work_queue table
+1. Export assembly tree from Creo as a fixed-width text file
+2. Place `BOM.txt` or `MLBOM.txt` in the `C:\PDM-Upload` watch folder
+3. `PDM-BOM-Parser.ps1` parses the file, extracting parent/child relationships and item properties
+4. Parsed data is sent to `POST /api/bom/bulk` which replaces the assembly's BOM
+5. New items are auto-created; existing items have their properties updated
 
-**Task Types:**
-- `GENERATE_DXF`: Calls `flatten_sheetmetal.bat` to create flat patterns from STEP
-- `GENERATE_SVG`: Calls `create_bend_drawing.bat` to create technical drawings from STEP
-- `PARAM_SYNC`: Syncs parameters from CAD files (future)
-- `SYNC`: General sync operations (future)
+### API Endpoints
 
-**Process:**
-1. Polls work_queue for pending tasks
-2. Marks task as 'Processing'
-3. Executes batch file (FreeCAD automation)
-4. Generated files placed in CheckIn folder
-5. CheckIn-Watcher detects and registers them
-6. Task marked 'Completed' or 'Failed'
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/bom/{item_number}` | Get single-level BOM (direct children) |
+| GET | `/api/bom/{item_number}/tree` | Get recursive BOM tree |
+| GET | `/api/bom/{item_number}/where-used` | Get parent assemblies |
+| POST | `/api/bom` | Add a single BOM entry |
+| POST | `/api/bom/bulk` | Bulk replace BOM for an assembly |
+| PATCH | `/api/bom/{bom_id}` | Update BOM entry quantity |
+| DELETE | `/api/bom/{bom_id}` | Delete a BOM entry |
 
-### Release-Watcher & Revise-Watcher
-**Purpose:** Manage lifecycle transitions and revisions
+### Frontend Views
 
-See `references/services.md` for configuration, management commands, and troubleshooting.
+- **PDM Browser detail panel** -- shows BOM children and where-used for selected item
+- **Item Detail view** -- full BOM tree and where-used display
+
+---
+
+## Authentication
+
+User authentication is handled by Supabase Auth with JWT tokens.
+
+### Capabilities
+
+- **Email/password login** via the Login view
+- **JWT-based sessions** stored in the browser (Supabase client SDK)
+- **Automatic token refresh** handled by the Supabase client library
+- **User profile sync** -- on first login, the system creates or links a user record in the `users` table
+- **Role-based display** -- user role shown in the UI (admin, engineer, viewer)
+- **Route protection** -- all views except Login require authentication; unauthenticated requests redirect to Login
+
+### User Roles
+
+| Role | Description |
+|---|---|
+| admin | Full system access |
+| engineer | Standard user for CAD and BOM work |
+| viewer | Read-only access (shop floor, project managers) |
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/auth/login` | Email/password login |
+| POST | `/api/auth/logout` | Sign out |
+| GET | `/api/auth/me` | Get current user profile (requires Bearer token) |
+| GET | `/api/auth/users` | List all users |
+
+---
 
 ## FreeCAD Automation
 
-Batch files in `D:\FreeCAD\Tools\`:
-- **flatten_sheetmetal.bat**: STEP → DXF (sheet metal unfolding)
-- **create_bend_drawing.bat**: STEP → SVG (technical drawings)
+Headless FreeCAD runs inside a Docker container to generate manufacturing documents from STEP files.
 
-Both called by Worker-Processor, output to CheckIn folder for automatic registration.
+### Capabilities
 
-See `references/freecad_automation.md` for script details and current development work.
+- **DXF flat pattern generation** -- unfold sheet metal STEP files into 2D cutting patterns
+- **SVG bend drawing generation** -- create technical drawings with bend lines and dimensions
+- **STL/OBJ conversion** -- convert STEP files to mesh formats
+- **Work queue integration** -- tasks are queued via the API and processed by the Docker worker
+- **Job runner** -- general-purpose dispatcher supports multiple job types
 
-## PDM Browser
+### Task Types
 
-**Status:** In Development (D:\PDM_WebServer)
+| Task | API Endpoint | Output |
+|---|---|---|
+| Generate DXF | `POST /api/tasks/generate-dxf/{item_number}` | DXF flat pattern |
+| Generate SVG | `POST /api/tasks/generate-svg/{item_number}` | SVG bend drawing |
 
-Modern Node.js-based web browser for PDM system currently being implemented. Features will include:
-- Real-time REST API
-- Item search and filtering
-- BOM tree navigation
-- File preview and management
-- Lifecycle history tracking
+See [12-FREECAD-AUTOMATION.md](12-FREECAD-AUTOMATION.md) for full details on scripts, Docker configuration, and the processing pipeline.
 
-**Note:** Legacy PowerShell-based static HTML generator has been archived.
+---
 
-## Common Workflows
+## Work Queue / Task Management
 
-**Check in a new STEP file:**
-1. Copy file to `CheckIn\` folder (e.g., `csp0030.step`)
-2. CheckIn-Watcher detects file
-3. Item `csp0030` created (A.1, Design) if new
-4. File moved to `STEP\` folder
-5. File registered in database
-6. If DXF/SVG exist for this item, regeneration tasks queued
+Background tasks are tracked in the `work_queue` table and managed through the Tasks API.
 
-**Generate manufacturing documents:**
-1. STEP file exists for item
-2. Worker-Processor picks up `GENERATE_DXF` task
-3. Calls `flatten_sheetmetal.bat` with STEP input
-4. DXF created in `CheckIn\`
-5. CheckIn-Watcher detects and moves to `DXF\`
-6. Same process for SVG via `GENERATE_SVG` task
+### Capabilities
 
-**BOM update from tree export:**
-1. In Creo, run mapkey to export assembly tree to txt file
-2. File saved to `BOM\` folder (e.g., `wma20120.txt`)
-3. BOM-Watcher detects file
-4. Parses parent assembly from header
-5. Extracts child parts with quantities
-6. Updates `bom` table and item properties
-7. Deletes txt file
+- **Create tasks** for any supported task type
+- **Queue DXF/SVG generation** by item number (automatically finds the STEP file)
+- **Track task status** -- pending, processing, completed, failed
+- **Error tracking** -- failed tasks store error messages for debugging
+- **Filter and browse** tasks by status, type, or item
+- **Task lifecycle management** -- start, complete, and delete tasks via API
 
-## Key Scripts
+### API Endpoints
 
-- **PDM-Library.ps1**: Core functions (Exec-SQL, Query-SQL, Write-Log)
-- **CheckIn-Watcher.ps1**: File monitoring and classification
-- **BOM-Watcher.ps1**: BOM tree export processor
-- **Worker-Processor.ps1**: Task execution engine
-- **Release-Watcher.ps1**: Release workflow automation
-- **Revise-Watcher.ps1**: Revision management
-- **Restart-PDM-Services.ps1**: Service restart utility
-- **CompareWorkspace.ps1**: Workspace comparison via CreoJS
-- **Part-Parameter-Watcher.ps1**: Parameter sync from CAD files
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/tasks` | List tasks with optional filters |
+| GET | `/api/tasks/pending` | Get pending tasks for worker |
+| GET | `/api/tasks/{task_id}` | Get task details |
+| POST | `/api/tasks` | Create a generic task |
+| POST | `/api/tasks/generate-dxf/{item_number}` | Queue DXF generation |
+| POST | `/api/tasks/generate-svg/{item_number}` | Queue SVG generation |
+| PATCH | `/api/tasks/{task_id}/start` | Mark task as processing |
+| PATCH | `/api/tasks/{task_id}/complete` | Mark task as completed/failed |
+| DELETE | `/api/tasks/{task_id}` | Delete a task |
 
-## Configuration
+### Frontend View
 
-**Paths** (in PDM-Library.ps1):
-- `$Global:PDMRoot = "D:\PDM_Vault"`
-- `$Global:DBPath = "D:\PDM_Vault\pdm.sqlite"`
-- SQLite accessed via `sqlite3.exe` command-line tool
+- **Work Queue** (`/tasks`) -- table of tasks with status indicators, error details, and filtering
 
-**FreeCAD** (in CheckIn-Watcher.ps1):
-- `$Global:FreeCADExe = "C:\Program Files\FreeCAD 0.21\bin\FreeCAD.exe"`
-- Batch scripts in `D:\FreeCAD\Tools\`
+---
+
+## Project Management
+
+Projects group related items together for organizational and tracking purposes.
+
+### Capabilities
+
+- **Create and manage projects** with name, description, and status
+- **Associate items with projects** via the `project_id` field on items
+- **Filter items by project** in the PDM Browser
+- **View project overview** with associated item counts
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/projects` | List all projects |
+| GET | `/api/projects/{id}` | Get project details |
+| POST | `/api/projects` | Create a project |
+| PATCH | `/api/projects/{id}` | Update a project |
+| DELETE | `/api/projects/{id}` | Delete a project |
+
+### Frontend View
+
+- **Projects** (`/projects`) -- project listing with item associations
+
+---
+
+## MRP (Manufacturing Resource Planning)
+
+MRP tools support production planning, shop floor operations, and materials management.
+
+### Capabilities
+
+- **MRP Dashboard** -- overview of production orders, work packets, and shop floor status
+- **Routing Editor** -- define production routings with workstation assignments and operation sequencing
+- **Shop Terminal** -- shop floor interface for operators to view assignments and update job status
+- **Part Lookup** -- search parts by project, view routing operations, enter time, and mark complete; includes inline PDF drawing viewer
+- **Project Tracking** -- Gantt chart visualization of project progress with part hierarchy
+- **Raw Materials** -- inventory management with stock levels, reorder points, and inline editing
+- **Print Packets** -- generate combined PDF packets with cover sheets and stamped part drawings
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/mrp/projects/{project_id}/print-packet` | Generate print packet PDF |
+| GET | `/api/mrp/projects/{project_id}/print-packet` | Get existing print packet |
+
+### Frontend Views
+
+| Route | View | Description |
+|---|---|---|
+| `/mrp/dashboard` | MRP Dashboard | Production overview |
+| `/mrp/routing` | Routing Editor | Production routing management |
+| `/mrp/shop` | Shop Terminal | Operator work interface |
+| `/mrp/parts` | Part Lookup | Part search with routing and time entry |
+| `/mrp/tracking` | Project Tracking | Gantt chart progress view |
+| `/mrp/materials` | Raw Materials | Inventory management |
+
+---
+
+## PDM Upload Bridge
+
+The PDM Upload Service is a PowerShell-based bridge that runs on the local workstation to automatically upload files and data from Creo Parametric to the web API.
+
+### Capabilities
+
+- **Watch folder monitoring** -- monitors `C:\PDM-Upload` for new files using `FileSystemWatcher`
+- **Automatic file upload** -- STEP, PDF, DXF, SVG, and CAD files are uploaded to the API with item number extraction from the filename
+- **BOM parsing and upload** -- Creo tree export text files (`BOM.txt`, `MLBOM.txt`) are parsed and uploaded as bulk BOM data
+- **Parameter sync** -- single-item parameter files (`param.txt`) update item properties via the API
+- **Item number extraction** -- supports standard patterns (ABC####), McMaster (mmc...), and supplier (spn...) prefixes
+- **Error handling** -- failed files are moved to a `Failed/` subfolder with error logging
+- **Log rotation** -- automatic log file rotation when size exceeds 10MB
+
+### Scripts
+
+| Script | Purpose |
+|---|---|
+| `PDM-Upload-Service.ps1` | Main service -- watches folder and dispatches files |
+| `PDM-Upload-Functions.ps1` | API client functions (upload file, upload BOM, update parameters) |
+| `PDM-BOM-Parser.ps1` | Parses Creo fixed-width BOM text exports |
+| `PDM-Upload-Config.ps1` | Configuration (API URL, watch folder, log settings) |
+| `Start-PDMUpload.bat` | Batch launcher for the service |
+| `Install-PDMUpload.ps1` | Installation helper |
+
+### File Action Routing
+
+| File | Action |
+|---|---|
+| `.step`, `.stp`, `.pdf`, `.dxf`, `.svg`, `.prt`, `.asm`, `.drw` | Upload to API as file |
+| `BOM.txt` | Parse as single-level BOM, upload to `/api/bom/bulk` |
+| `MLBOM.txt` | Parse as multi-level BOM, upload to `/api/bom/bulk` |
+| `param.txt` | Parse as parameter file, update item via `/api/items/{item_number}?upsert=true` |
+
+---
+
+## Search and Filtering
+
+### Capabilities
+
+- **Text search** across item number, name, and description (case-insensitive)
+- **Lifecycle state filter** -- filter by Design, Review, Released, or Obsolete
+- **Project filter** -- filter by project assignment
+- **Supplier part filter** -- filter by `is_supplier_part` flag
+- **Client-side sorting** -- click column headers to sort ascending/descending
+- **Pagination** -- server-side limit/offset support for large datasets
+- **Item count display** -- shows filtered count vs. total count
+
+---
+
+## API Documentation
+
+The FastAPI backend provides auto-generated interactive API documentation:
+
+- **Swagger UI:** `http://localhost:8000/docs`
+- **ReDoc:** `http://localhost:8000/redoc`
+- **Health check:** `GET /health`
+
+All API routes are prefixed with `/api/` and organized by resource:
+
+| Prefix | Tag | Description |
+|---|---|---|
+| `/api/auth` | auth | Authentication and user management |
+| `/api/items` | items | Item CRUD and search |
+| `/api/files` | files | File upload, download, metadata |
+| `/api/bom` | bom | BOM relationships and tree queries |
+| `/api/projects` | projects | Project management |
+| `/api/tasks` | tasks | Work queue and task management |
+| `/api/mrp` | mrp | Manufacturing resource planning |

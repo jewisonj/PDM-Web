@@ -1,258 +1,448 @@
-# PDM Browser - Visual Overview
+# PDM-Web Frontend Architecture Overview
 
-## What You're Getting
-
-A professional web-based browser for your PDM system that looks and feels like a modern application.
-
-## Main Interface
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  PDM Browser                                                       │
-│  Product Data Management System - Item Explorer                   │
-└────────────────────────────────────────────────────────────────────┘
-┌────────────────────────────────────────────────────────────────────┐
-│ [Search: _______________] [State: All ▼] [Project: All ▼] 245 items│
-└────────────────────────────────────────────────────────────────────┘
-┌─────────┬─────────────┬──────────┬─────┬────────┬──────────┬───────┐
-│ Item #  │ Description │ Project  │ Rev │ State  │ Material │ Date  │
-├─────────┼─────────────┼──────────┼─────┼────────┼──────────┼───────┤
-│ CSP0030 │ Corner Brkt │ Crane-01 │ B.2 │Released│ STEEL    │ 12/28 │
-│ WMA2012 │ Main Weldmt │ Crane-01 │ A.1 │ Design │ STEEL    │ 12/27 │
-│ WMP2008 │ Base Plate  │ Crane-02 │ A.3 │ Design │ ALUMINUM │ 12/26 │
-│ CSA0045 │ Frame Assy  │ Crane-01 │ C.1 │Released│ -        │ 12/25 │
-└─────────┴─────────────┴──────────┴─────┴────────┴──────────┴───────┘
-```
-
-## Detail Panel (Slides in from right)
-
-```
-┌─────────────────────────────────┐
-│ CSP0030                      [×]│ ◄── Click X to close
-├─────────────────────────────────┤
-│ ITEM INFORMATION                │
-│ ├─ Item Number:   CSP0030       │
-│ ├─ Description:   Corner Brkt   │
-│ ├─ Revision:      B.2           │
-│ ├─ State:         Released      │
-│ ├─ Project:       Crane-01      │
-│ ├─ Material:      STEEL_HSLA    │
-│ ├─ Mass:          0.245 kg      │
-│ ├─ Thickness:     3.0 mm        │
-│ └─ Modified:      Dec 28, 2024  │
-│                                  │
-│ FILES (4)                        │
-│ ├─ [STEP] csp0030.step          │
-│ ├─ [DXF]  csp0030_flat.dxf     │
-│ ├─ [SVG]  csp0030_bend.svg     │
-│ └─ [PDF]  csp0030_dims.pdf     │
-│                                  │
-│ BILL OF MATERIALS (0)           │
-│ └─ (No child components)        │
-│                                  │
-│ WHERE USED (2)                  │ ◄── Click to navigate
-│ ├─ WMA20120  Qty: 4            │     to parent
-│ └─ CSA00045  Qty: 2            │
-│                                  │
-│ LIFECYCLE HISTORY (3)           │
-│ ├─ Design → Released            │
-│ │  Dec 28 | Rev A.1 → B.2      │
-│ ├─ Design (iteration bump)      │
-│ │  Dec 15 | Rev A.1            │
-│ └─ Created                       │
-│    Dec 10 | Rev A.1             │
-└─────────────────────────────────┘
-```
-
-## Key Features at a Glance
-
-### Search & Filter (Top Bar)
-- **Search box**: Type any part of item number, description, or project
-- **State filter**: Show only Design, Released, or Obsolete items
-- **Project filter**: Filter by specific project
-- **Item count**: Shows filtered count vs total
-
-### Sortable Table
-- Click any column header to sort
-- Click again to reverse sort direction
-- Triangle indicator shows current sort
-
-### Interactive Detail Panel
-- Click any row to open details
-- Panel slides in from right
-- Click X or press Escape to close
-- Click outside panel to close
-
-### BOM Navigation
-- Click child items in BOM to drill down
-- Click parent items in Where Used to go up
-- Navigate entire assembly structure
-
-### Real-Time Data
-- Direct SQLite database connection
-- No caching - always current
-- Instant updates when files change
-
-## Color Coding
-
-### Lifecycle States
-- **Design**: Yellow badge (in progress)
-- **Released**: Green badge (approved)
-- **Obsolete**: Red badge (deprecated)
-
-### File Types
-- **STEP**: Blue badge (3D model)
-- **DXF**: Yellow badge (flat pattern)
-- **SVG**: Green badge (drawing)
-- **PDF**: Red badge (documentation)
-- **CAD**: Gray badge (native files)
-
-## Layout Similarity to Workspace Compare
-
-This browser uses the same visual design language as your existing workspace compare tool:
-
-### Similar Elements
-✓ Fixed header with gradient
-✓ Controls bar with search and filters
-✓ Sortable table with hover effects
-✓ Clean, modern styling
-✓ Responsive grid layout
-✓ Sticky table headers
-
-### Key Differences
-✗ No CreoJS integration (browser only)
-✗ No checkboxes (single item focus)
-✗ Added right-side detail panel
-✓ More focused on item details vs file comparison
-
-## Usage Flow
-
-```
-1. Open Browser
-   ↓
-2. View All Items (sorted by most recent)
-   ↓
-3. Search/Filter (optional)
-   ↓
-4. Click Item Row
-   ↓
-5. Detail Panel Opens
-   ↓
-6. View Files, BOM, History
-   ↓
-7. Click Child/Parent Items (optional)
-   ↓
-8. Navigate Assembly Structure
-   ↓
-9. Close Panel or Select Another Item
-```
-
-## Technical Architecture
-
-```
-Browser (Chrome/Edge/Firefox)
-        │
-        ├─ HTML/CSS/JavaScript Frontend
-        │  └─ Fetch API calls to backend
-        │
-        ↓
-Node.js Express Server (port 3000)
-        │
-        ├─ /api/items - Get all items
-        ├─ /api/items/:id - Get item details
-        └─ /api/health - Server status
-        │
-        ↓
-SQLite Database (D:\PDM_Vault\pdm.sqlite)
-        │
-        └─ Read-only queries
-           (no modifications)
-```
-
-## Performance
-
-- **Initial Load**: ~500ms for 1000 items
-- **Detail Panel**: Instant (single query)
-- **Search/Filter**: Instant (client-side)
-- **Sorting**: Instant (client-side)
-
-## Access Methods
-
-### Same Computer
-```
-http://localhost:3000
-```
-
-### Other Computers (if firewall allows)
-```
-http://YOUR-COMPUTER-NAME:3000
-http://192.168.1.XXX:3000
-```
-
-## Screen Size Compatibility
-
-- **Desktop**: Full experience
-- **Laptop**: Optimized layout
-- **Tablet**: Readable, detail panel may overlap
-- **Phone**: Not optimized (use desktop/laptop)
-
-## Browser Compatibility
-
-✓ Chrome (recommended)
-✓ Edge (recommended)
-✓ Firefox
-✓ Safari
-✗ Internet Explorer (not supported)
-
-## What's NOT Included
-
-This is a read-only browser. It does NOT:
-- Check in/out files
-- Modify lifecycle states
-- Edit item properties
-- Open files in Creo
-- Upload files
-- Delete items
-
-For those operations, use your existing PowerShell services and Creo integration.
-
-## Perfect For
-
-✓ Quick item lookups
-✓ BOM navigation
-✓ Status checking
-✓ Where-used searches
-✓ History review
-✓ Project filtering
-✓ Sharing with non-Creo users
-
-## Comparison to PDM-HTMLBrowser.ps1
-
-If you have the older PDM-HTMLBrowser.ps1, this new version:
-
-**Improvements:**
-- Modern, polished UI
-- Faster (Node.js vs Python)
-- Better detail panel
-- Sortable columns
-- Real-time filtering
-- BOM navigation
-- Mobile-friendly
-
-**Same:**
-- SQLite backend
-- Read-only access
-- Web-based interface
-
-## Next Steps After Installation
-
-1. Test with a few items
-2. Try BOM navigation
-3. Use search and filters
-4. Share URL with team
-5. Consider installing as Windows service for 24/7 access
+High-level overview of the Vue 3 frontend architecture, component patterns, state management, routing, authentication, and API communication.
 
 ---
 
-Built with: Node.js, Express, SQLite3, and vanilla JavaScript
-No frameworks, no build process, no complexity!
+## System Diagram
+
+```
+                        Browser
+                          |
+                   Vue 3 SPA (Vite)
+                          |
+          +---------------+---------------+
+          |               |               |
+     Vue Router      Pinia Stores     Supabase JS
+     (Auth Guards)   (auth, items)    (Client SDK)
+          |               |               |
+          |        +------+------+   +----+----+
+          |        |             |   |         |
+          |    Supabase      FastAPI |   Supabase
+          |    Client        apiCall |   Storage
+          |    (direct DB)   (fetch) |   (signed URLs)
+          |        |             |   |         |
+          +--------+------+------+---+---------+
+                          |
+             Supabase Cloud (PostgreSQL)
+             - Database (items, bom, files, etc.)
+             - Auth (JWT sessions)
+             - Storage (pdm-cad, pdm-exports, pdm-drawings)
+```
+
+**Two data paths exist:**
+1. **Supabase Client (direct)** -- The items store and several MRP views query the Supabase database directly using the `@supabase/supabase-js` client SDK with Row Level Security.
+2. **FastAPI Backend (API calls)** -- Auth endpoints, projects, tasks, MRP print packets, and operations requiring server-side logic use the `apiCall()` helper to communicate with the FastAPI backend at `/api/*`.
+
+---
+
+## Vue 3 Single File Components
+
+All components use the Vue 3 Composition API with `<script setup lang="ts">`:
+
+```vue
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useItemsStore } from '../stores/items'
+
+const itemsStore = useItemsStore()
+const searchQuery = ref('')
+
+const filteredItems = computed(() => {
+  // reactive filtering logic
+})
+
+onMounted(() => {
+  itemsStore.fetchItems()
+})
+</script>
+
+<template>
+  <div class="view-container">
+    <!-- template uses refs and computed directly -->
+  </div>
+</template>
+
+<style scoped>
+/* component-scoped styles */
+</style>
+```
+
+Key patterns:
+- **`<script setup>`** eliminates boilerplate (no explicit `export default`, `setup()` function, or `defineComponent`)
+- **TypeScript** is used throughout (`lang="ts"`) with interfaces defined in `types/index.ts`
+- **Scoped styles** (`<style scoped>`) keep CSS isolated per component
+- **No Options API** -- all components use the Composition API exclusively
+
+---
+
+## Pinia State Management
+
+Pinia stores use the Composition API (setup function) pattern rather than the Options API pattern:
+
+```typescript
+export const useItemsStore = defineStore('items', () => {
+  // State as refs
+  const items = ref<Item[]>([])
+  const loading = ref(false)
+
+  // Computed (getters)
+  const filteredItems = computed(() => items.value)
+
+  // Actions as functions
+  async function fetchItems() { /* ... */ }
+
+  // Return public API
+  return { items, loading, filteredItems, fetchItems }
+})
+```
+
+### Store Architecture
+
+```
+Pinia
+├── auth store
+│   ├── State: user, loading, error, initialized
+│   ├── Computed: isAuthenticated, isEngineer, isAdmin
+│   └── Actions: initialize(), login(), logout()
+│
+└── items store
+    ├── State: items[], currentItem, loading, error, filters
+    ├── Computed: filteredItems
+    └── Actions: fetchItems(), fetchItem(), createItem(),
+                 updateItem(), deleteItem(), getBOMTree(),
+                 getWhereUsed(), getItemHistory()
+```
+
+### Data Flow
+
+```
+User Action (click, type, navigate)
+        |
+        v
+Vue Component (calls store action)
+        |
+        v
+Pinia Store Action (async function)
+        |
+        v
+Supabase Client or apiCall()
+        |
+        v
+Network Request (Supabase REST API or FastAPI)
+        |
+        v
+Response updates ref state
+        |
+        v
+Vue reactivity re-renders template
+```
+
+Components access stores via composable functions:
+
+```typescript
+const itemsStore = useItemsStore()
+// Directly use: itemsStore.items, itemsStore.loading, itemsStore.fetchItems()
+```
+
+---
+
+## Vue Router Configuration
+
+### Route Structure
+
+Routes are organized into three groups:
+
+**Authentication:**
+| Path | Name | View | Auth Required |
+|------|------|------|---------------|
+| `/login` | login | LoginView | No |
+
+**PDM Tools:**
+| Path | Name | View | Auth Required |
+|------|------|------|---------------|
+| `/` | home | HomeView | Yes |
+| `/pdm-browser` | pdm-browser | ItemsView | Yes |
+| `/items/:itemNumber` | item-detail | ItemDetailView | Yes |
+| `/part-numbers` | part-numbers | PartNumbersView | Yes |
+| `/projects` | projects | ProjectsView | Yes |
+| `/tasks` | tasks | TasksView | Yes |
+
+**MRP Tools:**
+| Path | Name | View | Auth Required |
+|------|------|------|---------------|
+| `/mrp/dashboard` | mrp-dashboard | MrpDashboardView | Yes |
+| `/mrp/routing` | mrp-routing | MrpRoutingView | Yes |
+| `/mrp/shop` | mrp-shop | MrpShopView | Yes |
+| `/mrp/parts` | mrp-parts | MrpPartLookupView | Yes |
+| `/mrp/tracking` | mrp-tracking | MrpProjectTrackingView | Yes |
+| `/mrp/materials` | mrp-materials | MrpRawMaterialsView | Yes |
+
+### Lazy Loading
+
+All route components use dynamic imports for automatic code splitting:
+
+```typescript
+component: () => import('../views/ItemsView.vue')
+```
+
+Vite produces separate chunks for each view, reducing the initial bundle size. Views are loaded on demand when the user navigates to them.
+
+### History Mode
+
+The router uses `createWebHistory()` (HTML5 History API) for clean URLs without hash fragments. This requires server-side support to serve `index.html` for all non-API paths. The FastAPI backend handles this with a catch-all route in production.
+
+---
+
+## Authentication Flow
+
+### Supabase Auth Integration
+
+Authentication is handled entirely by Supabase Auth. The frontend uses the `@supabase/supabase-js` SDK for session management:
+
+```
+Supabase Auth
+├── signInWithPassword(email, password)  --> Returns JWT session
+├── getSession()                         --> Returns current session (auto-refreshes)
+├── refreshSession()                     --> Forces token refresh
+├── signOut()                            --> Clears session
+└── onAuthStateChange(callback)          --> Fires on login, logout, token refresh
+```
+
+### Session Lifecycle
+
+```
+App Starts
+    |
+    v
+App.vue onMounted() --> authStore.initialize()
+    |
+    v
+supabase.auth.getSession()
+    |-- Session found --> fetchUser() from /api/auth/me
+    |-- No session    --> user remains null
+    |
+    v
+onAuthStateChange listener registered
+    |-- SIGNED_IN    --> fetchUser()
+    |-- SIGNED_OUT   --> user = null
+    |-- TOKEN_REFRESHED --> fetchUser()
+```
+
+### Token Handling
+
+- Supabase sessions are stored in `localStorage` under the key `pdm-web-auth`
+- The `autoRefreshToken: true` setting automatically refreshes expired tokens
+- The `apiCall()` helper reads the access token from the current session
+- On a 401 response, `apiCall()` attempts one session refresh and retries
+
+### Navigation Guard Logic
+
+```
+Router beforeEach(to)
+    |
+    v
+await authStore.initialize()  // Ensures session is resolved
+    |
+    v
+Is route requiresAuth?
+    |-- Yes, and NOT authenticated --> redirect to /login?redirect={to.fullPath}
+    |-- Yes, and authenticated     --> allow
+    |
+    v
+Is route /login?
+    |-- Already authenticated --> redirect to /
+    |-- Not authenticated     --> allow
+```
+
+The guard always waits for `initialize()` to finish before making decisions. This prevents flashing the login page on reload when a valid session exists.
+
+---
+
+## API Communication Patterns
+
+### Pattern 1: Direct Supabase Client
+
+Used by the items store and MRP views for database queries:
+
+```typescript
+const { data, error } = await supabase
+  .from('items')
+  .select('*, projects(name)')
+  .eq('lifecycle_state', 'Released')
+  .order('item_number')
+```
+
+Advantages: Real-time-capable, uses Supabase Row Level Security, no backend code needed.
+
+Used for: Items CRUD, BOM queries, file metadata, lifecycle history, part numbers, MRP data.
+
+### Pattern 2: FastAPI Backend via apiCall()
+
+Used for operations requiring server-side logic:
+
+```typescript
+const user = await apiCall<User>('/auth/me')
+const projects = await apiCall<Project[]>('/projects')
+```
+
+The `apiCall()` function:
+1. Gets the current Supabase session token
+2. Adds it as a `Bearer` token in the `Authorization` header
+3. Sends the request to `{API_BASE_URL}{endpoint}`
+4. Handles 401 with automatic retry after token refresh
+5. Parses JSON response or throws on error
+
+Used for: Authentication, projects, tasks, MRP print packets, file upload/download endpoints.
+
+### Pattern 3: Supabase Storage
+
+Used for file operations (upload, download, signed URLs):
+
+```typescript
+const { data } = await supabase.storage
+  .from('pdm-exports')
+  .createSignedUrl('csp0030/A/1/csp0030.step', 3600)
+```
+
+The storage service (`services/storage.ts`) abstracts bucket selection and path construction.
+
+---
+
+## Component Hierarchy
+
+```
+App.vue
+└── <router-view />
+    ├── LoginView.vue
+    │   └── (self-contained login form)
+    │
+    ├── HomeView.vue
+    │   └── Tool cards grid (PDM + MRP sections)
+    │
+    ├── ItemsView.vue (PDM Browser)
+    │   ├── Controls bar (search, filters, stats)
+    │   ├── Sortable data table
+    │   └── Slide-in detail panel
+    │       ├── Item information grid
+    │       ├── Files list (with signed URL links)
+    │       ├── BOM children list (navigable)
+    │       └── Where-used list (navigable)
+    │
+    ├── ItemDetailView.vue
+    │   ├── Header (back button, action buttons)
+    │   ├── Item metadata display
+    │   └── Tabbed content
+    │       ├── Files tab
+    │       ├── BOM tab
+    │       ├── Where Used tab
+    │       └── History tab
+    │
+    ├── PartNumbersView.vue
+    │   └── Prefix table with copy-to-clipboard
+    │
+    ├── ProjectsView.vue
+    │   └── Project list with status badges
+    │
+    ├── TasksView.vue
+    │   └── Task queue table with status badges
+    │
+    └── MRP Views (6 views)
+        ├── MrpDashboardView.vue
+        ├── MrpRoutingView.vue
+        ├── MrpShopView.vue
+        ├── MrpPartLookupView.vue
+        ├── MrpProjectTrackingView.vue
+        └── MrpRawMaterialsView.vue
+```
+
+---
+
+## Styling Architecture
+
+### Global Styles (`style.css`)
+
+CSS custom properties define the design system:
+
+```css
+:root {
+  --primary: #e94560;
+  --bg-dark: #0f0f1a;
+  --bg-card: #16213e;
+  --border: #1a1a2e;
+  --text: #e0e0e0;
+  --text-muted: #888;
+  --accent: #64b5f6;
+}
+```
+
+### Per-Component Styles
+
+Each view has its own `<style scoped>` block. The PDM Browser (ItemsView) and Home Dashboard use a light theme with professional PLM-style layouts. The Item Detail view uses a dark card theme.
+
+### PrimeVue
+
+PrimeVue with the Aura theme is registered globally and available for use. PrimeIcons are used for tool card icons (e.g., `pi pi-folder-open`, `pi pi-search`).
+
+### Design Approach
+
+- Desktop-first layout (not responsive/mobile-first)
+- Compact data density similar to professional PLM tools
+- Fixed-height viewport layouts with scrollable content regions
+- CSS Grid for table layouts and card grids
+- Minimal animation (panel slide-in transition, card hover effects)
+
+---
+
+## Build and Bundle
+
+### Vite Configuration
+
+```typescript
+export default defineConfig({
+  plugins: [vue()],
+  server: {
+    port: 5174,
+    host: true,  // Listen on all interfaces
+  },
+})
+```
+
+### Build Process
+
+1. `vue-tsc -b` -- TypeScript type checking (skipped in Docker build)
+2. `vite build` -- Bundles and minifies:
+   - Tree-shakes unused code
+   - Code-splits by route (lazy-loaded views)
+   - Hashes filenames for cache busting
+   - Outputs to `dist/`
+
+### Plugin Registration (`main.ts`)
+
+```typescript
+const app = createApp(App)
+app.use(createPinia())    // State management
+app.use(router)           // Client-side routing
+app.use(PrimeVue, {       // UI component library
+  theme: { preset: Aura, options: { darkModeSelector: '.dark-mode' } }
+})
+app.mount('#app')
+```
+
+---
+
+## Key Design Decisions
+
+1. **Composition API exclusively** -- No Options API usage. All components use `<script setup>` for minimal boilerplate and better TypeScript inference.
+
+2. **Direct Supabase queries from frontend** -- The items store queries Supabase directly rather than routing everything through FastAPI. This reduces backend code and leverages Supabase's built-in security (Row Level Security). Backend endpoints are used only where server-side logic is required.
+
+3. **Client-side filtering** -- The PDM Browser loads up to 1000 items and filters/sorts entirely in the browser for instant responsiveness. This matches the dataset size (hundreds to low thousands of items).
+
+4. **Lazy-loaded routes** -- Every view is loaded on demand to keep the initial bundle small.
+
+5. **Single container deployment** -- In production, FastAPI serves the Vue static files. This simplifies deployment (one container, one port) and eliminates CORS concerns.
+
+6. **Dynamic API URL detection** -- The frontend determines the backend URL at runtime based on the current hostname, enabling seamless access from localhost, LAN IPs, and Tailnet addresses without configuration changes.
+
+7. **Token retry on 401** -- The `apiCall()` helper handles expired tokens transparently by refreshing the session and retrying once, avoiding forced logouts during normal use.

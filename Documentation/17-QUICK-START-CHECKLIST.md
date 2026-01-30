@@ -1,335 +1,344 @@
-# PDM System - Quick Start Checklist
+# PDM-Web -- Quick Start Checklist
 
-**Time to Complete:** 15-30 minutes
-**Target Audience:** New users and system administrators
-**Related Docs:** [README.md](README.md), [01-PDM-SYSTEM-MAP.md](01-PDM-SYSTEM-MAP.md), [COMMON-WORKFLOWS.md](COMMON-WORKFLOWS.md)
+**Time to Complete:** 10-15 minutes
+**Target Audience:** New developers and users setting up a local development environment
+**Related Docs:** [14-SKILL-DEFINITION.md](14-SKILL-DEFINITION.md), [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md)
 
 ---
 
-## ✅ Pre-Requisites Check
+## Prerequisites
 
 Before starting, verify you have:
 
-- [ ] Windows Server 2016+ or Windows 10/11
-- [ ] PowerShell 5.1 or higher
-- [ ] Node.js LTS (for web server)
-- [ ] FreeCAD 0.20+ (for DXF/SVG generation)
-- [ ] SQLite 3.x
-- [ ] Creo Parametric (optional, for native file support)
-- [ ] Administrator access to the system
-- [ ] 8GB RAM minimum
-- [ ] 500GB disk space available
+- [ ] **Node.js** LTS (v18+) and npm
+- [ ] **Python 3.10+** with pip
+- [ ] **Git** for version control
+- [ ] **Docker** (optional, only needed for FreeCAD CAD processing)
+- [ ] **Supabase account** with project URL and keys (ask the team lead)
 
-**Verify PowerShell Version:**
-```powershell
-$PSVersionTable.PSVersion
-```
+**Verify installations:**
 
-**Verify Node.js Installation:**
-```powershell
+```bash
 node --version
 npm --version
+python --version
+pip --version
+git --version
+docker --version    # optional
 ```
 
 ---
 
-## 📁 System Folder Structure Check
+## Step 1: Clone the Repository
 
-Verify these folders exist on D: drive:
-
-- [ ] `D:\PDM_Vault\` - Core system data
-- [ ] `D:\PDM_Vault\CADData\` - Ingested CAD files
-- [ ] `D:\PDM_Vault\CADData\CheckIn\` - Drop zone for new files
-- [ ] `D:\PDM_Vault\CADData\BOM\` - Bill of Materials exports
-- [ ] `D:\PDM_Vault\CADData\STEP\` - 3D models
-- [ ] `D:\PDM_Vault\CADData\DXF\` - Flat patterns
-- [ ] `D:\PDM_Vault\CADData\SVG\` - Technical drawings
-- [ ] `D:\PDM_Vault\Released\` - Released items
-- [ ] `D:\PDM_Vault\logs\` - System logs
-- [ ] `D:\PDM_PowerShell\` - Automation scripts
-- [ ] `D:\PDM_WebServer\` - Web interface
-- [ ] `D:\FreeCAD\Tools\` - DXF/SVG generation scripts
-- [ ] `D:\Documentation\` - This documentation
-
-**Verify database exists:**
-- [ ] `D:\PDM_Vault\pdm.sqlite`
-
----
-
-## 🔧 Installation & Configuration
-
-### Step 1: Database Setup
-- [ ] Verify SQLite database: `D:\PDM_Vault\pdm.sqlite` exists
-- [ ] Check database is readable:
-  ```powershell
-  Test-Path "D:\PDM_Vault\pdm.sqlite"
-  ```
-- [ ] Test database connection:
-  ```powershell
-  sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) FROM items;"
-  ```
-
-### Step 2: PowerShell Configuration
-- [ ] PowerShell execution policy set to allow scripts:
-  ```powershell
-  Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-  ```
-- [ ] Verify PDM-Library.ps1 exists:
-  ```powershell
-  Test-Path "D:\PDM_PowerShell\PDM-Library.ps1"
-  ```
-
-### Step 3: FreeCAD Setup
-- [ ] FreeCAD installed at: `C:\Program Files\FreeCAD 0.21\bin\`
-- [ ] FreeCAD batch files exist:
-  ```powershell
-  Test-Path "D:\FreeCAD\Tools\flatten_sheetmetal.bat"
-  Test-Path "D:\FreeCAD\Tools\create_bend_drawing.bat"
-  ```
-
-### Step 4: Node.js Web Server Setup
-- [ ] Navigate to web server folder:
-  ```powershell
-  cd D:\PDM_WebServer
-  ```
-- [ ] Install dependencies (if not already done):
-  ```powershell
-  npm install
-  ```
-- [ ] Verify installation:
-  ```powershell
-  Test-Path "D:\PDM_WebServer\node_modules"
-  ```
-
----
-
-## 🚀 Service Startup (Development Mode)
-
-For testing and development, start services in separate PowerShell windows:
-
-### Terminal 1: File Ingestion (CheckIn-Watcher)
-- [ ] Open PowerShell
-- [ ] Navigate: `cd D:\PDM_PowerShell`
-- [ ] Run: `.\CheckIn-Watcher.ps1`
-- [ ] Verify output shows "Watching: D:\PDM_Vault\CADData\CheckIn"
-
-### Terminal 2: Task Processing (Worker-Processor)
-- [ ] Open PowerShell
-- [ ] Navigate: `cd D:\PDM_PowerShell`
-- [ ] Run: `.\Worker-Processor.ps1`
-- [ ] Verify output shows "Worker-Processor started"
-
-### Terminal 3: BOM Processing (BOM-Watcher)
-- [ ] Open PowerShell
-- [ ] Navigate: `cd D:\PDM_PowerShell`
-- [ ] Run: `.\BOM-Watcher.ps1`
-- [ ] Verify output shows "BOM-Watcher started"
-
-### Terminal 4: Web Server
-- [ ] Open PowerShell
-- [ ] Navigate: `cd D:\PDM_WebServer`
-- [ ] Run: `node server.js`
-- [ ] Verify: "PDM Browser Server running on http://localhost:3000"
-
----
-
-## ✔️ Verification Steps
-
-Once all services are running, verify functionality:
-
-### Check Services Are Running
-```powershell
-# In a new PowerShell window
-Get-Process | Select-Object Name | Where-Object {$_.Name -match "node|powershell"}
+```bash
+git clone <repository-url> pdm-web
+cd pdm-web
 ```
 
-### Test File Ingestion
-- [ ] Copy a test file to: `D:\PDM_Vault\CADData\CheckIn\test.txt`
-- [ ] Wait 2 seconds
-- [ ] Verify it moved to: `D:\PDM_Vault\CADData\Archive\test.txt`
-- [ ] Check logs:
-  ```powershell
-  Get-Content "D:\PDM_Vault\logs\pdm.log" -Tail 10
-  ```
+Verify the project structure:
 
-### Test Database Query
-```powershell
-sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) as item_count FROM items;"
 ```
-
-### Test Web Server
-- [ ] Open browser to: `http://localhost:3000`
-- [ ] Verify page loads and shows items (if any exist)
-
-### Test Log Files
-- [ ] Check logs created: `D:\PDM_Vault\logs\pdm.log`
-- [ ] Verify recent entries with timestamps
-
----
-
-## 📋 First Time Operations
-
-Once basic setup is verified, try these operations:
-
-### 1. Add Your First Item
-- [ ] Create a simple test CAD file (or use existing)
-- [ ] Copy to: `D:\PDM_Vault\CADData\CheckIn\`
-- [ ] Monitor in CheckIn-Watcher terminal for processing
-- [ ] Verify file moved to appropriate subfolder
-- [ ] Query database for new item:
-  ```powershell
-  sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT item_number FROM items LIMIT 1;"
-  ```
-
-### 2. Test BOM Processing
-- [ ] Export BOM from Creo as `.txt` file
-- [ ] Place in: `D:\PDM_Vault\CADData\BOM\`
-- [ ] Monitor in BOM-Watcher terminal
-- [ ] Verify BOM table updated:
-  ```powershell
-  sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT COUNT(*) as bom_count FROM bom;"
-  ```
-
-### 3. Test Web Server
-- [ ] Open: `http://localhost:3000`
-- [ ] Verify items appear in table
-- [ ] Click an item to see details
-- [ ] Verify BOM relationships display
-
-### 4. Test Cost Calculation
-- [ ] Update some item prices in database
-- [ ] Run BOM cost tool:
-  ```powershell
-  cd D:\PDM_PowerShell
-  .\Get-BOMCost.ps1 -Assembly "your_item_number"
-  ```
-
----
-
-## 🪟 Windows Service Installation (Production)
-
-Once verified in development mode, install as Windows services:
-
-### For Each Service (use NSSM):
-
-1. **Download NSSM** from https://nssm.cc/download
-2. **Open PowerShell as Administrator**
-3. **For CheckIn-Watcher:**
-   ```powershell
-   C:\Tools\nssm\nssm.exe install PDM_CheckInWatcher "powershell.exe" "-ExecutionPolicy Bypass -File D:\PDM_PowerShell\CheckIn-Watcher.ps1"
-   C:\Tools\nssm\nssm.exe start PDM_CheckInWatcher
-   ```
-
-4. **For Worker-Processor:**
-   ```powershell
-   C:\Tools\nssm\nssm.exe install PDM_WorkerProcessor "powershell.exe" "-ExecutionPolicy Bypass -File D:\PDM_PowerShell\Worker-Processor.ps1"
-   C:\Tools\nssm\nssm.exe start PDM_WorkerProcessor
-   ```
-
-5. **For BOM-Watcher:**
-   ```powershell
-   C:\Tools\nssm\nssm.exe install PDM_BOMWatcher "powershell.exe" "-ExecutionPolicy Bypass -File D:\PDM_PowerShell\BOM-Watcher.ps1"
-   C:\Tools\nssm\nssm.exe start PDM_BOMWatcher
-   ```
-
-6. **For Web Server (Node.js):**
-   ```powershell
-   C:\Tools\nssm\nssm.exe install PDM-Browser "C:\Program Files\nodejs\node.exe" "D:\PDM_WebServer\server.js"
-   C:\Tools\nssm\nssm.exe set PDM-Browser AppDirectory "D:\PDM_WebServer"
-   C:\Tools\nssm\nssm.exe start PDM-Browser
-   ```
-
-### Verify Services Running
-```powershell
-Get-Service | Where-Object {$_.Name -like "PDM_*" -or $_.Name -eq "PDM-Browser"}
+pdm-web/
+  backend/          # FastAPI Python backend
+  frontend/         # Vue 3 + Vite frontend
+  worker/           # FreeCAD Docker container
+  FreeCAD/          # FreeCAD scripts and addons
+  scripts/          # PDM upload bridge scripts
+  Documentation/    # This documentation
+  docker-compose.yml
 ```
 
 ---
 
-## 🔍 Troubleshooting First-Time Setup
+## Step 2: Set Up the Backend
 
-### Service Won't Start
-- [ ] Check PowerShell version: `$PSVersionTable.PSVersion` (need 5.1+)
-- [ ] Check execution policy: `Get-ExecutionPolicy`
-- [ ] Review logs: `Get-Content "D:\PDM_Vault\logs\pdm.log" -Tail 20`
-- [ ] Check folder exists and is readable: `Test-Path "D:\PDM_Vault\CADData\CheckIn"`
+### Install Python dependencies
 
-### Database Connection Error
-- [ ] Verify database file exists: `Test-Path "D:\PDM_Vault\pdm.sqlite"`
-- [ ] Check file permissions (should be readable)
-- [ ] Test with sqlite3: `sqlite3.exe D:\PDM_Vault\pdm.sqlite ".tables"`
-- [ ] Verify no locked files: `Get-Process | Select-Object Name` (look for sqlite3)
+```bash
+cd backend
+pip install -r requirements.txt
+```
 
-### Files Not Being Processed
-- [ ] Verify CheckIn-Watcher is running (check terminal)
-- [ ] Check folder exists: `Test-Path "D:\PDM_Vault\CADData\CheckIn"`
-- [ ] Look in logs: `Get-Content "D:\PDM_Vault\logs\pdm.log" -Wait -Tail 20`
-- [ ] Verify file naming (must start with item number like ABC####)
+### Create the environment file
 
-### Web Server Won't Load
-- [ ] Check port 3000 isn't in use: `Get-NetTCPConnection -LocalPort 3000`
-- [ ] Verify Node.js running: `Get-Process | Where-Object Name -eq "node"`
-- [ ] Check server output for errors
-- [ ] Try different port by editing: `D:\PDM_WebServer\server.js` line 5
+Create `backend/.env` with your Supabase credentials:
 
-### FreeCAD Generation Failing
-- [ ] Verify FreeCAD installed: `Test-Path "C:\Program Files\FreeCAD 0.21\bin\FreeCAD.exe"`
-- [ ] Test batch file manually: `D:\FreeCAD\Tools\flatten_sheetmetal.bat`
-- [ ] Check work queue: `sqlite3.exe D:\PDM_Vault\pdm.sqlite "SELECT * FROM work_queue WHERE status='Failed';"`
-- [ ] Review FreeCAD output: Check `$env:TEMP\dxf_stdout.txt` and `$env:TEMP\dxf_stderr.txt`
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=eyJ...your-anon-key
+SUPABASE_SERVICE_KEY=eyJ...your-service-key
+DEBUG=true
+CORS_ALLOW_ALL=true
+```
 
----
+You need three values from the Supabase dashboard (Settings > API):
 
-## 📚 Next Steps After Setup
+| Variable | Where to Find |
+|---|---|
+| `SUPABASE_URL` | Project URL (Settings > API) |
+| `SUPABASE_ANON_KEY` | `anon` / `public` key (Settings > API) |
+| `SUPABASE_SERVICE_KEY` | `service_role` key (Settings > API) -- keep this secret |
 
-Once basic setup is complete:
+### Start the backend
 
-1. **Learn Daily Operations:** Read [COMMON-WORKFLOWS.md](COMMON-WORKFLOWS.md)
-2. **Understand the System:** Read [02-PDM-COMPLETE-OVERVIEW.md](02-PDM-COMPLETE-OVERVIEW.md)
-3. **Learn File Locations:** Reference [01-PDM-SYSTEM-MAP.md](01-PDM-SYSTEM-MAP.md)
-4. **For Issues:** Use [TROUBLESHOOTING-DECISION-TREE.md](TROUBLESHOOTING-DECISION-TREE.md)
-5. **For Tools:** See specific tool guides (BOM Cost, Cleanup, etc.)
+```bash
+cd backend
+uvicorn app.main:app --reload --port 8000
+```
+
+**Verify:** Open `http://localhost:8000/docs` in a browser. You should see the Swagger API documentation page.
+
+- [ ] Backend starts without errors
+- [ ] Swagger UI loads at `/docs`
+- [ ] Health check returns OK: `http://localhost:8000/health`
 
 ---
 
-## 💾 Backup Before Production
+## Step 3: Set Up the Frontend
 
-Once everything is working, create a backup:
+Open a new terminal window (keep the backend running).
+
+### Install Node dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### Start the development server
+
+```bash
+npm run dev
+```
+
+The Vite dev server starts on `http://localhost:5174` (or the next available port).
+
+**Verify:**
+
+- [ ] Frontend compiles without errors
+- [ ] Browser opens to the login page
+- [ ] No console errors in the browser developer tools
+
+---
+
+## Step 4: Verify Login
+
+Open the frontend URL in your browser (typically `http://localhost:5174`).
+
+1. You should see the **Login** page
+2. Enter your Supabase Auth credentials (email + password)
+3. After login, you should be redirected to the **Home** page showing PDM Tools and MRP Tools cards
+
+- [ ] Login page appears
+- [ ] Login succeeds with valid credentials
+- [ ] Home page loads with tool cards (PDM Browser, Part Numbers, Projects, Work Queue)
+- [ ] Username and role display in the header
+
+If you do not have login credentials, ask the team lead to create a user in the Supabase Auth dashboard.
+
+---
+
+## Step 5: Explore the Application
+
+### PDM Browser
+
+1. Click **PDM Browser** on the Home page
+2. You should see a table of items (if any exist in the database)
+3. Try the search bar to filter items
+4. Click an item row to open the detail panel on the right
+5. The detail panel shows item info, files, BOM, and where-used sections
+
+- [ ] PDM Browser loads
+- [ ] Items display in the table (or "No items found" if the database is empty)
+- [ ] Detail panel opens on item click
+
+### Part Number Generator
+
+1. Click **Part Number Generator** on the Home page
+2. Shows the next available part number for each prefix
+3. Click a number to copy it to the clipboard
+
+### Work Queue
+
+1. Click **Work Queue** on the Home page
+2. Shows background tasks (DXF/SVG generation, etc.)
+3. Will be empty if no tasks have been created
+
+---
+
+## Step 6: Upload a Test File (Optional)
+
+If items already exist in the database:
+
+1. Navigate to the **PDM Browser**
+2. Note an existing item number (e.g., `csp0030`)
+3. Use the API directly to upload a test file:
+
+```bash
+curl -X POST http://localhost:8000/api/files/upload \
+  -F "file=@test_file.pdf" \
+  -F "item_number=csp0030"
+```
+
+Or use the Swagger UI at `http://localhost:8000/docs` to test the `/api/files/upload` endpoint interactively.
+
+- [ ] File upload succeeds (HTTP 200)
+- [ ] File appears in the item's detail panel under "Files"
+
+---
+
+## Step 7: Set Up FreeCAD Worker (Optional)
+
+This step is only needed if you are working on DXF/SVG generation from STEP files.
+
+### Build and start the Docker container
+
+```bash
+docker-compose up -d freecad-worker
+```
+
+### Verify the container is running
+
+```bash
+docker ps | grep pdm-freecad
+```
+
+### Test with a sample STEP file
+
+```bash
+docker exec pdm-freecad-worker freecadcmd /scripts/flatten_sheetmetal.py \
+  /scripts/tools/Test\ Parts/ccp0871.stp /data/files/test_output.dxf
+```
+
+- [ ] Docker container starts successfully
+- [ ] Test STEP file processes without errors
+- [ ] DXF output file is created
+
+---
+
+## Step 8: Set Up PDM Upload Bridge (Optional)
+
+This step is only needed on the workstation running Creo Parametric, to bridge local file exports to the web API.
+
+### Configure the upload service
+
+Edit `scripts/pdm-upload/PDM-Upload-Config.ps1`:
 
 ```powershell
-# Create backup directory
-$backupDate = Get-Date -Format "yyyy-MM-dd"
-$backupPath = "D:\PDM_Backups\$backupDate"
-New-Item -ItemType Directory -Path $backupPath -Force
+$Config = @{
+    ApiUrl       = "http://localhost:8000/api"    # or production URL
+    WatchFolder  = "C:\PDM-Upload"
+    LogFile      = "C:\PDM-Upload\pdm-upload.log"
+}
+```
 
-# Backup database
-Copy-Item "D:\PDM_Vault\pdm.sqlite" "$backupPath\pdm.sqlite"
+### Create the watch folder
 
-# Backup scripts
-Copy-Item "D:\PDM_PowerShell" "$backupPath\PDM_PowerShell" -Recurse
+```powershell
+New-Item -ItemType Directory -Path "C:\PDM-Upload" -Force
+```
 
-Write-Host "Backup created at: $backupPath"
+### Start the upload service
+
+```powershell
+cd scripts\pdm-upload
+.\Start-PDMUpload.bat
+```
+
+The service monitors `C:\PDM-Upload` for new files and automatically uploads them to the API.
+
+- [ ] Watch folder created
+- [ ] Service starts and shows "File watcher started"
+- [ ] Dropping a STEP file into the watch folder triggers an upload
+
+---
+
+## Development Commands Reference
+
+### Backend
+
+```bash
+# Start with auto-reload
+cd backend && uvicorn app.main:app --reload --port 8000
+
+# Run on a specific host (for network access)
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Frontend
+
+```bash
+# Development server
+cd frontend && npm run dev
+
+# Type check and build for production
+cd frontend && npm run build
+
+# Preview production build
+cd frontend && npm run preview
+```
+
+### Docker (FreeCAD Worker)
+
+```bash
+# Start worker
+docker-compose up -d freecad-worker
+
+# Rebuild after changes
+docker-compose build freecad-worker && docker-compose up -d freecad-worker
+
+# View logs
+docker logs pdm-freecad-worker
+
+# Interactive shell
+docker exec -it pdm-freecad-worker bash
 ```
 
 ---
 
-## ✅ Setup Complete Checklist
+## Troubleshooting
 
-- [ ] All prerequisites verified
-- [ ] Folder structure verified
-- [ ] Database working
-- [ ] Services running (development mode)
-- [ ] File ingestion tested
-- [ ] BOM processing tested
-- [ ] Web server working
-- [ ] First item successfully created
-- [ ] Backup created
-- [ ] Windows services installed (if going production)
+### Backend will not start
+
+- Check that `.env` file exists in the `backend/` directory
+- Verify Supabase URL and keys are correct
+- Ensure Python dependencies are installed: `pip install -r requirements.txt`
+- Check for port conflicts: `netstat -an | find "8000"`
+
+### Frontend will not connect to backend
+
+- Verify the backend is running on the expected port (default: 8000)
+- Check the frontend Vite config for the correct API proxy target
+- Ensure `CORS_ALLOW_ALL=true` is set in the backend `.env` for local development
+- Look for CORS errors in the browser console
+
+### Login fails
+
+- Verify the user exists in Supabase Auth dashboard
+- Check that `SUPABASE_URL` and `SUPABASE_ANON_KEY` are correct in both backend `.env` and frontend configuration
+- Look for auth errors in the browser console and backend terminal
+
+### Docker container will not start
+
+- Ensure Docker Desktop is running
+- Check for port or volume conflicts: `docker ps -a`
+- Rebuild the image: `docker-compose build freecad-worker`
+- Check Docker logs: `docker logs pdm-freecad-worker`
+
+### Files not uploading
+
+- Verify the item exists in the database before uploading a file (files must be associated with an item)
+- Check the backend terminal for error messages
+- Ensure the Supabase Storage bucket `pdm-files` exists and has appropriate policies
 
 ---
 
-**Status:** ✅ Ready to Use
-**Time to Complete:** 15-30 minutes
-**Next Step:** Read [COMMON-WORKFLOWS.md](COMMON-WORKFLOWS.md) for daily operations
+## Next Steps
 
-For detailed setup instructions, see [08-PDM-WEBSERVER-README.md](08-PDM-WEBSERVER-README.md) and [02-PDM-COMPLETE-OVERVIEW.md](02-PDM-COMPLETE-OVERVIEW.md)
+Once setup is complete:
+
+1. **Learn daily workflows:** Read [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md)
+2. **Understand system capabilities:** Read [14-SKILL-DEFINITION.md](14-SKILL-DEFINITION.md)
+3. **FreeCAD automation:** Read [12-FREECAD-AUTOMATION.md](12-FREECAD-AUTOMATION.md)
+4. **API reference:** Browse the interactive docs at `http://localhost:8000/docs`
