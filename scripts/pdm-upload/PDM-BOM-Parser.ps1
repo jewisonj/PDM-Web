@@ -5,6 +5,8 @@
 
 .DESCRIPTION
     Parses Creo's fixed-width text BOM exports and parameter updates.
+    Column positions are detected dynamically from the header line,
+    so any column order is supported.
 
     Expected BOM format (from Creo):
     Model Name         DESCRIPTION            PROJECT   PRO_MP_MASS   PTC_MASTER_MATERIAL  CUT_LENGTH  SMT_THICKNESS
@@ -14,14 +16,164 @@
        WMP20090.PRT   Shaft                  PROJ1     1.2           Aluminum             300         2.5
 #>
 
+
+# =============================================================================
+# Column Mapping: Creo header name -> DB field name + value type
+# To add a new parameter, just add a row here.
+# =============================================================================
+$script:ColumnMap = @(
+    @{ header = 'DESCRIPTION';         field = 'name';       type = 'string' }
+    @{ header = 'PRO_MP_MASS';         field = 'mass';       type = 'number' }
+    @{ header = 'SMT_THICKNESS';       field = 'thickness';  type = 'number' }
+    @{ header = 'PTC_MASTER_MATERIAL'; field = 'material';   type = 'string' }
+    @{ header = 'CUT_LENGTH';          field = 'cut_length'; type = 'number' }
+    @{ header = 'CUT_TIME';            field = 'cut_time';   type = 'number' }
+    @{ header = 'PRICE_EST';           field = 'price_est';  type = 'number' }
+)
+
+# Additional headers to track for column boundary detection (not extracted as properties)
+$script:BoundaryHeaders = @('Model Name', 'PROJECT', 'Current Rep:')
+
+
+# =============================================================================
+# Shared Helper Functions
+# =============================================================================
+
+function Find-HeaderLine {
+    <#
+    .SYNOPSIS
+        Find the header line in a Creo text export and return it with its index.
+    #>
+    param([string[]]$Lines)
+
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        if ($Lines[$i] -match 'Model Name') {
+            return @{ line = $Lines[$i]; index = $i }
+        }
+    }
+    return $null
+}
+
+
+function Get-HeaderColumns {
+    <#
+    .SYNOPSIS
+        Scan a header line and return column positions for all recognized headers.
+
+    .DESCRIPTION
+        Finds positions of all mapped columns plus boundary-only columns.
+        Returns a hashtable of column_key -> position (or -1 if not found).
+        All positions are detected from the header, so column order doesn't matter.
+    #>
+    param([string]$HeaderLine)
+
+    $cols = @{}
+
+    # Map property columns (these get extracted as values)
+    foreach ($mapping in $script:ColumnMap) {
+        $pos = $HeaderLine.IndexOf($mapping.header)
+        $cols[$mapping.field] = if ($pos -ge 0) { $pos } else { -1 }
+    }
+
+    # Map boundary-only columns (used for column width detection, not extracted)
+    foreach ($bh in $script:BoundaryHeaders) {
+        $pos = $HeaderLine.IndexOf($bh)
+        if ($pos -ge 0) {
+            $cols["_boundary_$bh"] = $pos
+        }
+    }
+
+    return $cols
+}
+
+
+function Get-ColumnValue {
+    <#
+    .SYNOPSIS
+        Extract a single value from a fixed-width line by column key.
+
+    .DESCRIPTION
+        Uses the column's start position and dynamically finds the next
+        column to the right as the end boundary. Works with any column order.
+    #>
+    param(
+        [string]$Line,
+        [hashtable]$Cols,
+        [string]$ColKey
+    )
+
+    $start = $Cols[$ColKey]
+    if ($null -eq $start -or $start -lt 0) { return $null }
+    if ($start -ge $Line.Length) { return $null }
+
+    # Find the next column position to the right of $start
+    $end = $Line.Length
+    foreach ($colPos in $Cols.Values) {
+        if ($colPos -is [int] -and $colPos -gt $start -and $colPos -lt $end) {
+            $end = $colPos
+        }
+    }
+
+    $length = $end - $start
+    if ($length -le 0) { return $null }
+
+    $value = $Line.Substring($start, [Math]::Min($length, $Line.Length - $start)).Trim()
+
+    if ($value -eq '-' -or $value -eq '') { return $null }
+
+    return $value
+}
+
+
+function Extract-ItemProperties {
+    <#
+    .SYNOPSIS
+        Extract all mapped properties from a data line.
+
+    .DESCRIPTION
+        Uses the column mapping to pull each field from the line,
+        converting numeric fields to [double]. Returns a hashtable
+        of DB field names -> typed values (nulls included).
+    #>
+    param(
+        [string]$Line,
+        [hashtable]$Cols
+    )
+
+    $props = @{}
+
+    foreach ($mapping in $script:ColumnMap) {
+        $raw = Get-ColumnValue -Line $Line -Cols $Cols -ColKey $mapping.field
+
+        if ($mapping.type -eq 'number') {
+            if ($raw -and $raw -match '^[\d.]+$') {
+                $props[$mapping.field] = [double]$raw
+            } else {
+                $props[$mapping.field] = $null
+            }
+        }
+        else {
+            # string
+            $props[$mapping.field] = if ($raw) { $raw.Trim() } else { $null }
+        }
+    }
+
+    return $props
+}
+
+
+# =============================================================================
+# Parse-BOMFile
+# =============================================================================
+
 function Parse-BOMFile {
     <#
     .SYNOPSIS
-        Parse a Creo BOM text file.
+        Parse a Creo single-level BOM text file.
 
     .RETURNS
         Hashtable with:
-        - parent_item_number: The assembly item number
+        - parent_item_number + parent properties
         - children: Array of child items with properties
     #>
     param([string]$FilePath)
@@ -40,43 +192,18 @@ function Parse-BOMFile {
         children = @()
     }
 
-    # Find header line to get column positions
-    $headerLine = $null
-    $headerIndex = 0
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match 'Model Name') {
-            $headerLine = $lines[$i]
-            $headerIndex = $i
-            break
-        }
-    }
+    $header = Find-HeaderLine -Lines $lines
+    if (-not $header) { throw "Invalid BOM file: no 'Model Name' header found" }
 
-    if (-not $headerLine) {
-        throw "Invalid BOM file: no 'Model Name' header found"
-    }
-
-    # Calculate column positions from header
-    $cols = @{
-        ModelName   = $headerLine.IndexOf('Model Name')
-        Description = if ($headerLine.IndexOf('DESCRIPTION') -ge 0) { $headerLine.IndexOf('DESCRIPTION') } else { -1 }
-        Project     = if ($headerLine.IndexOf('PROJECT') -ge 0) { $headerLine.IndexOf('PROJECT') } else { -1 }
-        Mass        = if ($headerLine.IndexOf('PRO_MP_MASS') -ge 0) { $headerLine.IndexOf('PRO_MP_MASS') } else { -1 }
-        Material    = if ($headerLine.IndexOf('PTC_MASTER_MATERIAL') -ge 0) { $headerLine.IndexOf('PTC_MASTER_MATERIAL') } else { -1 }
-        CutLength   = if ($headerLine.IndexOf('CUT_LENGTH') -ge 0) { $headerLine.IndexOf('CUT_LENGTH') } else { -1 }
-        Thickness   = if ($headerLine.IndexOf('SMT_THICKNESS') -ge 0) { $headerLine.IndexOf('SMT_THICKNESS') } else { -1 }
-        CutTime     = if ($headerLine.IndexOf('CUT_TIME') -ge 0) { $headerLine.IndexOf('CUT_TIME') } else { -1 }
-        PriceEst    = if ($headerLine.IndexOf('PRICE_EST') -ge 0) { $headerLine.IndexOf('PRICE_EST') } else { -1 }
-    }
+    $cols = Get-HeaderColumns -HeaderLine $header.line
 
     # Track children for quantity counting
     $childrenMap = @{}
 
-    # Parse data lines (skip header and separator)
     $inData = $false
-    for ($i = $headerIndex + 1; $i -lt $lines.Count; $i++) {
+    for ($i = $header.index + 1; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
 
-        # Separator line marks start of data
         if ($line -match '^[\s-]+$' -and $line -match '-{3,}') {
             $inData = $true
             continue
@@ -85,13 +212,12 @@ function Parse-BOMFile {
         if (-not $inData) { continue }
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
 
-        # Calculate indent level (number of leading spaces)
+        # Calculate indent level
         $trimmedLine = $line.TrimStart()
         $indent = $line.Length - $trimmedLine.Length
 
-        # Extract item number (3 letters + 4-6 digits, or mmc/spn patterns)
+        # Extract item number
         $itemMatch = [regex]::Match($line, '([A-Za-z]{3}\d{4,6}|mmc[A-Za-z0-9]+|spn[A-Za-z0-9]+)', 'IgnoreCase')
-
         if (-not $itemMatch.Success) { continue }
 
         $itemNumber = $itemMatch.Groups[1].Value.ToLower()
@@ -101,65 +227,22 @@ function Parse-BOMFile {
         if ($line -match '_SKEL\.PRT') { continue }
         if ($line -match 'ASM_RIGHT|ASM_TOP|ASM_FRONT|ASM_DEF_CSYS') { continue }
 
-        # Determine if this is parent assembly or child
         $isAssembly = $line -match '\.ASM'
+        $props = Extract-ItemProperties -Line $line -Cols $cols
 
         if ($indent -lt 3 -and $isAssembly -and -not $result.parent_item_number) {
-            # This is the top-level assembly (parent) - extract its properties too
+            # Top-level assembly (parent)
             $result.parent_item_number = $itemNumber
-
-            $pDesc = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Description' -EndCol 'Project'
-            $pMat  = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Material' -EndCol 'CutLength'
-            $pMass = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Mass' -EndCol 'Material'
-            $pCL   = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutLength' -EndCol 'Thickness'
-            $pThk  = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol 'CutTime'
-            $pCT   = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutTime' -EndCol 'PriceEst'
-            $pPE   = Get-ColumnValue -Line $line -Cols $cols -StartCol 'PriceEst' -EndCol $null
-
-            if ($pDesc) { $result.parent_name = $pDesc.Trim() }
-            if ($pMat)  { $result.parent_material = $pMat.Trim() }
-            if ($pMass -and $pMass -match '^[\d.]+$') { $result.parent_mass = [double]$pMass }
-            if ($pCL -and $pCL -match '^[\d.]+$')     { $result.parent_cut_length = [double]$pCL }
-            if ($pThk -and $pThk -match '^[\d.]+$')    { $result.parent_thickness = [double]$pThk }
-            if ($pCT -and $pCT -match '^[\d.]+$')      { $result.parent_cut_time = [double]$pCT }
-            if ($pPE -and $pPE -match '^[\d.]+$')      { $result.parent_price_est = [double]$pPE }
+            $result.parent_name        = $props.name
+            $result.parent_material    = $props.material
+            $result.parent_mass        = $props.mass
+            $result.parent_cut_length  = $props.cut_length
+            $result.parent_thickness   = $props.thickness
+            $result.parent_cut_time    = $props.cut_time
+            $result.parent_price_est   = $props.price_est
         }
         else {
-            # This is a child part/subassembly
-
-            # Extract properties from columns
-            $description = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Description' -EndCol 'Project'
-            $material = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Material' -EndCol 'CutLength'
-            $massStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Mass' -EndCol 'Material'
-            $cutLengthStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutLength' -EndCol 'Thickness'
-            $thicknessStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol 'CutTime'
-            $cutTimeStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutTime' -EndCol 'PriceEst'
-            $priceEstStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'PriceEst' -EndCol $null
-
-            # Parse numeric values
-            $mass = $null
-            $cutLength = $null
-            $thickness = $null
-            $cutTime = $null
-            $priceEst = $null
-
-            if ($massStr -and $massStr -match '^[\d.]+$') {
-                $mass = [double]$massStr
-            }
-            if ($cutLengthStr -and $cutLengthStr -match '^[\d.]+$') {
-                $cutLength = [double]$cutLengthStr
-            }
-            if ($thicknessStr -and $thicknessStr -match '^[\d.]+$') {
-                $thickness = [double]$thicknessStr
-            }
-            if ($cutTimeStr -and $cutTimeStr -match '^[\d.]+$') {
-                $cutTime = [double]$cutTimeStr
-            }
-            if ($priceEstStr -and $priceEstStr -match '^[\d.]+$') {
-                $priceEst = [double]$priceEstStr
-            }
-
-            # Check for duplicate (increment quantity)
+            # Child part/subassembly
             if ($childrenMap.ContainsKey($itemNumber)) {
                 $childrenMap[$itemNumber].quantity++
             }
@@ -167,29 +250,31 @@ function Parse-BOMFile {
                 $childrenMap[$itemNumber] = @{
                     item_number = $itemNumber
                     quantity    = 1
-                    name        = if ($description) { $description.Trim() } else { $null }
-                    material    = if ($material) { $material.Trim() } else { $null }
-                    mass        = $mass
-                    cut_length  = $cutLength
-                    thickness   = $thickness
-                    cut_time    = $cutTime
-                    price_est   = $priceEst
+                    name        = $props.name
+                    material    = $props.material
+                    mass        = $props.mass
+                    cut_length  = $props.cut_length
+                    thickness   = $props.thickness
+                    cut_time    = $props.cut_time
+                    price_est   = $props.price_est
                 }
             }
         }
     }
 
-    # Convert children map to array
     $result.children = @($childrenMap.Values)
-
     return $result
 }
 
 
+# =============================================================================
+# Parse-ParameterFile
+# =============================================================================
+
 function Parse-ParameterFile {
     <#
     .SYNOPSIS
-        Parse a Creo parameter text file (single item).
+        Parse a Creo parameter text file (single item, first data line only).
 
     .RETURNS
         Hashtable with item_number and properties.
@@ -202,37 +287,13 @@ function Parse-ParameterFile {
         item_number = $null
     }
 
-    # Find header line
-    $headerLine = $null
-    $headerIndex = 0
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match 'Model Name') {
-            $headerLine = $lines[$i]
-            $headerIndex = $i
-            break
-        }
-    }
+    $header = Find-HeaderLine -Lines $lines
+    if (-not $header) { throw "Invalid parameter file: no 'Model Name' header found" }
 
-    if (-not $headerLine) {
-        throw "Invalid parameter file: no 'Model Name' header found"
-    }
+    $cols = Get-HeaderColumns -HeaderLine $header.line
 
-    # Calculate column positions
-    $cols = @{
-        ModelName   = $headerLine.IndexOf('Model Name')
-        Description = if ($headerLine.IndexOf('DESCRIPTION') -ge 0) { $headerLine.IndexOf('DESCRIPTION') } else { -1 }
-        Project     = if ($headerLine.IndexOf('PROJECT') -ge 0) { $headerLine.IndexOf('PROJECT') } else { -1 }
-        Mass        = if ($headerLine.IndexOf('PRO_MP_MASS') -ge 0) { $headerLine.IndexOf('PRO_MP_MASS') } else { -1 }
-        Material    = if ($headerLine.IndexOf('PTC_MASTER_MATERIAL') -ge 0) { $headerLine.IndexOf('PTC_MASTER_MATERIAL') } else { -1 }
-        CutLength   = if ($headerLine.IndexOf('CUT_LENGTH') -ge 0) { $headerLine.IndexOf('CUT_LENGTH') } else { -1 }
-        Thickness   = if ($headerLine.IndexOf('SMT_THICKNESS') -ge 0) { $headerLine.IndexOf('SMT_THICKNESS') } else { -1 }
-        CutTime     = if ($headerLine.IndexOf('CUT_TIME') -ge 0) { $headerLine.IndexOf('CUT_TIME') } else { -1 }
-        PriceEst    = if ($headerLine.IndexOf('PRICE_EST') -ge 0) { $headerLine.IndexOf('PRICE_EST') } else { -1 }
-    }
-
-    # Find first data line (after separator)
     $inData = $false
-    for ($i = $headerIndex + 1; $i -lt $lines.Count; $i++) {
+    for ($i = $header.index + 1; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
 
         if ($line -match '^[\s-]+$' -and $line -match '-{3,}') {
@@ -243,41 +304,17 @@ function Parse-ParameterFile {
         if (-not $inData) { continue }
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
 
-        # Extract item number
         $itemMatch = [regex]::Match($line, '([A-Za-z]{3}\d{4,6}|mmc[A-Za-z0-9]+|spn[A-Za-z0-9]+)', 'IgnoreCase')
 
         if ($itemMatch.Success) {
             $result.item_number = $itemMatch.Groups[1].Value.ToLower()
 
-            # Extract properties
-            $description = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Description' -EndCol 'Project'
-            $material = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Material' -EndCol 'CutLength'
-            $massStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Mass' -EndCol 'Material'
-            $cutLengthStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutLength' -EndCol 'Thickness'
-            $thicknessStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol 'CutTime'
-            $cutTimeStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutTime' -EndCol 'PriceEst'
-            $priceEstStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'PriceEst' -EndCol $null
-
-            if ($description) { $result.name = $description.Trim() }
-            if ($material) { $result.material = $material.Trim() }
-
-            if ($massStr -and $massStr -match '^[\d.]+$') {
-                $result.mass = [double]$massStr
-            }
-            if ($cutLengthStr -and $cutLengthStr -match '^[\d.]+$') {
-                $result.cut_length = [double]$cutLengthStr
-            }
-            if ($thicknessStr -and $thicknessStr -match '^[\d.]+$') {
-                $result.thickness = [double]$thicknessStr
-            }
-            if ($cutTimeStr -and $cutTimeStr -match '^[\d.]+$') {
-                $result.cut_time = [double]$cutTimeStr
-            }
-            if ($priceEstStr -and $priceEstStr -match '^[\d.]+$') {
-                $result.price_est = [double]$priceEstStr
+            $props = Extract-ItemProperties -Line $line -Cols $cols
+            foreach ($key in $props.Keys) {
+                $result[$key] = $props[$key]
             }
 
-            # Only process first data line for parameter files
+            # Only process first data line
             break
         }
     }
@@ -286,61 +323,38 @@ function Parse-ParameterFile {
 }
 
 
+# =============================================================================
+# Parse-MLBOMFile
+# =============================================================================
+
 function Parse-MLBOMFile {
     <#
     .SYNOPSIS
         Parse a Creo multi-level BOM text file preserving hierarchy.
 
     .DESCRIPTION
-        Unlike Parse-BOMFile which flattens everything to one parent,
-        this function reads the indentation structure to determine
-        parent-child relationships at every assembly level.
-
-        Returns one BOM group per assembly in the tree, each with its
-        direct children only.
+        Reads the indentation structure to determine parent-child
+        relationships at every assembly level.
 
     .RETURNS
         Array of hashtables, each with:
-        - parent_item_number: Assembly item number
+        - parent_item_number + parent properties
         - children: Array of direct child items with properties
     #>
     param([string]$FilePath)
 
     $lines = Get-Content $FilePath -Encoding UTF8
 
-    # Find header line to get column positions
-    $headerLine = $null
-    $headerIndex = 0
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        if ($lines[$i] -match 'Model Name') {
-            $headerLine = $lines[$i]
-            $headerIndex = $i
-            break
-        }
-    }
+    $header = Find-HeaderLine -Lines $lines
+    if (-not $header) { throw "Invalid MLBOM file: no 'Model Name' header found" }
 
-    if (-not $headerLine) {
-        throw "Invalid MLBOM file: no 'Model Name' header found"
-    }
+    $cols = Get-HeaderColumns -HeaderLine $header.line
 
-    # Calculate column positions from header
-    $cols = @{
-        ModelName   = $headerLine.IndexOf('Model Name')
-        Description = if ($headerLine.IndexOf('DESCRIPTION') -ge 0) { $headerLine.IndexOf('DESCRIPTION') } else { -1 }
-        Project     = if ($headerLine.IndexOf('PROJECT') -ge 0) { $headerLine.IndexOf('PROJECT') } else { -1 }
-        Mass        = if ($headerLine.IndexOf('PRO_MP_MASS') -ge 0) { $headerLine.IndexOf('PRO_MP_MASS') } else { -1 }
-        Material    = if ($headerLine.IndexOf('PTC_MASTER_MATERIAL') -ge 0) { $headerLine.IndexOf('PTC_MASTER_MATERIAL') } else { -1 }
-        CutLength   = if ($headerLine.IndexOf('CUT_LENGTH') -ge 0) { $headerLine.IndexOf('CUT_LENGTH') } else { -1 }
-        Thickness   = if ($headerLine.IndexOf('SMT_THICKNESS') -ge 0) { $headerLine.IndexOf('SMT_THICKNESS') } else { -1 }
-        CutTime     = if ($headerLine.IndexOf('CUT_TIME') -ge 0) { $headerLine.IndexOf('CUT_TIME') } else { -1 }
-        PriceEst    = if ($headerLine.IndexOf('PRICE_EST') -ge 0) { $headerLine.IndexOf('PRICE_EST') } else { -1 }
-    }
-
-    # First pass: collect all item lines (lines with .ASM or .PRT)
+    # First pass: collect all item lines with properties
     $itemLines = @()
     $inData = $false
 
-    for ($i = $headerIndex + 1; $i -lt $lines.Count; $i++) {
+    for ($i = $header.index + 1; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
 
         if ($line -match '^[\s-]+$' -and $line -match '-{3,}') {
@@ -351,67 +365,43 @@ function Parse-MLBOMFile {
         if (-not $inData) { continue }
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
 
-        # Only process lines containing .ASM or .PRT (actual components)
+        # Only process lines containing .ASM or .PRT
         if ($line -notmatch '\.(ASM|PRT)') { continue }
 
-        # Skip excluded components (Creo suppressed/excluded)
+        # Skip excluded, skeleton, and datum features
         if ($line -match '\bExclude\b') { continue }
-
-        # Skip skeleton parts and datum features
         if ($line -match '_SKEL\.PRT') { continue }
         if ($line -match 'ASM_RIGHT|ASM_TOP|ASM_FRONT|ASM_DEF_CSYS') { continue }
 
-        # Extract item number
         $itemMatch = [regex]::Match($line, '([A-Za-z]{3}\d{4,6}|mmc[A-Za-z0-9]+|spn[A-Za-z0-9]+)', 'IgnoreCase')
         if (-not $itemMatch.Success) { continue }
 
         $itemNumber = $itemMatch.Groups[1].Value.ToLower()
 
-        # Calculate indent (leading spaces)
         $trimmed = $line.TrimStart()
         $indent = $line.Length - $trimmed.Length
 
         $isAssembly = $line -match '\.ASM'
 
-        # Extract properties from columns
-        $description = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Description' -EndCol 'Project'
-        $material = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Material' -EndCol 'CutLength'
-        $massStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Mass' -EndCol 'Material'
-        $cutLengthStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutLength' -EndCol 'Thickness'
-        $thicknessStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol 'CutTime'
-        $cutTimeStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutTime' -EndCol 'PriceEst'
-        $priceEstStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'PriceEst' -EndCol $null
-
-        # Parse numeric values
-        $mass = $null; $cutLength = $null; $thickness = $null; $cutTime = $null; $priceEst = $null
-
-        if ($massStr -and $massStr -match '^[\d.]+$') { $mass = [double]$massStr }
-        if ($cutLengthStr -and $cutLengthStr -match '^[\d.]+$') { $cutLength = [double]$cutLengthStr }
-        if ($thicknessStr -and $thicknessStr -match '^[\d.]+$') { $thickness = [double]$thicknessStr }
-        if ($cutTimeStr -and $cutTimeStr -match '^[\d.]+$') { $cutTime = [double]$cutTimeStr }
-        if ($priceEstStr -and $priceEstStr -match '^[\d.]+$') { $priceEst = [double]$priceEstStr }
+        $props = Extract-ItemProperties -Line $line -Cols $cols
 
         $itemLines += @{
             item_number = $itemNumber
             indent      = $indent
             is_assembly = $isAssembly
-            name        = if ($description) { $description.Trim() } else { $null }
-            material    = if ($material) { $material.Trim() } else { $null }
-            mass        = $mass
-            cut_length  = $cutLength
-            thickness   = $thickness
-            cut_time    = $cutTime
-            price_est   = $priceEst
+            name        = $props.name
+            material    = $props.material
+            mass        = $props.mass
+            cut_length  = $props.cut_length
+            thickness   = $props.thickness
+            cut_time    = $props.cut_time
+            price_est   = $props.price_est
         }
     }
 
     # Second pass: build parent-child relationships using assembly stack
-    # Stack entries: @{indent; item_number} - only assemblies go on the stack
     $assemblyStack = [System.Collections.ArrayList]@()
-
-    # bomGroups: parent_item_number -> OrderedDictionary of child_item_number -> properties
     $bomGroups = @{}
-    # parentProps: parent_item_number -> parent assembly properties
     $parentProps = @{}
 
     foreach ($item in $itemLines) {
@@ -424,11 +414,9 @@ function Parse-MLBOMFile {
         if ($assemblyStack.Count -gt 0) {
             $parentNumber = $assemblyStack[$assemblyStack.Count - 1].item_number
 
-            # Skip zzz (reference) items as children
             if (-not $item.item_number.StartsWith("zzz")) {
                 if (-not $bomGroups.ContainsKey($parentNumber)) {
                     $bomGroups[$parentNumber] = @{}
-                    # Capture parent assembly properties from the stack
                     $parentEntry = $assemblyStack[$assemblyStack.Count - 1]
                     $parentProps[$parentNumber] = @{
                         name       = $parentEntry.name
@@ -442,7 +430,6 @@ function Parse-MLBOMFile {
                 }
 
                 if ($bomGroups[$parentNumber].ContainsKey($item.item_number)) {
-                    # Duplicate child under same parent = increment quantity
                     $bomGroups[$parentNumber][$item.item_number].quantity++
                 }
                 else {
@@ -461,7 +448,7 @@ function Parse-MLBOMFile {
             }
         }
 
-        # If this is an assembly, push onto the stack so its children can find it
+        # If this is an assembly, push onto the stack
         if ($item.is_assembly) {
             $assemblyStack.Add(@{
                 indent      = $item.indent
@@ -480,54 +467,19 @@ function Parse-MLBOMFile {
     # Convert to array of BOM groups (include parent properties)
     $result = @()
     foreach ($parentNumber in $bomGroups.Keys) {
-        $props = if ($parentProps.ContainsKey($parentNumber)) { $parentProps[$parentNumber] } else { @{} }
+        $pp = if ($parentProps.ContainsKey($parentNumber)) { $parentProps[$parentNumber] } else { @{} }
         $result += @{
             parent_item_number = $parentNumber
-            parent_name        = $props.name
-            parent_material    = $props.material
-            parent_mass        = $props.mass
-            parent_cut_length  = $props.cut_length
-            parent_thickness   = $props.thickness
-            parent_cut_time    = $props.cut_time
-            parent_price_est   = $props.price_est
+            parent_name        = $pp.name
+            parent_material    = $pp.material
+            parent_mass        = $pp.mass
+            parent_cut_length  = $pp.cut_length
+            parent_thickness   = $pp.thickness
+            parent_cut_time    = $pp.cut_time
+            parent_price_est   = $pp.price_est
             children           = @($bomGroups[$parentNumber].Values)
         }
     }
 
     return $result
-}
-
-
-function Get-ColumnValue {
-    <#
-    .SYNOPSIS
-        Extract value from fixed-width column.
-    #>
-    param(
-        [string]$Line,
-        [hashtable]$Cols,
-        [string]$StartCol,
-        [string]$EndCol
-    )
-
-    $start = $Cols[$StartCol]
-    if ($start -lt 0) { return $null }
-
-    # Determine end position
-    $end = $Line.Length
-    if ($EndCol -and $Cols.ContainsKey($EndCol) -and $Cols[$EndCol] -ge 0) {
-        $end = $Cols[$EndCol]
-    }
-
-    if ($start -ge $Line.Length) { return $null }
-
-    $length = [Math]::Min($end - $start, $Line.Length - $start)
-    if ($length -le 0) { return $null }
-
-    $value = $Line.Substring($start, $length).Trim()
-
-    # Return null for placeholder values
-    if ($value -eq '-' -or $value -eq '') { return $null }
-
-    return $value
 }
