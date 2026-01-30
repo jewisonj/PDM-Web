@@ -39,9 +39,18 @@ class SheetResult:
 
 
 @dataclass
+class SkippedPart:
+    """A part that could not be placed on any sheet."""
+    part_id: str
+    instance: int
+    reason: str
+
+
+@dataclass
 class NestingResult:
     """Full nesting result across all sheets."""
     sheets: list[SheetResult] = field(default_factory=list)
+    skipped: list[SkippedPart] = field(default_factory=list)
 
     @property
     def total_parts_placed(self) -> int:
@@ -50,6 +59,10 @@ class NestingResult:
     @property
     def total_sheets(self) -> int:
         return len(self.sheets)
+
+    @property
+    def total_skipped(self) -> int:
+        return len(self.skipped)
 
     @property
     def avg_utilization(self) -> float:
@@ -104,9 +117,9 @@ def nest_parts(
                 "buffered": buffered,
             })
 
-    # Sort by bounding box area, largest first (heuristic: big parts first)
+    # Sort by polygon area, largest first (big parts are hardest to place)
     instances.sort(
-        key=lambda p: _bbox_area(p["buffered"]),
+        key=lambda p: p["original"].area,
         reverse=True,
     )
 
@@ -123,7 +136,23 @@ def nest_parts(
     # Track occupied regions per sheet as a list of placed polygons
     sheet_polygons: list[list[Polygon]] = [[]]
 
+    # Pre-check: find parts that are too large for the sheet at ANY rotation
+    # so we can report them and skip them entirely
+    oversized_ids = set()
     for inst in instances:
+        if _is_oversized(inst["buffered"], usable_width, usable_height, rotations):
+            oversized_ids.add((inst["id"], inst["instance"]))
+            result.skipped.append(SkippedPart(
+                part_id=inst["id"],
+                instance=inst["instance"],
+                reason="Too large for sheet at any rotation",
+            ))
+
+    # Filter out oversized parts
+    placeable = [inst for inst in instances
+                 if (inst["id"], inst["instance"]) not in oversized_ids]
+
+    for inst in placeable:
         placed = _try_place(
             inst, current_sheet, sheet_polygons[-1],
             usable_width, usable_height, margin, rotations,
@@ -143,7 +172,11 @@ def nest_parts(
                 usable_width, usable_height, margin, rotations,
             )
             if not placed:
-                # Part too large for sheet - skip
+                result.skipped.append(SkippedPart(
+                    part_id=inst["id"],
+                    instance=inst["instance"],
+                    reason="Could not fit on any sheet",
+                ))
                 continue
 
     # Calculate utilization for each sheet
@@ -273,7 +306,21 @@ def _overlaps_any(candidate: Polygon, prep_polys: list) -> bool:
     return False
 
 
-def _bbox_area(polygon: Polygon) -> float:
-    """Bounding box area of a polygon."""
-    b = polygon.bounds
-    return (b[2] - b[0]) * (b[3] - b[1])
+def _is_oversized(
+    buffered: Polygon,
+    usable_width: float,
+    usable_height: float,
+    rotations: list[int],
+) -> bool:
+    """Check if a buffered part doesn't fit the sheet at any rotation."""
+    for rot in rotations:
+        if rot != 0:
+            rotated = rotate(buffered, rot, origin="centroid", use_radians=False)
+        else:
+            rotated = buffered
+        b = rotated.bounds
+        pw = b[2] - b[0]
+        ph = b[3] - b[1]
+        if pw <= usable_width and ph <= usable_height:
+            return False  # Fits at this rotation
+    return True  # Doesn't fit at any rotation

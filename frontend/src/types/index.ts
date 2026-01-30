@@ -118,6 +118,12 @@ export interface NestGroup {
   parts: NestGroupPart[]
 }
 
+export interface NestSkippedPart {
+  part_id: string
+  instance: number
+  reason: string
+}
+
 export interface NestJob {
   id: string
   project_id: string
@@ -132,6 +138,7 @@ export interface NestJob {
   sheets_used?: number
   total_parts_placed?: number
   avg_utilization?: number
+  skipped_parts?: NestSkippedPart[]
   manifest?: Record<string, unknown>
   output_prefix?: string
   status: 'pending' | 'processing' | 'completed' | 'failed'

@@ -132,6 +132,7 @@ def process_nest_task(supabase, task: dict):
 
         # 5. Parse DXFs to polygons
         parts_for_nesting = []
+        source_polygons = {}  # part_id -> Shapely Polygon (for DXF writer alignment)
         for item in job_items:
             if item["item_number"] not in dxf_paths:
                 continue
@@ -155,6 +156,7 @@ def process_nest_task(supabase, task: dict):
                 "area_sq_in": round(area, 4),
             }).eq("id", item["id"]).execute()
 
+            source_polygons[item["item_number"]] = outline
             parts_for_nesting.append({
                 "id": item["item_number"],
                 "polygon": outline,
@@ -178,6 +180,18 @@ def process_nest_task(supabase, task: dict):
 
         log(f"  Nesting complete: {result.total_sheets} sheets, {result.total_parts_placed} parts placed")
 
+        # Log skipped parts
+        if result.skipped:
+            log(f"  WARNING: {result.total_skipped} part instances could not be placed:")
+            for sp in result.skipped:
+                log(f"    - {sp.part_id}#{sp.instance}: {sp.reason}")
+
+        # Build skipped parts data for DB storage
+        skipped_data = [
+            {"part_id": sp.part_id, "instance": sp.instance, "reason": sp.reason}
+            for sp in result.skipped
+        ]
+
         # 7. Generate output DXFs and upload
         output_prefix = job.get("output_prefix", f"projects/unknown/nests/{nest_job_id}/")
         nest_result_rows = []
@@ -192,6 +206,7 @@ def process_nest_task(supabase, task: dict):
                 sheet=sheet,
                 original_dxf_paths=dxf_paths,
                 output_path=str(output_path),
+                source_polygons=source_polygons,
             )
 
             # Upload to Supabase Storage
@@ -280,8 +295,10 @@ def process_nest_task(supabase, task: dict):
             "results": {
                 "sheets": result.total_sheets,
                 "parts_placed": result.total_parts_placed,
+                "parts_skipped": result.total_skipped,
                 "avg_utilization": round(result.avg_utilization, 4),
             },
+            "skipped": skipped_data,
             "outputs": [
                 {
                     "sheet_index": r["sheet_index"],
@@ -316,14 +333,17 @@ def process_nest_task(supabase, task: dict):
             supabase.table("nest_results").insert(nest_result_rows).execute()
 
         # 10. Update nest_jobs with summary
-        supabase.table("nest_jobs").update({
+        job_update = {
             "status": "completed",
             "sheets_used": result.total_sheets,
             "total_parts_placed": result.total_parts_placed,
             "avg_utilization": round(result.avg_utilization, 4),
             "manifest": manifest,
             "completed_at": now_iso(),
-        }).eq("id", nest_job_id).execute()
+        }
+        if skipped_data:
+            job_update["skipped_parts"] = skipped_data
+        supabase.table("nest_jobs").update(job_update).eq("id", nest_job_id).execute()
 
         # 11. Mark work_queue task completed
         complete_task(supabase, task_id)
