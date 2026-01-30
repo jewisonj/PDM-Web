@@ -28,23 +28,23 @@ function Get-ItemNumber {
 
     $baseName = [IO.Path]::GetFileNameWithoutExtension($FileName)
 
-    # Standard pattern: 3 letters + 4-6 digits
-    if ($baseName -match '^([a-zA-Z]{3}\d{4,6})') {
-        return $Matches[1].ToLower()
-    }
-
-    # McMaster pattern: mmc followed by alphanumeric
+    # McMaster pattern: mmc followed by alphanumeric (check BEFORE standard pattern)
     if ($baseName -match '^(mmc[a-zA-Z0-9]+)') {
         return $Matches[1].ToLower()
     }
 
-    # Supplier pattern: spn followed by alphanumeric
-    if ($baseName -match '^(spn[a-zA-Z0-9]+)') {
+    # Supplier pattern: spn followed by alphanumeric+hyphens (check BEFORE standard pattern)
+    if ($baseName -match '^(spn[a-zA-Z0-9_-]+)') {
         return $Matches[1].ToLower()
     }
 
     # Reference pattern: zzz followed by alphanumeric
     if ($baseName -match '^(zzz[a-zA-Z0-9]+)') {
+        return $Matches[1].ToLower()
+    }
+
+    # Standard pattern: 3 letters + 4-6 digits
+    if ($baseName -match '^([a-zA-Z]{3}\d{4,6})') {
         return $Matches[1].ToLower()
     }
 

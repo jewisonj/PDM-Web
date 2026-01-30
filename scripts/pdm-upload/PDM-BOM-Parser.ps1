@@ -217,7 +217,7 @@ function Parse-BOMFile {
         $indent = $line.Length - $trimmedLine.Length
 
         # Extract item number
-        $itemMatch = [regex]::Match($line, '([A-Za-z]{3}\d{4,6}|mmc[A-Za-z0-9]+|spn[A-Za-z0-9]+)', 'IgnoreCase')
+        $itemMatch = [regex]::Match($line, '(mmc[A-Za-z0-9]+|spn[A-Za-z0-9_-]+|[A-Za-z]{3}\d{4,6})', 'IgnoreCase')
         if (-not $itemMatch.Success) { continue }
 
         $itemNumber = $itemMatch.Groups[1].Value.ToLower()
@@ -304,7 +304,7 @@ function Parse-ParameterFile {
         if (-not $inData) { continue }
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
 
-        $itemMatch = [regex]::Match($line, '([A-Za-z]{3}\d{4,6}|mmc[A-Za-z0-9]+|spn[A-Za-z0-9]+)', 'IgnoreCase')
+        $itemMatch = [regex]::Match($line, '(mmc[A-Za-z0-9]+|spn[A-Za-z0-9_-]+|[A-Za-z]{3}\d{4,6})', 'IgnoreCase')
 
         if ($itemMatch.Success) {
             $result.item_number = $itemMatch.Groups[1].Value.ToLower()
@@ -373,7 +373,7 @@ function Parse-MLBOMFile {
         if ($line -match '_SKEL\.PRT') { continue }
         if ($line -match 'ASM_RIGHT|ASM_TOP|ASM_FRONT|ASM_DEF_CSYS') { continue }
 
-        $itemMatch = [regex]::Match($line, '([A-Za-z]{3}\d{4,6}|mmc[A-Za-z0-9]+|spn[A-Za-z0-9]+)', 'IgnoreCase')
+        $itemMatch = [regex]::Match($line, '(mmc[A-Za-z0-9]+|spn[A-Za-z0-9_-]+|[A-Za-z]{3}\d{4,6})', 'IgnoreCase')
         if (-not $itemMatch.Success) { continue }
 
         $itemNumber = $itemMatch.Groups[1].Value.ToLower()
