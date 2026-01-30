@@ -15,6 +15,16 @@ interface ProjectPart {
   quantity: number
   is_assembly: boolean
   has_routing: boolean
+  is_manual: boolean
+  est_time_min: number
+}
+
+interface ProjectAssembly {
+  id: string
+  item_id: string
+  item_number: string
+  name: string
+  quantity: number
 }
 
 interface MrpProject {
@@ -26,8 +36,8 @@ interface MrpProject {
   start_date: string
   status: string
   top_assembly_id: string
-  top_assembly_number?: string
   created_at: string
+  assemblies?: ProjectAssembly[]
   parts?: ProjectPart[]
   print_packet_path?: string
   print_packet_generated_at?: string
@@ -41,7 +51,10 @@ const error = ref('')
 const showNewProjectModal = ref(false)
 const showDetailPanel = ref(false)
 const addAssemblyInput = ref('')
-const explodingBom = ref(false)
+const addingAssembly = ref(false)
+const updatingBom = ref(false)
+const addPartInput = ref('')
+const addingPart = ref(false)
 const generatingPacket = ref(false)
 const packetSuccess = ref('')
 const packetUrl = ref<string | null>(null)
@@ -82,8 +95,8 @@ const unroutedParts = computed(() =>
 const totalParts = computed(() => projectParts.value.length)
 
 const totalHours = computed(() => {
-  // TODO: Calculate from routing data
-  return 0
+  const totalMinutes = projectParts.value.reduce((sum, p) => sum + (p.quantity * p.est_time_min), 0)
+  return Math.round(totalMinutes / 60 * 10) / 10
 })
 
 async function loadProjects() {
@@ -105,21 +118,9 @@ async function loadProjects() {
         .select('*', { count: 'exact', head: true })
         .eq('project_id', project.id)
 
-      // Get top assembly item number if set
-      let top_assembly_number = null
-      if (project.top_assembly_id) {
-        const { data: item } = await supabase
-          .from('items')
-          .select('item_number')
-          .eq('id', project.top_assembly_id)
-          .single()
-        top_assembly_number = item?.item_number
-      }
-
       return {
         ...project,
-        part_count: count || 0,
-        top_assembly_number
+        part_count: count || 0
       }
     }))
 
@@ -141,6 +142,7 @@ async function loadProjectParts(projectId: string) {
         id,
         item_id,
         quantity,
+        is_manual,
         items(item_number, name, is_supplier_part)
       `)
       .eq('project_id', projectId)
@@ -150,11 +152,14 @@ async function loadProjectParts(projectId: string) {
 
     // Get routing info for each part
     const partsWithRouting = await Promise.all((data || []).map(async (pp: any) => {
-      // Check if this item has routing
-      const { count } = await supabase
+      // Fetch routing steps for this item (to check existence + sum est_time_min)
+      const { data: routingData } = await supabase
         .from('routing')
-        .select('*', { count: 'exact', head: true })
+        .select('est_time_min')
         .eq('item_id', pp.item_id)
+
+      const routingSteps = routingData || []
+      const estTimeMin = routingSteps.reduce((sum: number, r: any) => sum + (r.est_time_min || 0), 0)
 
       // Check if it's an assembly (has children in BOM)
       const { count: bomCount } = await supabase
@@ -169,7 +174,9 @@ async function loadProjectParts(projectId: string) {
         name: pp.items?.name || '',
         quantity: pp.quantity,
         is_assembly: (bomCount || 0) > 0,
-        has_routing: (count || 0) > 0
+        has_routing: routingSteps.length > 0,
+        is_manual: pp.is_manual || false,
+        est_time_min: estTimeMin
       }
     }))
 
@@ -189,9 +196,10 @@ async function selectProject(project: MrpProject) {
   packetUrl.value = null  // Clear packet URL when switching projects
   packetSuccess.value = ''
 
-  // Load parts and check for existing print packet in parallel
+  // Load parts, assemblies, and check for existing print packet in parallel
   await Promise.all([
     loadProjectParts(project.id),
+    loadProjectAssemblies(project.id),
     loadExistingPacket(project.id)
   ])
 }
@@ -269,52 +277,165 @@ async function updateProjectStatus(status: string) {
   }
 }
 
-async function explodeBom() {
+async function loadProjectAssemblies(projectId: string) {
+  const { data, error: queryError } = await supabase
+    .from('mrp_project_assemblies')
+    .select(`
+      id,
+      item_id,
+      quantity,
+      items(item_number, name)
+    `)
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true })
+
+  if (queryError) throw queryError
+
+  const assemblies: ProjectAssembly[] = (data || []).map((a: any) => ({
+    id: a.id,
+    item_id: a.item_id,
+    item_number: a.items?.item_number || '',
+    name: a.items?.name || '',
+    quantity: a.quantity
+  }))
+
+  if (selectedProject.value) {
+    selectedProject.value.assemblies = assemblies
+  }
+}
+
+async function addAssembly() {
   if (!selectedProject.value || !addAssemblyInput.value.trim()) return
 
-  explodingBom.value = true
+  addingAssembly.value = true
   error.value = ''
 
   try {
     const itemNumber = addAssemblyInput.value.trim().toLowerCase()
 
-    // Find the item
     const { data: item, error: itemError } = await supabase
       .from('items')
-      .select('id, item_number')
+      .select('id, item_number, name')
       .eq('item_number', itemNumber)
       .single()
 
     if (itemError || !item) {
-      throw new Error(`Item ${itemNumber} not found`)
+      throw new Error(`Item "${itemNumber}" not found`)
     }
 
-    // Update top assembly if not set
-    if (!selectedProject.value.top_assembly_id) {
-      await supabase
-        .from('mrp_projects')
-        .update({ top_assembly_id: item.id })
-        .eq('id', selectedProject.value.id)
+    const { error: insertError } = await supabase
+      .from('mrp_project_assemblies')
+      .insert({
+        project_id: selectedProject.value.id,
+        item_id: item.id,
+        quantity: 1
+      })
 
-      selectedProject.value.top_assembly_id = item.id
-      selectedProject.value.top_assembly_number = item.item_number
+    if (insertError) {
+      if (insertError.code === '23505') {
+        throw new Error(`Assembly "${itemNumber}" is already in this project`)
+      }
+      throw insertError
     }
 
-    // Recursively get all BOM items
+    addAssemblyInput.value = ''
+    await loadProjectAssemblies(selectedProject.value.id)
+  } catch (e: any) {
+    error.value = e.message || 'Failed to add assembly'
+  } finally {
+    addingAssembly.value = false
+  }
+}
+
+async function removeAssembly(assemblyId: string) {
+  if (!selectedProject.value) return
+
+  try {
+    const { error: deleteError } = await supabase
+      .from('mrp_project_assemblies')
+      .delete()
+      .eq('id', assemblyId)
+
+    if (deleteError) throw deleteError
+
+    await loadProjectAssemblies(selectedProject.value.id)
+  } catch (e: any) {
+    error.value = e.message || 'Failed to remove assembly'
+  }
+}
+
+async function updateAssemblyQty(assemblyId: string, newQty: number) {
+  if (!selectedProject.value || newQty < 1) return
+
+  try {
+    const { error: updateError } = await supabase
+      .from('mrp_project_assemblies')
+      .update({ quantity: newQty })
+      .eq('id', assemblyId)
+
+    if (updateError) throw updateError
+
+    const asm = selectedProject.value.assemblies?.find(a => a.id === assemblyId)
+    if (asm) asm.quantity = newQty
+  } catch (e: any) {
+    error.value = e.message || 'Failed to update assembly quantity'
+  }
+}
+
+async function updateBom() {
+  if (!selectedProject.value) return
+
+  const assemblies = selectedProject.value.assemblies || []
+  if (assemblies.length === 0) {
+    error.value = 'Add at least one assembly before updating BOM'
+    return
+  }
+
+  updatingBom.value = true
+  error.value = ''
+
+  try {
+    const projectId = selectedProject.value.id
+
+    // 1. Delete all BOM-derived parts
+    const { error: deleteError } = await supabase
+      .from('mrp_project_parts')
+      .delete()
+      .eq('project_id', projectId)
+      .eq('is_manual', false)
+
+    if (deleteError) throw deleteError
+
+    // 2. Recursively explode all assemblies
     const allParts = new Map<string, { item_id: string, quantity: number }>()
-    await explodeBomRecursive(item.id, 1, allParts)
 
-    // Add the top assembly itself
-    allParts.set(item.id, { item_id: item.id, quantity: 1 })
+    for (const asm of assemblies) {
+      const existing = allParts.get(asm.item_id)
+      if (existing) {
+        existing.quantity += asm.quantity
+      } else {
+        allParts.set(asm.item_id, { item_id: asm.item_id, quantity: asm.quantity })
+      }
+      await explodeBomRecursive(asm.item_id, asm.quantity, allParts)
+    }
 
-    // Insert all parts that aren't already in the project
-    const existingParts = new Set(projectParts.value.map(p => p.item_id))
+    // 3. Get manual parts to avoid conflicts
+    const { data: manualParts } = await supabase
+      .from('mrp_project_parts')
+      .select('item_id')
+      .eq('project_id', projectId)
+      .eq('is_manual', true)
+
+    const manualItemIds = new Set((manualParts || []).map(p => p.item_id))
+
+    // 4. Insert BOM-derived parts (skip items that exist as manual)
     const newParts = Array.from(allParts.entries())
-      .filter(([itemId]) => !existingParts.has(itemId))
+      .filter(([itemId]) => !manualItemIds.has(itemId))
       .map(([_, part]) => ({
-        project_id: selectedProject.value!.id,
+        project_id: projectId,
         item_id: part.item_id,
-        quantity: part.quantity
+        quantity: part.quantity,
+        is_manual: false
       }))
 
     if (newParts.length > 0) {
@@ -325,13 +446,99 @@ async function explodeBom() {
       if (insertError) throw insertError
     }
 
-    addAssemblyInput.value = ''
-    await loadProjectParts(selectedProject.value.id)
-    await loadProjects() // Refresh counts
+    // 5. Update top_assembly_id for backward compat
+    await supabase
+      .from('mrp_projects')
+      .update({ top_assembly_id: assemblies[0].item_id })
+      .eq('id', projectId)
+
+    await loadProjectParts(projectId)
+    await loadProjects()
   } catch (e: any) {
-    error.value = e.message || 'Failed to explode BOM'
+    error.value = e.message || 'Failed to update BOM'
   } finally {
-    explodingBom.value = false
+    updatingBom.value = false
+  }
+}
+
+async function addManualPart() {
+  if (!selectedProject.value || !addPartInput.value.trim()) return
+
+  addingPart.value = true
+  error.value = ''
+
+  try {
+    const itemNumber = addPartInput.value.trim().toLowerCase()
+
+    const { data: item, error: itemError } = await supabase
+      .from('items')
+      .select('id, item_number')
+      .eq('item_number', itemNumber)
+      .single()
+
+    if (itemError || !item) {
+      throw new Error(`Item "${itemNumber}" not found`)
+    }
+
+    const existing = projectParts.value.find(p => p.item_id === item.id)
+    if (existing) {
+      throw new Error(`"${itemNumber}" is already in this project`)
+    }
+
+    const { error: insertError } = await supabase
+      .from('mrp_project_parts')
+      .insert({
+        project_id: selectedProject.value.id,
+        item_id: item.id,
+        quantity: 1,
+        is_manual: true
+      })
+
+    if (insertError) throw insertError
+
+    addPartInput.value = ''
+    await loadProjectParts(selectedProject.value.id)
+    await loadProjects()
+  } catch (e: any) {
+    error.value = e.message || 'Failed to add part'
+  } finally {
+    addingPart.value = false
+  }
+}
+
+async function removeProjectPart(partId: string) {
+  if (!selectedProject.value) return
+
+  try {
+    const { error: deleteError } = await supabase
+      .from('mrp_project_parts')
+      .delete()
+      .eq('id', partId)
+
+    if (deleteError) throw deleteError
+
+    await loadProjectParts(selectedProject.value.id)
+    await loadProjects()
+  } catch (e: any) {
+    error.value = e.message || 'Failed to remove part'
+  }
+}
+
+async function updatePartQty(partId: string, newQty: number) {
+  if (!selectedProject.value || newQty < 1) return
+
+  try {
+    const { error: updateError } = await supabase
+      .from('mrp_project_parts')
+      .update({ quantity: newQty })
+      .eq('id', partId)
+
+    if (updateError) throw updateError
+
+    const part = projectParts.value.find(p => p.id === partId)
+    if (part) part.quantity = newQty
+  } catch (e: any) {
+    error.value = e.message || 'Failed to update quantity'
   }
 }
 
@@ -367,7 +574,13 @@ async function deleteProject() {
   if (!confirm(`Delete project ${selectedProject.value.project_code}? This will also delete all associated parts.`)) return
 
   try {
-    // Delete project parts first
+    // Delete project assemblies first
+    await supabase
+      .from('mrp_project_assemblies')
+      .delete()
+      .eq('project_id', selectedProject.value.id)
+
+    // Delete project parts
     await supabase
       .from('mrp_project_parts')
       .delete()
@@ -769,8 +982,8 @@ onUnmounted(() => {
                 <span class="value">{{ selectedProject.customer || '-' }}</span>
               </div>
               <div class="info-row">
-                <span class="label">Top Assembly</span>
-                <span class="value">{{ selectedProject.top_assembly_number || '-' }}</span>
+                <span class="label">Assemblies</span>
+                <span class="value">{{ (selectedProject.assemblies?.length || 0) }} top-level</span>
               </div>
             </div>
 
@@ -808,22 +1021,53 @@ onUnmounted(() => {
               </select>
             </div>
 
-            <!-- Add Assembly -->
-            <div class="add-assembly-section">
-              <div class="section-label">Add Top Assembly</div>
+            <!-- Assembly List -->
+            <div class="assembly-section">
+              <div class="section-label">Top Assemblies</div>
+
+              <div v-if="selectedProject.assemblies && selectedProject.assemblies.length > 0" class="assembly-list">
+                <div v-for="asm in selectedProject.assemblies" :key="asm.id" class="assembly-item">
+                  <span class="assembly-number">{{ asm.item_number }}</span>
+                  <span class="assembly-name">{{ asm.name }}</span>
+                  <button class="icon-btn danger" @click="removeAssembly(asm.id)" title="Remove assembly">
+                    <i class="pi pi-times"></i>
+                  </button>
+                  <span class="assembly-qty-label">Qty:</span>
+                  <input
+                    type="number"
+                    :value="asm.quantity"
+                    min="1"
+                    class="qty-input"
+                    @change="updateAssemblyQty(asm.id, parseInt(($event.target as HTMLInputElement).value) || 1)"
+                  />
+                </div>
+              </div>
+
+              <div v-else class="empty-assembly-hint">
+                No assemblies added yet
+              </div>
+
               <div class="add-assembly-row">
                 <input
                   v-model="addAssemblyInput"
                   placeholder="e.g., csa00010"
-                  @keyup.enter="explodeBom"
+                  @keyup.enter="addAssembly"
                 />
                 <button
-                  class="primary-btn"
-                  @click="explodeBom"
-                  :disabled="explodingBom || !addAssemblyInput.trim()"
+                  class="secondary-btn"
+                  @click="addAssembly"
+                  :disabled="addingAssembly || !addAssemblyInput.trim()"
                 >
-                  <i v-if="explodingBom" class="pi pi-spin pi-spinner"></i>
-                  <span v-else>Add & Explode BOM</span>
+                  <i v-if="addingAssembly" class="pi pi-spin pi-spinner"></i>
+                  <span v-else>+ Add</span>
+                </button>
+                <button
+                  class="update-bom-btn"
+                  @click="updateBom"
+                  :disabled="updatingBom || !selectedProject.assemblies?.length"
+                >
+                  <i v-if="updatingBom" class="pi pi-spin pi-spinner"></i>
+                  <span v-else>Update</span>
                 </button>
               </div>
             </div>
@@ -839,10 +1083,25 @@ onUnmounted(() => {
                   v-for="part in unroutedParts"
                   :key="part.id"
                   class="part-item clickable"
-                  @click="goToRouting(part.item_number)"
                 >
-                  <span class="part-number">{{ part.item_number }} <i class="pi pi-arrow-right"></i></span>
-                  <span class="part-qty">Qty: {{ part.quantity }}</span>
+                  <span class="part-number" @click="goToRouting(part.item_number)">
+                    {{ part.item_number }} <i class="pi pi-arrow-right"></i>
+                    <span v-if="part.is_manual" class="manual-badge" title="Manually added">M</span>
+                  </span>
+                  <div class="part-actions">
+                    <span class="part-qty-label">Qty:</span>
+                    <input
+                      type="number"
+                      :value="part.quantity"
+                      min="1"
+                      class="qty-input"
+                      @change="updatePartQty(part.id, parseInt(($event.target as HTMLInputElement).value) || 1)"
+                      @click.stop
+                    />
+                    <button class="icon-btn danger" @click.stop="removeProjectPart(part.id)" title="Remove part">
+                      <i class="pi pi-times"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -853,7 +1112,19 @@ onUnmounted(() => {
               <div class="parts-list">
                 <div v-for="asm in assemblies" :key="asm.id" class="part-item">
                   <span class="part-number">{{ asm.item_number }}</span>
-                  <span class="part-qty">Qty: {{ asm.quantity }}</span>
+                  <div class="part-actions">
+                    <span class="part-qty-label">Qty:</span>
+                    <input
+                      type="number"
+                      :value="asm.quantity"
+                      min="1"
+                      class="qty-input"
+                      @change="updatePartQty(asm.id, parseInt(($event.target as HTMLInputElement).value) || 1)"
+                    />
+                    <button class="icon-btn danger" @click="removeProjectPart(asm.id)" title="Remove">
+                      <i class="pi pi-times"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -871,9 +1142,41 @@ onUnmounted(() => {
                   <span class="part-number">
                     {{ part.item_number }}
                     <i v-if="!part.has_routing" class="pi pi-exclamation-triangle warning-icon"></i>
+                    <span v-if="part.is_manual" class="manual-badge" title="Manually added">M</span>
                   </span>
-                  <span class="part-qty">Qty: {{ part.quantity }}</span>
+                  <div class="part-actions">
+                    <span class="part-qty-label">Qty:</span>
+                    <input
+                      type="number"
+                      :value="part.quantity"
+                      min="1"
+                      class="qty-input"
+                      @change="updatePartQty(part.id, parseInt(($event.target as HTMLInputElement).value) || 1)"
+                    />
+                    <button class="icon-btn danger" @click="removeProjectPart(part.id)" title="Remove part">
+                      <i class="pi pi-times"></i>
+                    </button>
+                  </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Add Manual Part -->
+            <div class="add-part-section">
+              <div class="add-assembly-row">
+                <input
+                  v-model="addPartInput"
+                  placeholder="Add part by item number..."
+                  @keyup.enter="addManualPart"
+                />
+                <button
+                  class="secondary-btn"
+                  @click="addManualPart"
+                  :disabled="addingPart || !addPartInput.trim()"
+                >
+                  <i v-if="addingPart" class="pi pi-spin pi-spinner"></i>
+                  <span v-else>+ Add Part</span>
+                </button>
               </div>
             </div>
 
@@ -911,6 +1214,16 @@ onUnmounted(() => {
                   </div>
                   <div v-if="job.status === 'failed'" class="nest-job-error">
                     {{ job.error_message || 'Nesting failed' }}
+                  </div>
+                  <!-- Skipped parts warning -->
+                  <div v-if="job.skipped_parts && job.skipped_parts.length > 0" class="nest-skipped-warning">
+                    <i class="pi pi-exclamation-triangle"></i>
+                    {{ job.skipped_parts.length }} part{{ job.skipped_parts.length !== 1 ? 's' : '' }} could not be nested:
+                    <ul class="skipped-parts-list">
+                      <li v-for="(sp, idx) in job.skipped_parts" :key="idx">
+                        {{ sp.part_id }}<span v-if="sp.instance > 1"> #{{ sp.instance }}</span> &mdash; {{ sp.reason }}
+                      </li>
+                    </ul>
                   </div>
                   <!-- Sheet results -->
                   <div v-if="job.status === 'completed' && nestResults.has(job.id)" class="nest-sheets">
@@ -1508,9 +1821,60 @@ onUnmounted(() => {
   border-color: #38bdf8;
 }
 
-/* Add Assembly Section */
-.add-assembly-section {
+/* Assembly Section */
+.assembly-section {
   margin-bottom: 16px;
+}
+
+.assembly-list {
+  background: #020617;
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+.assembly-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid #1e293b;
+}
+
+.assembly-item:last-child {
+  border-bottom: none;
+}
+
+.assembly-number {
+  font-family: monospace;
+  color: #e5e7eb;
+  min-width: 80px;
+}
+
+.assembly-name {
+  flex: 1;
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assembly-qty-label {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.empty-assembly-hint {
+  color: #6b7280;
+  font-size: 12px;
+  padding: 8px;
+  text-align: center;
+  background: #020617;
+  border-radius: 6px;
+  margin-bottom: 8px;
 }
 
 .section-label {
@@ -1627,6 +1991,130 @@ onUnmounted(() => {
 
 .part-qty {
   color: #9ca3af;
+}
+
+.part-qty-label {
+  color: #6b7280;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.part-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.qty-input {
+  width: 50px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  border: 1px solid #1f2937;
+  background: #020617;
+  color: #e5e7eb;
+  font-size: 12px;
+  text-align: center;
+}
+
+.qty-input:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+
+.qty-input::-webkit-inner-spin-button,
+.qty-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.icon-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.icon-btn:hover {
+  background: #1e293b;
+}
+
+.icon-btn.danger:hover {
+  color: #f87171;
+  background: #7f1d1d33;
+}
+
+.update-bom-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: #059669;
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.update-bom-btn:hover:not(:disabled) {
+  background: #047857;
+}
+
+.update-bom-btn:disabled {
+  background: #374151;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+.secondary-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #1d4ed8;
+  border: none;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.secondary-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.secondary-btn:disabled {
+  background: #374151;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+.manual-badge {
+  display: inline-block;
+  background: #7c3aed;
+  color: white;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.add-part-section {
+  margin-top: 12px;
+  margin-bottom: 16px;
+  padding-top: 8px;
+  border-top: 1px solid #1e293b;
 }
 
 .loading-parts {
@@ -1812,6 +2300,31 @@ onUnmounted(() => {
   font-size: 12px;
   color: #fca5a5;
   margin-top: 4px;
+}
+
+.nest-skipped-warning {
+  font-size: 12px;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin-top: 6px;
+}
+
+.nest-skipped-warning i {
+  margin-right: 4px;
+}
+
+.skipped-parts-list {
+  margin: 4px 0 0 18px;
+  padding: 0;
+  list-style: disc;
+}
+
+.skipped-parts-list li {
+  margin: 2px 0;
+  color: #d4d4d8;
 }
 
 .nest-sheets {
