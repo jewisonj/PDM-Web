@@ -84,9 +84,12 @@ Full schema in `Documentation/27-WEB-MIGRATION-PLAN.md`
 
 ## Legacy Reference
 
-These folders contain the original system for reference during migration:
-- `PDM_PowerShell/` - PowerShell services (replace with API + worker)
-- `PDM_WebServer/` - Node.js browser (replace with Vue frontend)
+Legacy system folders have been moved to `Legacy/` for cleaner project structure:
+- `Legacy/PDM_PowerShell/` - PowerShell services (replaced by FastAPI backend)
+- `Legacy/PDM_WebServer/` - Node.js browser (replaced by Vue frontend)
+- `Legacy/PDM-Libraries/` - iTextSharp PDF library (no longer used)
+
+Still at root (actively used or pending migration):
 - `PDM_Vault/` - Schema reference (migrate to PostgreSQL)
 - `Documentation/` - System docs (27-WEB-MIGRATION-PLAN.md has full plan)
 

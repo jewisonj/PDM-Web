@@ -48,22 +48,17 @@ PDM_Vault/*.db
 *.db
 
 ########################
-# PDM PowerShell Scripts (TRACK THESE)
+# Legacy PDM folders (moved to Legacy/)
 ########################
-# Nothing to ignore here - we want these tracked!
+Legacy/PDM_WebServer/node_modules/
+Legacy/PDM_WebServer/npm-debug.log*
 
 ########################
-# PDM Web Server (TRACK THESE)
+# MRP System (moved to Legacy/)
 ########################
-PDM_WebServer/node_modules/
-PDM_WebServer/npm-debug.log*
-
-########################
-# MRP System (similar pattern)
-########################
-MRP_System/node_modules/
-MRP_System/*.sqlite
-MRP_System/*.db
+Legacy/MRP_System/node_modules/
+Legacy/MRP_System/*.sqlite
+Legacy/MRP_System/*.db
 
 ########################
 # Node / Web general

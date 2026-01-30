@@ -15,18 +15,20 @@ See `PDM_COMPLETE_OVERVIEW.md` for full system architecture and setup instructio
 
 ## Directory Structure
 
-- `PDM_PowerShell/` - Automation services and scripts
-- `PDM_WebServer/` - Web-based PDM browser
+- `frontend/` - Vue 3 + Vite web frontend
+- `backend/` - FastAPI Python backend
+- `worker/` - FreeCAD Docker worker
+- `scripts/` - Migration and deployment scripts
 - `FreeCAD/Tools/` - CAD automation scripts
-- `PDM_Vault/` - Data storage (not tracked in Git)
-- `Skills/` - AI assistant skill definitions
+- `Documentation/` - System documentation
+- `PDM_Vault/` - Legacy data storage (migration pending)
+- `Legacy/` - Archived legacy system folders (PDM_PowerShell, PDM_WebServer, etc.)
 
 ## Documentation
 
-- **Master Documentation:** `PDM_COMPLETE_OVERVIEW.md`
-- **System Map:** `PDM_SYSTEM_MAP.md`
-- **Web Server Setup:** `PDM_WebServer/README.md`
-- **Database Schema:** `Skills/database_schema.md`
+- **Migration Plan:** `Documentation/27-WEB-MIGRATION-PLAN.md`
+- **Legacy Overview:** `Documentation/02-PDM-COMPLETE-OVERVIEW.md`
+- **Database Schema:** `Documentation/03-DATABASE-SCHEMA.md`
 
 ## Requirements
 
