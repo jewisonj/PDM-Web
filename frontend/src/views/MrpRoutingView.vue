@@ -289,6 +289,40 @@ const filteredMaterials = computed(() => {
   return result
 })
 
+// Filter persistence via localStorage
+const FILTER_KEY = 'mrp-routing-filters'
+
+function restoreFilters() {
+  const saved = localStorage.getItem(FILTER_KEY)
+  if (saved) {
+    try {
+      const f = JSON.parse(saved)
+      if (f.project) projectFilter.value = f.project
+      if (f.type) partTypeFilter.value = f.type
+      if (f.status) routingStatusFilter.value = f.status
+      if (f.search) searchQuery.value = f.search
+    } catch { /* ignore corrupt data */ }
+  }
+}
+
+watch([projectFilter, partTypeFilter, routingStatusFilter, searchQuery], () => {
+  localStorage.setItem(FILTER_KEY, JSON.stringify({
+    project: projectFilter.value,
+    type: partTypeFilter.value,
+    status: routingStatusFilter.value,
+    search: searchQuery.value,
+  }))
+})
+
+async function refreshData() {
+  const previousItemNumber = selectedItem.value?.item_number
+  await loadData()
+  if (previousItemNumber) {
+    const target = items.value.find(i => i.item_number === previousItemNumber)
+    if (target) await selectItem(target)
+  }
+}
+
 async function loadData() {
   loading.value = true
   error.value = ''
@@ -715,6 +749,7 @@ function goToDashboard() {
 }
 
 onMounted(() => {
+  restoreFilters()
   loadData()
 })
 </script>
@@ -732,6 +767,10 @@ onMounted(() => {
         </div>
       </div>
       <div class="header-actions">
+        <button class="refresh-btn" @click="refreshData" :disabled="loading">
+          <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"></i>
+          {{ loading ? 'Loading...' : 'Refresh' }}
+        </button>
         <button class="nav-btn" @click="goHome">
           <i class="pi pi-home"></i>
           Home
@@ -1076,6 +1115,35 @@ onMounted(() => {
 
 .nav-btn:hover {
   background: #4b5563;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #059669;
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: #047857;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 /* Messages */

@@ -111,24 +111,39 @@ async function loadProjects() {
 
     if (queryError) throw queryError
 
-    // Get part counts for each project
-    const projectsWithCounts = await Promise.all((data || []).map(async (project) => {
-      const { count } = await supabase
-        .from('mrp_project_parts')
-        .select('*', { count: 'exact', head: true })
-        .eq('project_id', project.id)
+    // Single query for all part counts (avoids N+1 hang risk)
+    const { data: countData, error: countError } = await supabase
+      .from('mrp_project_parts')
+      .select('project_id')
 
-      return {
-        ...project,
-        part_count: count || 0
-      }
+    if (countError) throw countError
+
+    const counts = new Map<string, number>()
+    ;(countData || []).forEach((row: any) => {
+      counts.set(row.project_id, (counts.get(row.project_id) || 0) + 1)
+    })
+
+    projects.value = (data || []).map(p => ({
+      ...p,
+      part_count: counts.get(p.id) || 0
     }))
-
-    projects.value = projectsWithCounts
   } catch (e: any) {
     error.value = e.message || 'Failed to load projects'
   } finally {
     loading.value = false
+  }
+}
+
+async function refreshDashboard() {
+  const previousProjectId = selectedProject.value?.id
+  await loadProjects()
+  if (previousProjectId) {
+    const target = projects.value.find(p => p.id === previousProjectId)
+    if (target) {
+      selectedProject.value = target
+      showDetailPanel.value = true
+      await loadProjectParts(target.id)
+    }
   }
 }
 
@@ -894,6 +909,10 @@ onUnmounted(() => {
           <span class="nav-dot tracking"></span>
           Project Tracking
         </button>
+        <button class="refresh-btn" @click="refreshDashboard" :disabled="loading">
+          <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"></i>
+          {{ loading ? 'Loading...' : 'Refresh' }}
+        </button>
         <button class="primary-btn" @click="showNewProjectModal = true">
           <i class="pi pi-plus"></i>
           New Project
@@ -1452,6 +1471,29 @@ onUnmounted(() => {
 .nav-dot.shop { background: #eab308; }
 .nav-dot.lookup { background: #22d3ee; }
 .nav-dot.tracking { background: #a855f7; }
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #059669;
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background: #047857;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
 
 .primary-btn {
   display: flex;
