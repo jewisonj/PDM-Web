@@ -15,10 +15,17 @@ The PDM-Web backend is a FastAPI (Python 3) application that provides a REST API
        |                  |  - Auth (JWT)    |
        v                  |  - Storage       |
   FastAPI Backend ------> +------------------+
-       ^
+       ^                         ^
+       |                         |
+  Upload Bridge (PowerShell)     |
+       |                         |
+  PDM-Local-Service ------------>+
+  (localhost:8083)
        |
-  Upload Bridge (PowerShell) -- local CAD tools
+  Creo Workspace (local files)
 ```
+
+The PDM-Local-Service is a PowerShell HTTP server running on `localhost:8083` that bridges Creo's embedded browser with local file operations (timestamps, uploads, downloads). It communicates with both the FastAPI backend and local filesystem.
 
 ### Key Components
 
@@ -29,6 +36,7 @@ The PDM-Web backend is a FastAPI (Python 3) application that provides a REST API
 | Authentication | Supabase Auth | JWT-based email/password login |
 | File Storage | Supabase Storage | CAD files, PDFs, DXFs, SVGs in `pdm-files` bucket |
 | Upload Bridge | PowerShell scripts | Local folder watcher that uploads to the API |
+| PDM-Local-Service | PowerShell HTTP server | Bridges Creo browser with local files (localhost:8083) |
 | FreeCAD Worker | Docker container | DXF/SVG generation from STEP files (planned) |
 
 ---
@@ -364,6 +372,14 @@ Upload a file and associate it with an item. Uses multipart form data. The admin
 
 If the item already has a file with the same filename, the existing record is updated (iteration incremented, storage file overwritten). Otherwise, a new file record is created.
 
+**Auto-create items:** If the specified `item_number` does not exist in the database, the endpoint will automatically create the item provided the item number matches one of the recognized naming conventions:
+- Standard: `[a-z]{3}\d{4,6}` (e.g., `csp0030`)
+- McMaster: `mmc\d+[a-z]*\d*` (e.g., `mmc12555k88`)
+- Supplier: `spn\d+[a-z]*\d*` (e.g., `spn40021`)
+- Reference: `zzz\d+[a-z]*\d*` (e.g., `zzz0001`)
+
+Items with `mmc` or `spn` prefixes are automatically marked as supplier parts (`is_supplier_part = true`). The item number is extracted from the filename using prefix-first regex ordering (mmc/spn/zzz checked before the standard pattern to avoid truncation).
+
 **Form Fields:**
 
 | Field | Type | Required | Description |
@@ -374,7 +390,7 @@ If the item already has a file with the same filename, the existing record is up
 
 **Example (curl):**
 ```bash
-curl -X POST "http://localhost:8000/api/files/upload" \
+curl -X POST "http://localhost:8001/api/files/upload" \
   -F "file=@csp0030.step" \
   -F "item_number=csp0030"
 ```
@@ -385,15 +401,15 @@ import requests
 
 with open("csp0030.step", "rb") as f:
     response = requests.post(
-        "http://localhost:8000/api/files/upload",
+        "http://localhost:8001/api/files/upload",
         files={"file": ("csp0030.step", f, "application/step")},
         data={"item_number": "csp0030"}
     )
 print(response.json())
 ```
 
-**Response (200):** File record object.
-**Response (404):** Item not found.
+**Response (200):** File record object (includes `updated_at` timestamp).
+**Response (404):** Item not found and item number does not match any recognized naming convention.
 
 #### GET /api/files/{file_id}/download
 
@@ -831,6 +847,168 @@ curl "http://localhost:8000/api/nesting/jobs/<job-uuid>/sheets/1/download"
 
 ---
 
+### Workspace Comparison (`/api/workspace`)
+
+**File:** `backend/app/routes/workspace.py`
+
+Compares local Creo workspace files against the Supabase vault to determine which files are in sync, out of date, or not yet checked in. Uses `get_supabase_admin()` to bypass RLS since this is an internal service endpoint called from Creo's embedded browser (no user JWT).
+
+**IMPORTANT:** All vault timestamps are converted from UTC to local time before comparison and display, since PowerShell reports local file times. See lesson #11 in Dev Notes.
+
+#### POST /api/workspace/compare
+
+Compare a list of local files against the vault.
+
+**Request Body (JSON):**
+```json
+{
+  "files": [
+    {
+      "filename": "csp0030.prt",
+      "timestamp": "1/29/2026, 2:30:15 PM"
+    },
+    {
+      "filename": "wma20120.asm",
+      "timestamp": "1/28/2026, 10:15:00 AM"
+    }
+  ]
+}
+```
+
+**Response (200):**
+```json
+{
+  "results": [
+    {
+      "filename": "csp0030.prt",
+      "item_number": "csp0030",
+      "status": "Current",
+      "local_time": "1/29/2026, 2:30:15 PM",
+      "vault_time": "1/29/2026, 2:30:15 PM"
+    },
+    {
+      "filename": "wma20120.asm",
+      "item_number": "wma20120",
+      "status": "Out of Date",
+      "local_time": "1/28/2026, 10:15:00 AM",
+      "vault_time": "1/29/2026, 3:45:00 PM"
+    }
+  ]
+}
+```
+
+**Status values:**
+- `Current` -- Local file timestamp matches vault timestamp.
+- `Out of Date` -- Vault has a newer version than the local file.
+- `Not In Vault` -- No matching item or file record exists in the vault.
+
+**Architecture notes:**
+- Item numbers are extracted from filenames using prefix-first regex ordering (mmc/spn/zzz before standard pattern).
+- Suffixes (`_prt`, `_asm`, `_drw`, `_flat`) are stripped before item number extraction.
+- Admin client is required because the endpoint runs without user authentication (Creo's embedded browser does not send JWTs).
+
+---
+
+### PDM-Local-Service (localhost:8083)
+
+**File:** `Local_Creo_Files/Powershell/PDM-Local-Service.ps1`
+
+A PowerShell HTTP server running on `localhost:8083` that provides local file system access for Creo's embedded browser. Creo's browser cannot access local files directly, so this service bridges the gap.
+
+**Why a local service is needed:** Creo's embedded Chromium browser runs in a sandbox that prevents direct file system access. JavaScript in workspace.html cannot read local file timestamps, upload files, or download files without a local HTTP bridge.
+
+#### GET /health
+
+Health check endpoint.
+
+**Response (200):**
+```json
+{
+  "status": "running",
+  "service": "PDM-Local-Service"
+}
+```
+
+#### POST /api/file-timestamps
+
+Get `LastWriteTime` timestamps for a list of local files. Used by workspace comparison to get local file modification times.
+
+**Request Body (JSON):**
+```json
+{
+  "directory": "C:\\Users\\Jack\\Creo\\Workspace",
+  "files": ["csp0030.prt", "wma20120.asm"]
+}
+```
+
+**Response (200):**
+```json
+{
+  "timestamps": {
+    "csp0030.prt": "1/29/2026 2:30:15 PM",
+    "wma20120.asm": "1/28/2026 10:15:00 AM"
+  }
+}
+```
+
+#### POST /api/checkin
+
+Upload a local file to the FastAPI backend (which stores it in Supabase Storage). After successful upload, the service touches the local file's `LastWriteTime` to the current time so it stays in sync with the vault.
+
+**Request Body (JSON):**
+```json
+{
+  "filePath": "C:\\Users\\Jack\\Creo\\Workspace\\csp0030.prt",
+  "itemNumber": "csp0030"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "File uploaded successfully"
+}
+```
+
+**IMPORTANT:** After successful upload, the service updates the local file's `LastWriteTime` to `Get-Date` to prevent the "Out of Date" false positive (see lesson #13 in Dev Notes).
+
+#### POST /api/download
+
+Download a file from the vault (via FastAPI signed URL) to a local directory.
+
+**Request Body (JSON):**
+```json
+{
+  "itemNumber": "csp0030",
+  "fileName": "csp0030.prt",
+  "targetDirectory": "C:\\Users\\Jack\\Creo\\Workspace"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "File downloaded to C:\\Users\\Jack\\Creo\\Workspace\\csp0030.prt"
+}
+```
+
+#### Configuration
+
+The service is started manually in a PowerShell window:
+
+```powershell
+cd Local_Creo_Files\Powershell
+.\PDM-Local-Service.ps1
+```
+
+**Default port:** 8083 (hardcoded in the script).
+
+**Note:** The legacy `Local-FileTimestamp-Service.ps1` has been deleted. All functionality is now in `PDM-Local-Service.ps1`.
+
+---
+
 ## Pydantic Schemas
 
 **File:** `backend/app/models/schemas.py`
@@ -997,3 +1175,4 @@ Error responses follow the format:
 ---
 
 **Last Updated:** 2026-01-30
+

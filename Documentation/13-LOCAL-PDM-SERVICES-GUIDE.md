@@ -139,31 +139,33 @@ Open a terminal and run:
 
 ```bash
 cd backend
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8001
 ```
 
 Or equivalently:
 
 ```bash
 cd backend
-python -m uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8001
 ```
 
 The `--reload` flag enables auto-restart when Python files change.
 
+**Note:** The port is configured in `backend/.env` as `API_PORT=8001`. Always check this value -- do not assume port 8000.
+
 **Verify it is running:**
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8001/health
 # Expected: {"status":"healthy"}
 
-curl http://localhost:8000/api/items?limit=5
+curl http://localhost:8001/api/items?limit=5
 # Expected: JSON array of items (or empty array)
 ```
 
 **Interactive API docs** are available at:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost:8001/docs
+- ReDoc: http://localhost:8001/redoc
 
 ---
 
@@ -201,7 +203,7 @@ Verify the API URL in `scripts/pdm-upload/PDM-Upload-Config.ps1` points to your 
 
 ```powershell
 $Config = @{
-    ApiUrl      = "http://localhost:8000/api"
+    ApiUrl      = "http://localhost:8001/api"
     WatchFolder = "C:\PDM-Upload"
     # ...
 }
@@ -226,11 +228,7 @@ The service will:
 Drop a test file into `C:\PDM-Upload\`:
 
 ```powershell
-# Create a test item first (the item must exist for file upload)
-Invoke-RestMethod -Uri "http://localhost:8000/api/items" -Method Post `
-  -ContentType "application/json" `
-  -Body '{"item_number":"tst0001","name":"Test Part"}'
-
+# Items are auto-created on upload if the item_number matches naming conventions.
 # Copy a test file to the watch folder
 Copy-Item "some-file.step" "C:\PDM-Upload\tst0001.step"
 ```
@@ -238,8 +236,55 @@ Copy-Item "some-file.step" "C:\PDM-Upload\tst0001.step"
 Check the PowerShell console for upload confirmation, then verify:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8000/api/items/tst0001"
+Invoke-RestMethod -Uri "http://localhost:8001/api/items/tst0001"
 ```
+
+---
+
+## Step 5b: PDM-Local-Service (Required for Creo Workspace)
+
+The PDM-Local-Service is a PowerShell HTTP server that bridges Creo's embedded browser with local file operations. It is **required** for the workspace comparison feature (workspace.html).
+
+**Note:** This service replaces the legacy `Local-FileTimestamp-Service.ps1` (formerly in `Local_Creo_Files/Powershell/Backup/`), which has been deleted. All functionality is consolidated into `PDM-Local-Service.ps1`.
+
+### Start the Service
+
+Open a PowerShell window:
+
+```powershell
+cd Local_Creo_Files\Powershell
+.\PDM-Local-Service.ps1
+```
+
+The service runs on `localhost:8083` and provides:
+- `GET /health` -- Health check
+- `POST /api/file-timestamps` -- Get local file modification times
+- `POST /api/checkin` -- Upload a local file to the vault (via FastAPI backend)
+- `POST /api/download` -- Download a vault file to a local directory
+
+### Why This Service Exists
+
+Creo's embedded Chromium browser runs in a sandbox that prevents JavaScript from accessing the local file system. The PDM-Local-Service bridges this gap by:
+1. Reading local file timestamps for workspace comparison
+2. Uploading local files to the FastAPI backend on check-in
+3. Downloading vault files to local directories on checkout
+
+### Test the Service
+
+```powershell
+# Health check
+Invoke-RestMethod -Uri "http://localhost:8083/health"
+
+# Get timestamps for files in a directory
+Invoke-RestMethod -Uri "http://localhost:8083/api/file-timestamps" -Method Post `
+  -ContentType "application/json" `
+  -Body '{"directory":"C:\\Users\\Jack\\Creo\\Workspace","files":["csp0030.prt"]}'
+```
+
+### Key Behaviors
+
+- **Regex ordering:** Item numbers are extracted from filenames with `mmc`/`spn`/`zzz` patterns checked before the standard `[a-z]{3}\d{4,6}` pattern. This prevents McMaster part number truncation (see Dev Notes lesson #12).
+- **File touch after upload:** After a successful check-in, the service updates the local file's `LastWriteTime` to `Get-Date` so it stays in sync with the vault timestamp (see Dev Notes lesson #13).
 
 ---
 
@@ -275,13 +320,13 @@ docker-compose down
 
 ## Running Everything Together
 
-For full local development, you need two terminals minimum (backend + frontend). The upload bridge and FreeCAD worker are optional depending on what you are working on.
+For full local development, you need two terminals minimum (backend + frontend). The upload bridge, PDM-Local-Service, and FreeCAD worker are optional depending on what you are working on.
 
 ### Terminal 1: Backend API
 
 ```bash
 cd backend
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8001
 ```
 
 ### Terminal 2: Frontend Dev Server
@@ -291,14 +336,21 @@ cd frontend
 npm run dev
 ```
 
-### Terminal 3 (optional): Upload Bridge
+### Terminal 3 (optional): PDM-Local-Service (for Creo workspace)
+
+```powershell
+cd Local_Creo_Files\Powershell
+.\PDM-Local-Service.ps1
+```
+
+### Terminal 4 (optional): Upload Bridge
 
 ```powershell
 cd scripts\pdm-upload
 .\PDM-Upload-Service.ps1
 ```
 
-### Terminal 4 (optional): FreeCAD Worker
+### Terminal 5 (optional): FreeCAD Worker
 
 ```bash
 docker-compose up freecad-worker
@@ -436,9 +488,10 @@ If the browser shows CORS errors when the frontend calls the backend:
 
 | Service | URL | Port | Config File |
 |---------|-----|------|-------------|
-| Backend API | http://localhost:8000 | 8000 | `backend/.env` |
+| Backend API | http://localhost:8001 | 8001 | `backend/.env` |
 | Frontend Dev | http://localhost:5174 | 5174 (Vite default) | `frontend/.env` |
-| API Docs | http://localhost:8000/docs | 8000 | -- |
+| API Docs | http://localhost:8001/docs | 8001 | -- |
+| PDM-Local-Service | http://localhost:8083 | 8083 | `Local_Creo_Files/Powershell/PDM-Local-Service.ps1` |
 | Upload Bridge | (folder watcher) | -- | `scripts/pdm-upload/PDM-Upload-Config.ps1` |
 | FreeCAD Worker | (Docker container) | -- | `docker-compose.yml` |
 | Supabase | https://your-project.supabase.co | -- | Supabase Dashboard |
@@ -446,4 +499,4 @@ If the browser shows CORS errors when the frontend calls the backend:
 
 ---
 
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-01-30

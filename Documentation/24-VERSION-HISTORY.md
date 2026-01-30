@@ -7,9 +7,54 @@
 
 ## Current Version
 
-### v3.0 -- Web Migration (2025)
+### v3.1 (2026-01-30) -- Workspace Comparison and Local Service
 
 **Status:** Current Production Release
+
+#### New Features
+
+- **Workspace Comparison API** (`POST /api/workspace/compare`) -- New FastAPI endpoint that compares local Creo workspace files against the Supabase vault, returning status (Current, Out of Date, Not In Vault) with timestamps.
+- **PDM-Local-Service** (`Local_Creo_Files/Powershell/PDM-Local-Service.ps1`) -- New PowerShell HTTP server on `localhost:8083` with endpoints for file timestamps, check-in (upload), download, and health check. Bridges Creo's embedded browser with local file operations.
+- **Auto-create items on upload** -- The `POST /api/files/upload` endpoint now automatically creates items when they don't exist, if the `item_number` matches recognized naming conventions (standard, mmc, spn, zzz).
+- **workspace.html modernized** -- All legacy endpoint references (DATASERVER:8082, localhost:8083 old service, dataserver:3000) replaced with new `PDM_CONFIG` object pointing to FastAPI backend (port 8001) and local service (port 8083).
+
+#### Database Changes
+
+- **Migration `add_updated_at_to_files`** -- Added `updated_at` column to `files` table with default `now()`, backfill from `created_at`, and auto-update trigger (`files_updated_at_trigger`).
+
+#### Bug Fixes
+
+- **Wrong port (404s):** workspace.html had `apiUrl: 'http://localhost:8000'` but backend runs on port 8001. Fixed by updating to 8001.
+- **All items "Not In Vault" (RLS):** `get_supabase_client()` (anon key) was blocked by RLS for unauthenticated reads. Fixed by using `get_supabase_admin()` (service role key).
+- **Windows strftime crash:** `format_vault_time` used `%-m` (Linux-only). Fixed with manual f-string formatting.
+- **files.updated_at missing:** Workspace comparison referenced a column that didn't exist. Added via migration.
+- **UTC vs local timezone mismatch:** Vault UTC timestamps compared directly against local PowerShell timestamps caused false "Out of Date". Fixed with `dt.astimezone()` conversion.
+- **Item number regex ordering:** `mmc12555k88` was truncated to `mmc12555` because standard pattern matched first. Fixed by checking mmc/spn/zzz patterns before standard pattern.
+- **Post-upload timestamp mismatch:** Local file's LastWriteTime was older than upload time. Fixed by touching file's LastWriteTime to `Get-Date` after successful upload.
+
+#### Files Changed/Created
+
+- `backend/app/routes/workspace.py` (NEW) -- Workspace comparison endpoint
+- `backend/app/routes/files.py` (MODIFIED) -- Auto-create items, regex import
+- `backend/app/routes/__init__.py` (MODIFIED) -- Added workspace_router
+- `backend/app/main.py` (MODIFIED) -- Added workspace_router
+- `Local_Creo_Files/Powershell/PDM-Local-Service.ps1` (MODIFIED) -- Port fix, regex reorder, file touch after upload
+- `Local_Creo_Files/creowebjs_apps/workspace.html` (MODIFIED) -- PDM_CONFIG, new API endpoints
+- `Local_Creo_Files/Powershell/Backup/Local-FileTimestamp-Service.ps1` (DELETED) -- Obsolete
+
+#### Architecture Decisions
+
+- **Keep a local service:** Creo's embedded browser can't access local files directly. A PowerShell HTTP server on localhost:8083 bridges file operations.
+- **Admin client for workspace:** Uses `get_supabase_admin()` to bypass RLS since it's an internal service endpoint without user JWTs.
+- **UTC to local conversion:** All vault timestamps are converted to local time server-side before comparison and display.
+
+---
+
+## Previous Versions
+
+### v3.0 -- Web Migration (2025)
+
+**Status:** Previous (superseded by v3.1)
 
 This release is a complete architecture rewrite from the legacy Windows/PowerShell/SQLite system to a modern web stack. The core domain (items, files, BOMs, lifecycle states, item numbering) is preserved, but the technology platform is entirely new.
 
@@ -174,17 +219,25 @@ This is a complete platform rewrite. There is no in-place upgrade path from v2.0
 |---------|----------|--------|-------|
 | v1.0 | ~2024 | Archived | No longer maintained |
 | v2.0 | 2025-01-03 | Legacy | Superseded by v3.0, documentation preserved for reference |
-| v3.0 | 2025 | Current | Active development and production use |
+| v3.0 | 2025 | Previous | Core web migration, superseded by v3.1 |
+| v3.1 | 2026-01-30 | Current | Workspace comparison, PDM-Local-Service, auto-create items |
 
 ---
 
 ## Checking Your Version
 
+**v3.1 indicators:**
+- `backend/app/routes/workspace.py` exists
+- `files` table has `updated_at` column
+- `PDM-Local-Service.ps1` exists in `Local_Creo_Files/Powershell/`
+- `Local-FileTimestamp-Service.ps1` is deleted (was in `Backup/`)
+- Backend runs on port 8001 (check `backend/.env` for `API_PORT=8001`)
+
 **v3.0 indicators:**
 - Backend runs with `uvicorn` (not Node.js or PowerShell services)
 - Frontend uses Vue 3 (check `frontend/package.json` for `vue` dependency)
 - Database is Supabase PostgreSQL (check `backend/.env` for `SUPABASE_URL`)
-- API available at `http://localhost:8000/docs`
+- API available at `http://localhost:8001/docs`
 
 **v2.0 indicators:**
 - Node.js Express server on port 3000
@@ -224,6 +277,6 @@ All future releases follow this format:
 
 ---
 
-**Last Updated:** 2025-01-29
-**Current Version:** v3.0
+**Last Updated:** 2026-01-30
+**Current Version:** v3.1
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md)

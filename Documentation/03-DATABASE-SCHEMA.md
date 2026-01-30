@@ -140,7 +140,8 @@ CREATE TABLE files (
     revision    TEXT,
     iteration   INTEGER DEFAULT 1,
     uploaded_by UUID REFERENCES users(id),
-    created_at  TIMESTAMPTZ DEFAULT now()
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ DEFAULT now()
 );
 ```
 
@@ -150,6 +151,7 @@ CREATE TABLE files (
 - `iteration` increments each time the same filename is re-uploaded for the same item.
 - Multiple files can exist per item (STEP, DXF, SVG, PDF, etc.).
 - Downloads use Supabase Storage signed URLs (valid for 1 hour).
+- `updated_at` is maintained by a database trigger (`files_updated_at_trigger`). Used by workspace comparison to determine when a file was last modified in the vault.
 
 **RLS:** Enabled. Authenticated users can read all files. The admin client handles uploads.
 
@@ -615,6 +617,24 @@ Automatically sets `updated_at` to `now()` on UPDATE for tables that have this c
 - `mrp_projects`
 - `raw_materials`
 
+### files_updated_at_trigger
+
+Automatically sets `updated_at` to `now()` on UPDATE for the `files` table. Uses a separate trigger function (`update_files_updated_at`) because it was added later via migration `add_updated_at_to_files`.
+
+```sql
+CREATE OR REPLACE FUNCTION update_files_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER files_updated_at_trigger
+BEFORE UPDATE ON files
+FOR EACH ROW EXECUTE FUNCTION update_files_updated_at();
+```
+
 ---
 
 ## Supabase Storage
@@ -780,6 +800,7 @@ Migrations are managed through Supabase and applied in order:
 | 20260130010002 | create_nest_results_table | Nesting output sheets with placement data |
 | 20260130010003 | update_work_queue_task_types | Add NEST_PARTS to work_queue task_type constraint |
 | 20260130010004 | add_nest_rls_policies | RLS policies for nest tables |
+| 20260130020000 | add_updated_at_to_files | Added `updated_at` column to files table with auto-update trigger |
 
 ---
 
@@ -797,6 +818,7 @@ The FastAPI backend registers routers at these prefixes:
 | `/api/tasks` | `routes/tasks.py` | Work queue management |
 | `/api/mrp` | `routes/mrp.py` | MRP projects, routing, materials, tracking |
 | `/api/nesting` | `routes/nesting.py` | DXF nesting jobs, material groups, sheet downloads |
+| `/api/workspace` | `routes/workspace.py` | Workspace comparison (local files vs. vault) |
 
 ---
 

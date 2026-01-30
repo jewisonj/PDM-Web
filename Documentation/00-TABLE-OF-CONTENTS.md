@@ -134,14 +134,16 @@ New to PDM-Web? Read these in order:
 
 **Development URLs:**
 - Frontend (dev): `http://localhost:5174`
-- Backend API (dev): `http://localhost:8080`
-- API docs (Swagger): `http://localhost:8080/docs`
+- Backend API (dev): `http://localhost:8001`
+- API docs (Swagger): `http://localhost:8001/docs`
+- PDM-Local-Service: `http://localhost:8083`
 - Supabase dashboard: Supabase project console
 
 **Development Commands:**
 ```bash
-cd backend && uvicorn app.main:app --reload --port 8080
+cd backend && uvicorn app.main:app --reload --port 8001
 cd frontend && npm run dev
+cd Local_Creo_Files\Powershell && .\PDM-Local-Service.ps1
 docker-compose up -d freecad-worker
 ```
 
@@ -149,6 +151,7 @@ docker-compose up -d freecad-worker
 - Backend environment: `backend/.env`
 - Frontend Supabase config: `frontend/src/services/supabase.ts`
 - Upload bridge config: `scripts/pdm-upload/PDM-Upload-Config.ps1`
+- PDM-Local-Service: `Local_Creo_Files/Powershell/PDM-Local-Service.ps1`
 
 ---
 

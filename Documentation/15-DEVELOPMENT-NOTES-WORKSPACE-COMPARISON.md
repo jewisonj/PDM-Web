@@ -160,6 +160,123 @@ if item_data.get("project_id"):
     item_data["project_id"] = str(item_data["project_id"])
 ```
 
+### 7. Wrong Port in workspace.html (404 Errors)
+
+**Symptom:** All API calls from workspace.html returned 404. The browser console showed requests going to `localhost:8000`.
+
+**Root Cause:** The `PDM_CONFIG` in `workspace.html` had `apiUrl: 'http://localhost:8000'` but the FastAPI backend runs on port 8001 (configured in `backend/.env` as `API_PORT=8001`).
+
+**Diagnosis:** Checked browser Network tab -- requests were hitting port 8000 which had nothing listening. Compared against `backend/.env` and found the port mismatch.
+
+**Fix:** Updated `workspace.html` to use `apiUrl: 'http://localhost:8001'`.
+
+**Prevention:** Always check `backend/.env` for the actual `API_PORT` value before hardcoding URLs. Use a config object (`PDM_CONFIG`) so the port only needs to be changed in one place.
+
+### 8. All Items Show "Not In Vault" (RLS Blocking Reads)
+
+**Symptom:** The workspace comparison endpoint returned every file as "Not In Vault" even though items existed in Supabase.
+
+**Root Cause:** The `get_supabase_client()` function uses the anon key, which is subject to Row Level Security. Unauthenticated requests (no JWT) were blocked by RLS policies on the `items` and `files` tables, returning empty result sets.
+
+**Diagnosis:** Tested the same query in the Supabase SQL editor (which bypasses RLS) and got results. Tested with the admin client in a Python shell and got results. Confirmed that the workspace endpoint was using `get_supabase_client()` (anon key) instead of `get_supabase_admin()`.
+
+**Fix:** Changed `workspace.py` to use `get_supabase_admin()` for all queries. This is appropriate because the workspace comparison is an internal service endpoint, not a user-facing browser operation.
+
+**Prevention:** Any endpoint that runs without a user JWT must use `get_supabase_admin()`. Add a comment in the route file explaining why the admin client is used.
+
+### 9. Windows strftime Crash (`%-m` Format Code)
+
+**Symptom:** The workspace comparison endpoint crashed with `ValueError: Invalid format string` on Windows.
+
+**Root Cause:** The `format_vault_time()` function used `%-m` (month without leading zero), which is a Linux/macOS-only strftime directive. On Windows, Python's strftime raises `ValueError` for this format.
+
+**Diagnosis:** Stack trace pointed directly at the `strftime("%-m/%-d/%Y")` call. Confirmed this is a known Windows/Linux difference in Python's strftime implementation.
+
+**Fix:** Replaced strftime with manual f-string formatting:
+```python
+f"{dt.month}/{dt.day}/{dt.year}, {hour}:{dt.minute:02d}:{dt.second:02d} {ampm}"
+```
+
+**Prevention:** Never use `%-` strftime directives in Python code that must run on Windows. Use f-string formatting with `dt.month`, `dt.day`, etc. instead, or use platform checks.
+
+### 10. files.updated_at Column Missing
+
+**Symptom:** The workspace comparison endpoint crashed with a Supabase error: column `updated_at` does not exist on the `files` table.
+
+**Root Cause:** The `files` table only had `created_at`. The workspace comparison logic needed `updated_at` to determine when a file was last modified in the vault.
+
+**Diagnosis:** Checked the Supabase table definition and confirmed `updated_at` was missing from `files`. Other tables (items, users, projects) had it, but files did not.
+
+**Fix:** Applied migration `add_updated_at_to_files`:
+```sql
+ALTER TABLE files ADD COLUMN updated_at TIMESTAMPTZ DEFAULT now();
+UPDATE files SET updated_at = created_at WHERE updated_at IS NULL;
+CREATE OR REPLACE FUNCTION update_files_updated_at()
+RETURNS TRIGGER AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$ LANGUAGE plpgsql;
+CREATE TRIGGER files_updated_at_trigger BEFORE UPDATE ON files
+FOR EACH ROW EXECUTE FUNCTION update_files_updated_at();
+```
+
+**Prevention:** When designing a table that will be queried for "last modified" time, always include an `updated_at` column with an auto-update trigger from the start.
+
+### 11. UTC vs Local Timezone Mismatch
+
+**Symptom:** Files checked in today showed "Out of Date" immediately after upload. The vault timestamp showed a time 6 hours ahead of the local file timestamp.
+
+**Root Cause:** Supabase stores timestamps in UTC. PowerShell `Get-Item` returns `LastWriteTime` in the local timezone (CST = UTC-6). Direct comparison of UTC vault time against local file time always showed the vault as "newer" or the times as mismatched.
+
+**Diagnosis:** Printed both timestamps side by side. A file modified at 2:00 PM CST was stored as 8:00 PM UTC in the vault. The comparison logic was comparing raw datetime values without timezone conversion.
+
+**Fix:** Added timezone conversion in the Python backend using `dt.astimezone()`:
+```python
+def parse_vault_timestamp(ts_string):
+    dt = datetime.fromisoformat(ts_string.replace('Z', '+00:00'))
+    local_dt = dt.astimezone()  # Convert UTC to local timezone
+    return local_dt
+```
+
+**Prevention:** Always convert vault (UTC) timestamps to local time before comparing with local file timestamps. Use `astimezone()` without arguments to convert to the server's local timezone.
+
+### 12. Item Number Regex Ordering (McMaster Truncation)
+
+**Symptom:** McMaster part numbers like `mmc12555k88` were being truncated to `mmc12555`. The item was created with the wrong number, and BOM lookups failed.
+
+**Root Cause:** The item number extraction used regex patterns in this order: standard pattern `[a-z]{3}\d{4,6}` first, then `mmc\d+[a-z]*\d*`. The standard pattern matched `mmc12555` (3 letters + 5 digits) before the McMaster-specific pattern could match the full `mmc12555k88`.
+
+**Diagnosis:** Added logging to show which regex pattern matched. Saw that `mmc12555k88` was matching the standard pattern as `mmc12555` instead of the McMaster pattern as `mmc12555k88`.
+
+**Fix:** Reordered the regex checks in both Python (`workspace.py`, `files.py`) and PowerShell (`PDM-Local-Service.ps1`) to check `mmc`, `spn`, and `zzz` patterns **before** the standard `[a-z]{3}\d{4,6}` pattern:
+```python
+# Check special prefixes FIRST (they have different formats)
+if filename_lower.startswith('mmc'):
+    match = re.match(r'^(mmc\d+[a-z]*\d*)', filename_lower)
+elif filename_lower.startswith('spn'):
+    match = re.match(r'^(spn\d+[a-z]*\d*)', filename_lower)
+elif filename_lower.startswith('zzz'):
+    match = re.match(r'^(zzz\d+[a-z]*\d*)', filename_lower)
+else:
+    match = re.match(r'^([a-z]{3}\d{4,6})', filename_lower)
+```
+
+**Prevention:** Always check specific/longer patterns before general/shorter patterns. McMaster (`mmc`), supplier (`spn`), and reference (`zzz`) prefixes allow alphanumeric suffixes that the standard pattern does not expect.
+
+### 13. Post-Upload Timestamps Don't Match (File Touch)
+
+**Symptom:** After a successful check-in/upload, the workspace comparison immediately showed the file as "Out of Date" even though it was just uploaded.
+
+**Root Cause:** The local file's `LastWriteTime` was set to when it was last saved by Creo (e.g., 1:30 PM). The upload to Supabase Storage recorded `updated_at` as `now()` (e.g., 1:45 PM). Since the vault timestamp was newer than the local file's LastWriteTime, the comparison flagged it as out of date.
+
+**Diagnosis:** Compared the local `LastWriteTime` with the vault `updated_at` after upload. The vault time was always a few minutes ahead because `now()` was called at upload time, while the file's write time was frozen at last-save time.
+
+**Fix:** Added a file "touch" operation in `PDM-Local-Service.ps1` after successful upload:
+```powershell
+# After successful upload, update local file's LastWriteTime
+$file = Get-Item $filePath
+$file.LastWriteTime = Get-Date
+```
+
+**Prevention:** After uploading a file, always update the local file's `LastWriteTime` to the current time so it stays in sync with the vault's `updated_at` timestamp.
+
 ---
 
 ## Coding Patterns
@@ -368,9 +485,14 @@ A `.env` file in `backend/` provides these values for local development. In prod
 6. **Column is `price_est`** not `est_price` -- this column name has caused confusion across all system versions.
 7. **Suffix stripping** -- Always remove `_prt`, `_asm`, `_drw`, `_flat` from filenames before extracting item numbers. The upload bridge handles this in `PDM-Upload-Functions.ps1`.
 8. **The `zzz` prefix is for reference-only items** -- they appear in BOM exports but should not be created as real items.
+9. **Check `backend/.env` for API_PORT** -- do not assume port 8000. The actual port may differ (e.g., 8001).
+10. **Never use `%-` strftime on Windows** -- use f-string formatting (`dt.month`, `dt.day`) instead of `%-m`, `%-d`.
+11. **Always convert UTC to local time** before comparing vault timestamps with local file timestamps. Use `dt.astimezone()`.
+12. **Check mmc/spn/zzz patterns before standard pattern** -- the standard `[a-z]{3}\d{4,6}` regex will truncate McMaster and supplier part numbers.
+13. **Touch local files after upload** -- update `LastWriteTime` to `Get-Date` after a successful check-in so timestamps stay in sync with vault.
 
 ---
 
-**Last Updated:** 2025-01-29
-**Version:** 3.0
+**Last Updated:** 2026-01-30
+**Version:** 3.1
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)
