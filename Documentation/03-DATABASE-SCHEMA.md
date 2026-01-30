@@ -193,7 +193,7 @@ CREATE TABLE work_queue (
     item_id       UUID REFERENCES items(id),
     file_id       UUID REFERENCES files(id),
     task_type     TEXT NOT NULL
-                  CHECK (task_type IN ('GENERATE_DXF', 'GENERATE_SVG', 'PARAM_SYNC', 'SYNC')),
+                  CHECK (task_type IN ('GENERATE_DXF', 'GENERATE_SVG', 'PARAM_SYNC', 'SYNC', 'NEST_PARTS')),
     status        TEXT DEFAULT 'pending'
                   CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
     payload       JSONB,
@@ -208,6 +208,7 @@ CREATE TABLE work_queue (
 - `task_type` values:
   - `GENERATE_DXF` -- Create DXF flat pattern from a STEP file (uses FreeCAD Docker worker).
   - `GENERATE_SVG` -- Create SVG bend drawing from a STEP file (uses FreeCAD Docker worker).
+  - `NEST_PARTS` -- Nest DXF flat patterns onto stock sheets (uses nesting Docker worker).
   - `PARAM_SYNC` -- Reserved for future CAD parameter synchronization.
   - `SYNC` -- Reserved for future general sync operations.
 - `status` lifecycle: `pending` -> `processing` -> `completed` or `failed`.
@@ -446,6 +447,90 @@ CREATE TABLE part_completion (
     completed_at TIMESTAMPTZ DEFAULT now()
 );
 ```
+
+---
+
+### nest_jobs
+
+DXF nesting job records linked to MRP projects.
+
+```sql
+CREATE TABLE nest_jobs (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id           UUID NOT NULL REFERENCES mrp_projects(id),
+    material             TEXT NOT NULL,
+    thickness            NUMERIC NOT NULL,
+    sheet_width          NUMERIC NOT NULL,
+    sheet_height         NUMERIC NOT NULL,
+    spacing              NUMERIC DEFAULT 5.0,
+    allow_rotation       BOOLEAN DEFAULT true,
+    status               TEXT DEFAULT 'pending'
+                         CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+    utilization_pct      NUMERIC,
+    total_sheets         INTEGER,
+    error_message        TEXT,
+    created_at           TIMESTAMPTZ DEFAULT now(),
+    completed_at         TIMESTAMPTZ
+);
+```
+
+**Key Points:**
+- Links nesting jobs to MRP projects for project-scoped nesting.
+- `material` and `thickness` define the material group being nested.
+- `sheet_width` and `sheet_height` are the stock sheet dimensions in mm.
+- `spacing` is the minimum gap between parts in mm.
+- `allow_rotation` enables 90-degree rotation of parts during nesting.
+- `status` follows the same lifecycle as `work_queue`: `pending` -> `processing` -> `completed` or `failed`.
+- `utilization_pct` and `total_sheets` are populated on completion.
+
+---
+
+### nest_job_items
+
+Individual parts included in a nesting job.
+
+```sql
+CREATE TABLE nest_job_items (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id     UUID NOT NULL REFERENCES nest_jobs(id),
+    item_id    UUID NOT NULL REFERENCES items(id),
+    dxf_path   TEXT NOT NULL,
+    quantity   INTEGER NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Key Points:**
+- Links nest jobs to specific items and their DXF files.
+- `dxf_path` is the Supabase Storage path to the flat pattern DXF.
+- `quantity` specifies how many copies of this part to nest.
+
+---
+
+### nest_results
+
+Nesting output sheets with placement data.
+
+```sql
+CREATE TABLE nest_results (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id          UUID NOT NULL REFERENCES nest_jobs(id),
+    sheet_index     INTEGER NOT NULL,
+    dxf_path        TEXT NOT NULL,
+    utilization_pct NUMERIC,
+    placement_count INTEGER,
+    placement_data  JSONB,
+    created_at      TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Key Points:**
+- One row per output sheet in the nesting job.
+- `sheet_index` is the sheet number (1, 2, 3...).
+- `dxf_path` is the Supabase Storage path to the nested output DXF.
+- `utilization_pct` is the percentage of the sheet area used by parts.
+- `placement_count` is the total number of parts on this sheet.
+- `placement_data` is a JSONB array of placed parts with positions and rotations.
 
 ---
 
@@ -690,6 +775,11 @@ Migrations are managed through Supabase and applied in order:
 | 20260128013150 | import_raw_materials_from_csv | Seed raw materials data |
 | 20260128022035 | add_print_packet_columns | Print packet path and timestamp |
 | 20260129140530 | add_cut_time_and_price_est_to_items | Cut time and price estimate fields |
+| 20260130010000 | create_nest_jobs_table | Nesting job records linked to MRP projects |
+| 20260130010001 | create_nest_job_items_table | Individual parts in nesting jobs |
+| 20260130010002 | create_nest_results_table | Nesting output sheets with placement data |
+| 20260130010003 | update_work_queue_task_types | Add NEST_PARTS to work_queue task_type constraint |
+| 20260130010004 | add_nest_rls_policies | RLS policies for nest tables |
 
 ---
 
@@ -706,7 +796,8 @@ The FastAPI backend registers routers at these prefixes:
 | `/api/auth` | `routes/auth.py` | Authentication via Supabase Auth |
 | `/api/tasks` | `routes/tasks.py` | Work queue management |
 | `/api/mrp` | `routes/mrp.py` | MRP projects, routing, materials, tracking |
+| `/api/nesting` | `routes/nesting.py` | DXF nesting jobs, material groups, sheet downloads |
 
 ---
 
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-01-30

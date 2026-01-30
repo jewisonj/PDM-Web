@@ -721,6 +721,116 @@ Get the existing print packet for a project, if one has been generated.
 
 ---
 
+### Nesting (`/api/nesting`)
+
+**File:** `backend/app/routes/nesting.py`
+
+DXF nesting endpoints for project-scoped sheet metal flat pattern nesting. Nesting jobs are linked to MRP projects and parts are automatically grouped by material and thickness.
+
+#### GET /api/nesting/projects/{project_id}/groups
+
+Get parts grouped by material and thickness for nesting. Analyzes the MRP project's BOM to find all sheet metal parts with DXF flat patterns.
+
+**Response (200):**
+```json
+[
+  {
+    "material": "STEEL_HSLA",
+    "thickness": 3.0,
+    "parts": [
+      {
+        "item_id": "uuid",
+        "item_number": "csp0030",
+        "name": "Bracket",
+        "dxf_path": "pdm-files/csp0030/csp0030_flat.dxf",
+        "quantity": 4
+      }
+    ]
+  }
+]
+```
+
+#### POST /api/nesting/projects/{project_id}/nest
+
+Create a new nesting job and queue it for processing.
+
+**Request Body (JSON):**
+```json
+{
+  "material": "STEEL_HSLA",
+  "thickness": 3.0,
+  "item_ids": ["uuid1", "uuid2"],
+  "sheet_width": 1220.0,
+  "sheet_height": 2440.0,
+  "spacing": 5.0,
+  "allow_rotation": true
+}
+```
+
+**Response (200):** Created nest job with status `pending`.
+
+#### GET /api/nesting/jobs/{job_id}
+
+Get nesting job details including items, results, and status.
+
+**Response (200):**
+```json
+{
+  "id": "uuid",
+  "project_id": "uuid",
+  "material": "STEEL_HSLA",
+  "thickness": 3.0,
+  "sheet_width": 1220.0,
+  "sheet_height": 2440.0,
+  "spacing": 5.0,
+  "allow_rotation": true,
+  "status": "completed",
+  "utilization_pct": 78.5,
+  "total_sheets": 2,
+  "created_at": "2026-01-30T10:00:00Z",
+  "completed_at": "2026-01-30T10:05:00Z",
+  "items": [
+    {"item_id": "uuid", "item_number": "csp0030", "quantity": 4, "dxf_path": "..."}
+  ],
+  "results": [
+    {
+      "sheet_index": 1,
+      "dxf_path": "pdm-files/projects/WMA2025/nests/job-uuid/sheet_01.dxf",
+      "utilization_pct": 82.3,
+      "placement_count": 5
+    }
+  ]
+}
+```
+
+#### GET /api/nesting/projects/{project_id}/jobs
+
+List all nesting jobs for a project, ordered newest first.
+
+**Response (200):** Array of nest job summary objects.
+
+#### GET /api/nesting/jobs/{job_id}/sheets/{sheet_index}/download
+
+Get a signed download URL for a nested output sheet DXF.
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/nesting/jobs/<job-uuid>/sheets/1/download"
+```
+
+**Response (200):**
+```json
+{
+  "url": "https://...supabase.co/storage/v1/object/sign/pdm-files/...",
+  "filename": "sheet_01.dxf",
+  "expires_in": 3600
+}
+```
+
+**Response (404):** Sheet not found or job not completed.
+
+---
+
 ## Pydantic Schemas
 
 **File:** `backend/app/models/schemas.py`
@@ -886,4 +996,4 @@ Error responses follow the format:
 
 ---
 
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-01-30

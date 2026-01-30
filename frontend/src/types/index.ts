@@ -74,7 +74,7 @@ export interface Task {
   id: string
   item_id?: string
   file_id?: string
-  task_type: 'GENERATE_DXF' | 'GENERATE_SVG'
+  task_type: 'GENERATE_DXF' | 'GENERATE_SVG' | 'NEST_PARTS'
   status: 'pending' | 'processing' | 'completed' | 'failed'
   payload?: Record<string, unknown>
   error_message?: string
@@ -95,4 +95,75 @@ export interface LifecycleEntry {
   changed_by?: string
   change_notes?: string
   changed_at: string
+}
+
+// === Nesting Types ===
+
+export interface NestGroupPart {
+  item_id: string
+  item_number: string
+  name?: string
+  quantity: number
+  has_dxf: boolean
+  dxf_file_path?: string
+}
+
+export interface NestGroup {
+  material: string
+  thickness: number
+  group_key: string
+  part_count: number
+  total_pieces: number
+  parts_with_dxf: number
+  parts: NestGroupPart[]
+}
+
+export interface NestJob {
+  id: string
+  project_id: string
+  material: string
+  thickness: number
+  sheet_width_in: number
+  sheet_height_in: number
+  sheet_label?: string
+  spacing_in: number
+  margin_in: number
+  rotation_step_deg: number
+  sheets_used?: number
+  total_parts_placed?: number
+  avg_utilization?: number
+  manifest?: Record<string, unknown>
+  output_prefix?: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  error_message?: string
+  created_at: string
+  completed_at?: string
+}
+
+export interface NestSheet {
+  id: string
+  nest_job_id: string
+  sheet_index: number
+  dxf_path: string
+  utilization?: number
+  parts_on_sheet?: number
+  placements?: Record<string, unknown>[]
+}
+
+export interface NestJobDetail {
+  job: NestJob
+  items: NestJobItem[]
+  results: NestSheet[]
+}
+
+export interface NestJobItem {
+  id: string
+  nest_job_id: string
+  item_id: string
+  item_number: string
+  quantity: number
+  dxf_file_path: string
+  bounding_box_w?: number
+  bounding_box_h?: number
+  area_sq_in?: number
 }

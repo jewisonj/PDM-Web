@@ -1,6 +1,6 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-01-30
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
 
@@ -59,6 +59,7 @@ New to PDM-Web? Read these in order:
 | # | File | Description |
 |---|------|-------------|
 | 12 | `12-FREECAD-AUTOMATION.md` | FreeCAD Docker container, DXF flat pattern generation, SVG bend drawing generation. |
+| 29 | `29-NESTING-AUTOMATION.md` | DXF nesting worker, Bottom-Left Fill algorithm, project-scoped sheet metal nesting. |
 
 ### Section 7: Integration
 

@@ -511,6 +511,102 @@ curl -X POST http://localhost:8000/api/mrp/projects/{project_id}/print-packet
 
 The packet includes a cover sheet with categorized parts lists and individual part PDFs with routing stamp overlays.
 
+### Nesting DXF Flat Patterns
+
+**Where:** MRP Dashboard (`/mrp/dashboard/{project_id}`)
+
+Nest sheet metal flat patterns onto stock sheets to optimize material usage.
+
+#### Prerequisites
+
+- MRP project must have parts with DXF flat patterns
+- Parts must have `material` and `thickness` properties populated
+- DXF files must be in Supabase Storage (generated via FreeCAD worker)
+- Nesting worker container must be running: `docker-compose up -d nesting-worker`
+
+#### Steps
+
+1. Navigate to MRP Dashboard for your project
+2. Scroll to the **Nesting** section
+3. Click **Nest DXF** button
+4. The Nest Configuration modal opens and loads material groups
+5. Select a material group (e.g., "STEEL_HSLA - 3.0mm")
+6. Review the parts list (pre-checked based on BOM quantities)
+7. Choose a stock sheet size:
+   - 48" x 96" (1220mm x 2440mm)
+   - 60" x 120" (1524mm x 3048mm)
+   - Custom dimensions
+8. Adjust advanced parameters if needed:
+   - Spacing: minimum gap between parts (default 5mm)
+   - Allow rotation: enable 90-degree rotation (default: on)
+9. Click **Start Nesting**
+10. The modal closes and the job appears in the Nesting section with status "Queued..."
+11. The dashboard automatically polls for updates every 5 seconds
+12. When complete, the job shows:
+    - Green checkmark
+    - Overall utilization percentage
+    - Number of sheets generated
+    - Download buttons for each output sheet
+
+#### Downloading Nested Sheets
+
+1. Find the completed nest job in the Nesting section
+2. Click the download icon next to any sheet (e.g., "Sheet 1")
+3. The nested DXF opens in a new browser tab
+4. Save or open in CAD software for cutting
+
+#### Via API Directly
+
+```bash
+# Get material groups for a project
+curl "http://localhost:8000/api/nesting/projects/<project-uuid>/groups"
+
+# Create a nesting job
+curl -X POST "http://localhost:8000/api/nesting/projects/<project-uuid>/nest" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "material": "STEEL_HSLA",
+    "thickness": 3.0,
+    "item_ids": ["uuid1", "uuid2"],
+    "sheet_width": 1220.0,
+    "sheet_height": 2440.0,
+    "spacing": 5.0,
+    "allow_rotation": true
+  }'
+
+# Check job status
+curl "http://localhost:8000/api/nesting/jobs/<job-uuid>"
+
+# Download a nested sheet
+curl "http://localhost:8000/api/nesting/jobs/<job-uuid>/sheets/1/download"
+```
+
+#### Understanding Nesting Results
+
+**Utilization Percentage:**
+- Percentage of sheet area covered by parts (not including spacing gaps)
+- Typical range: 60-85%
+- Lower utilization may indicate inefficient part shapes or oversized sheets
+
+**Sheet Count:**
+- Number of stock sheets required to fit all parts
+- Depends on part sizes, quantities, and sheet dimensions
+
+**DXF Layers:**
+- `SHEET`: Sheet boundary rectangle (cyan)
+- `PARTS`: All part outlines at nested positions (white)
+- `LABELS`: Part labels with item numbers and quantities (yellow)
+
+#### Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| No material groups shown | No parts with DXF files in project BOM | Generate DXF flat patterns first via FreeCAD worker |
+| "No space for part" error | Sheet too small for part size | Select larger sheet size or exclude oversized parts |
+| Job stuck in "Processing" | Nesting worker not running | Check `docker ps` and restart worker if needed |
+| Low utilization (<50%) | Large spacing or inefficient shapes | Reduce spacing parameter or choose smaller sheet size |
+| Job failed | DXF parsing error or worker crash | Check worker logs: `docker logs pdm-nesting-worker` |
+
 ---
 
 ## Quick Reference: API Endpoints for Common Tasks
@@ -529,5 +625,9 @@ The packet includes a cover sheet with categorized parts lists and individual pa
 | Queue DXF | POST | `/api/tasks/generate-dxf/csp0030` |
 | Queue SVG | POST | `/api/tasks/generate-svg/csp0030` |
 | Check tasks | GET | `/api/tasks?status=pending` |
+| Nest material groups | GET | `/api/nesting/projects/{id}/groups` |
+| Create nest job | POST | `/api/nesting/projects/{id}/nest` |
+| Get nest job | GET | `/api/nesting/jobs/{id}` |
+| Download nested sheet | GET | `/api/nesting/jobs/{id}/sheets/{n}/download` |
 | API docs | GET | `/docs` |
 | Health check | GET | `/health` |

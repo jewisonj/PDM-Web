@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase, API_BASE_URL } from '../services/supabase'
+import NestConfigModal from '../components/NestConfigModal.vue'
+import type { NestGroup, NestJob, NestSheet } from '../types'
 
 const router = useRouter()
 
@@ -43,6 +45,14 @@ const explodingBom = ref(false)
 const generatingPacket = ref(false)
 const packetSuccess = ref('')
 const packetUrl = ref<string | null>(null)
+
+// Nesting state
+const showNestModal = ref(false)
+const nestGroups = ref<NestGroup[]>([])
+const loadingNestGroups = ref(false)
+const nestJobs = ref<NestJob[]>([])
+const nestResults = ref<Map<string, NestSheet[]>>(new Map())
+const nestPollingInterval = ref<ReturnType<typeof setInterval> | null>(null)
 
 const newProject = ref({
   project_code: '',
@@ -465,8 +475,156 @@ function goToProjectTracking() {
   router.push('/mrp/tracking')
 }
 
+// === Nesting Functions ===
+
+async function openNestModal() {
+  if (!selectedProject.value) return
+  showNestModal.value = true
+  loadingNestGroups.value = true
+  nestGroups.value = []
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/nesting/projects/${selectedProject.value.id}/groups`)
+    if (!response.ok) throw new Error('Failed to load nest groups')
+    const data = await response.json()
+    nestGroups.value = data.groups
+  } catch (e: any) {
+    error.value = e.message || 'Failed to load nest groups'
+  } finally {
+    loadingNestGroups.value = false
+  }
+}
+
+async function submitNestJob(config: {
+  material: string
+  thickness: number
+  sheetWidth: number
+  sheetHeight: number
+  sheetLabel: string
+  spacing: number
+  margin: number
+  rotationStep: number
+}) {
+  if (!selectedProject.value) return
+  showNestModal.value = false
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/nesting/projects/${selectedProject.value.id}/nest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        material: config.material,
+        thickness: config.thickness,
+        sheet_width_in: config.sheetWidth,
+        sheet_height_in: config.sheetHeight,
+        sheet_label: config.sheetLabel,
+        spacing_in: config.spacing,
+        margin_in: config.margin,
+        rotation_step_deg: config.rotationStep,
+      }),
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || 'Failed to create nest job')
+    }
+
+    // Refresh nest jobs list and start polling
+    await loadNestJobs()
+    startNestPolling()
+  } catch (e: any) {
+    error.value = e.message || 'Failed to start nesting'
+  }
+}
+
+async function loadNestJobs() {
+  if (!selectedProject.value) return
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/nesting/projects/${selectedProject.value.id}/jobs`)
+    if (!response.ok) return
+    const data = await response.json()
+    nestJobs.value = data.jobs || []
+
+    // Load results for completed jobs
+    for (const job of nestJobs.value) {
+      if (job.status === 'completed' && !nestResults.value.has(job.id)) {
+        await loadNestJobResults(job.id)
+      }
+    }
+  } catch (e) {
+    console.debug('Failed to load nest jobs:', e)
+  }
+}
+
+async function loadNestJobResults(jobId: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/nesting/jobs/${jobId}`)
+    if (!response.ok) return
+    const data = await response.json()
+    if (data.results && data.results.length > 0) {
+      nestResults.value.set(jobId, data.results)
+    }
+  } catch (e) {
+    console.debug('Failed to load nest results:', e)
+  }
+}
+
+function startNestPolling() {
+  stopNestPolling()
+  nestPollingInterval.value = setInterval(async () => {
+    const hasActive = nestJobs.value.some(j => j.status === 'pending' || j.status === 'processing')
+    if (!hasActive) {
+      stopNestPolling()
+      return
+    }
+    await loadNestJobs()
+  }, 3000)
+}
+
+function stopNestPolling() {
+  if (nestPollingInterval.value) {
+    clearInterval(nestPollingInterval.value)
+    nestPollingInterval.value = null
+  }
+}
+
+async function downloadNestSheet(jobId: string, sheetIndex: number) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/nesting/jobs/${jobId}/sheets/${sheetIndex}/download`)
+    if (!response.ok) throw new Error('Failed to get download URL')
+    const data = await response.json()
+    if (data.url) {
+      window.open(data.url, '_blank')
+    }
+  } catch (e: any) {
+    error.value = e.message || 'Failed to download sheet'
+  }
+}
+
+function formatUtilization(util: number | null | undefined): string {
+  if (util == null) return '-'
+  return `${(util * 100).toFixed(1)}%`
+}
+
+// Load nest jobs when project is selected
+watch(selectedProject, async (newVal) => {
+  nestJobs.value = []
+  nestResults.value = new Map()
+  stopNestPolling()
+  if (newVal) {
+    await loadNestJobs()
+    const hasActive = nestJobs.value.some(j => j.status === 'pending' || j.status === 'processing')
+    if (hasActive) startNestPolling()
+  }
+})
+
 onMounted(() => {
   loadProjects()
+})
+
+onUnmounted(() => {
+  stopNestPolling()
 })
 </script>
 
@@ -698,6 +856,52 @@ onMounted(() => {
               <i class="pi pi-spin pi-spinner"></i>
               Loading parts...
             </div>
+
+            <!-- Nesting Results -->
+            <div v-if="nestJobs.length > 0" class="panel-section">
+              <div class="section-header">
+                <h3>Nesting Jobs</h3>
+              </div>
+              <div class="nest-jobs-list">
+                <div
+                  v-for="job in nestJobs"
+                  :key="job.id"
+                  class="nest-job-card"
+                  :class="'nest-status-' + job.status"
+                >
+                  <div class="nest-job-header">
+                    <span class="nest-job-label">
+                      {{ job.material }} {{ job.thickness }}" - {{ job.sheet_label || `${job.sheet_width_in}x${job.sheet_height_in}` }}
+                    </span>
+                    <span class="nest-job-status" :class="'status-' + job.status">
+                      <i v-if="job.status === 'pending' || job.status === 'processing'" class="pi pi-spin pi-spinner"></i>
+                      {{ job.status }}
+                    </span>
+                  </div>
+                  <div v-if="job.status === 'completed'" class="nest-job-results">
+                    <span class="nest-stat">{{ job.sheets_used }} sheet{{ job.sheets_used !== 1 ? 's' : '' }}</span>
+                    <span class="nest-stat">{{ job.total_parts_placed }} parts placed</span>
+                    <span class="nest-stat">{{ formatUtilization(job.avg_utilization) }} avg utilization</span>
+                  </div>
+                  <div v-if="job.status === 'failed'" class="nest-job-error">
+                    {{ job.error_message || 'Nesting failed' }}
+                  </div>
+                  <!-- Sheet downloads -->
+                  <div v-if="job.status === 'completed' && nestResults.has(job.id)" class="nest-sheets">
+                    <button
+                      v-for="sheet in nestResults.get(job.id)"
+                      :key="sheet.sheet_index"
+                      class="nest-sheet-btn"
+                      @click="downloadNestSheet(job.id, sheet.sheet_index)"
+                    >
+                      <i class="pi pi-download"></i>
+                      Sheet {{ sheet.sheet_index }}
+                      <span v-if="sheet.utilization" class="sheet-util">({{ formatUtilization(sheet.utilization) }})</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Panel Footer Actions -->
@@ -718,6 +922,14 @@ onMounted(() => {
               >
                 <i class="pi pi-download"></i>
                 Download PDF
+              </button>
+              <button
+                class="primary-btn nest-btn"
+                @click="openNestModal"
+                :disabled="loadingParts"
+              >
+                <i class="pi pi-th-large"></i>
+                Nest DXF
               </button>
             </div>
             <button class="danger-btn" @click="deleteProject">
@@ -770,6 +982,15 @@ onMounted(() => {
         </form>
       </div>
     </div>
+
+    <!-- Nest Config Modal -->
+    <NestConfigModal
+      v-if="showNestModal"
+      :groups="nestGroups"
+      :loading="loadingNestGroups"
+      @close="showNestModal = false"
+      @submit="submitNestJob"
+    />
   </div>
 </template>
 
@@ -1459,5 +1680,122 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
+}
+
+/* === Nesting Styles === */
+
+.nest-btn {
+  background: #7c3aed;
+}
+
+.nest-btn:hover {
+  background: #6d28d9;
+}
+
+.nest-jobs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nest-job-card {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.nest-job-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.nest-job-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e5e7eb;
+}
+
+.nest-job-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.nest-job-status.status-pending {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.nest-job-status.status-processing {
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.nest-job-status.status-completed {
+  color: #6ee7b7;
+  background: rgba(110, 231, 183, 0.1);
+}
+
+.nest-job-status.status-failed {
+  color: #fca5a5;
+  background: rgba(252, 165, 165, 0.1);
+}
+
+.nest-job-results {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 6px;
+}
+
+.nest-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nest-job-error {
+  font-size: 12px;
+  color: #fca5a5;
+  margin-top: 4px;
+}
+
+.nest-sheets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.nest-sheet-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #e5e7eb;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.nest-sheet-btn:hover {
+  background: #334155;
+  border-color: #475569;
+}
+
+.sheet-util {
+  color: #9ca3af;
+  font-size: 11px;
 }
 </style>
