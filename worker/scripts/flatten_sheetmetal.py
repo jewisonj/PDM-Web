@@ -247,9 +247,12 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     return output_dxf
 
 
-# Main execution
-if __name__ == "__main__":
+# Main execution - check for both direct python and FreeCADCmd invocation
+# FreeCADCmd sets __name__ to the module name, not "__main__"
+if __name__ == "__main__" or __name__ == "flatten_sheetmetal":
+    # FreeCADCmd includes the script path in sys.argv, strip it
     args = sys.argv[1:]
+    args = [a for a in args if not a.endswith('.py')]
 
     if len(args) < 1:
         print("\nUsage: python flatten_sheetmetal.py input.step [output.dxf] [k_factor]")

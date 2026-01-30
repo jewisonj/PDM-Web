@@ -47,12 +47,12 @@ STORAGE_BUCKET = "pdm-files"
 TASK_MAP = {
     "GENERATE_DXF": {
         "job_type": "flatten",
-        "output_suffix": "_flat.dxf",
+        "ext": ".dxf",
         "file_type": "DXF",
     },
     "GENERATE_SVG": {
         "job_type": "bend_drawing",
-        "output_suffix": "_bends.svg",
+        "ext": ".svg",
         "file_type": "SVG",
     },
 }
@@ -134,7 +134,7 @@ def run_freecad_job(job_type: str, input_path: Path, output_path: Path) -> subpr
 
     cmd = [
         "docker", "exec", DOCKER_CONTAINER,
-        "python3", "/scripts/run_job.py",
+        "python3", "/scripts/worker/run_job.py",
         job_type, container_input, container_output,
     ]
 
@@ -215,13 +215,14 @@ def process_task(supabase, task: dict):
 
     mapping = TASK_MAP[task_type]
 
-    # Get item number from item_id
-    item_result = supabase.table("items").select("item_number").eq("id", item_id).limit(1).execute()
-    if not item_result.data:
-        complete_task(supabase, task_id, f"Item not found: {item_id}")
-        return
-
-    item_number = item_result.data[0]["item_number"]
+    # Get item number from payload (set at queue time) or fall back to DB lookup
+    item_number = payload.get("item_number")
+    if not item_number:
+        item_result = supabase.table("items").select("item_number").eq("id", item_id).limit(1).execute()
+        if not item_result.data:
+            complete_task(supabase, task_id, f"Item not found: {item_id}")
+            return
+        item_number = item_result.data[0]["item_number"]
     log(f"Processing {task_type} for {item_number}")
 
     item_dir = TEMP_DIR / item_number
@@ -230,9 +231,8 @@ def process_task(supabase, task: dict):
         # 1. Download STEP file
         input_path = download_step_file(supabase, file_path, item_number)
 
-        # 2. Determine output path
-        stem = input_path.stem  # e.g. "csp0030"
-        output_filename = f"{stem}{mapping['output_suffix']}"
+        # 2. Determine output path (e.g. csp0030.dxf, csp0030.svg)
+        output_filename = f"{item_number}{mapping['ext']}"
         output_path = item_dir / output_filename
 
         # 3. Run FreeCAD
