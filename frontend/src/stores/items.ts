@@ -33,7 +33,7 @@ export const useItemsStore = defineStore('items', () => {
         .from('items')
         .select(`
           *,
-          projects(name)
+          projects(name, status)
         `)
         .order('item_number', { ascending: true })
 
@@ -61,10 +61,10 @@ export const useItemsStore = defineStore('items', () => {
 
       if (queryError) throw queryError
 
-      // Map project name from joined table
+      // Map project name from joined table (hide archived projects)
       items.value = (data || []).map(item => ({
         ...item,
-        project_name: item.projects?.name || null
+        project_name: item.projects?.status !== 'archived' ? item.projects?.name || null : null
       }))
     } catch (e: any) {
       error.value = e.message || 'Failed to fetch items'
@@ -84,7 +84,7 @@ export const useItemsStore = defineStore('items', () => {
         .from('items')
         .select(`
           *,
-          projects(name)
+          projects(name, status)
         `)
         .eq('item_number', itemNumber)
         .single()
@@ -102,7 +102,7 @@ export const useItemsStore = defineStore('items', () => {
 
       currentItem.value = {
         ...itemData,
-        project_name: itemData.projects?.name || null,
+        project_name: itemData.projects?.status !== 'archived' ? itemData.projects?.name || null : null,
         files: filesData || []
       }
     } catch (e: any) {

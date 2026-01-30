@@ -23,6 +23,8 @@ async def list_projects(
 
     if status:
         query = query.eq("status", status)
+    else:
+        query = query.neq("status", "archived")
 
     query = query.order("name").range(offset, offset + limit - 1)
 

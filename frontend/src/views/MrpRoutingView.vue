@@ -185,13 +185,13 @@ function getPartType(item: Item): string {
   return 'formed_sm'
 }
 
-// Get unique projects for filter dropdown (PDM projects + MRP projects)
+// Get unique projects for filter dropdown (merged PDM + MRP names)
 const projectOptions = computed(() => {
   const projects = new Set<string>()
   items.value.forEach(item => {
     if (item.project_name) projects.add(item.project_name)
     if (item.mrp_project_codes) {
-      item.mrp_project_codes.forEach(code => projects.add(`MRP: ${code}`))
+      item.mrp_project_codes.forEach(code => projects.add(code))
     }
   })
   return Array.from(projects).sort()
@@ -202,12 +202,10 @@ const filteredItems = computed(() => {
   let result = items.value
 
   if (projectFilter.value !== 'all') {
-    if (projectFilter.value.startsWith('MRP: ')) {
-      const mrpCode = projectFilter.value.slice(5)
-      result = result.filter(item => item.mrp_project_codes?.includes(mrpCode))
-    } else {
-      result = result.filter(item => item.project_name === projectFilter.value)
-    }
+    const pf = projectFilter.value
+    result = result.filter(item =>
+      item.project_name === pf || item.mrp_project_codes?.includes(pf)
+    )
   }
 
   if (partTypeFilter.value !== 'all') {
@@ -340,7 +338,7 @@ async function loadData() {
     // Load items with project info
     const { data: itemsData, error: itemsError } = await supabase
       .from('items')
-      .select('id, item_number, name, description, lifecycle_state, material, thickness, cut_length, cut_time, mass, project_id, projects(name)')
+      .select('id, item_number, name, description, lifecycle_state, material, thickness, cut_length, cut_time, mass, project_id, projects(name, status)')
       .order('item_number')
 
     if (itemsError) throw itemsError
@@ -390,7 +388,7 @@ async function loadData() {
       routing_count: routingCounts.get(item.id) || 0,
       has_pdf: itemsWithPdf.has(item.id),
       part_type: getPartType(item),
-      project_name: (item as any).projects?.name || null,
+      project_name: (item as any).projects?.status !== 'archived' ? (item as any).projects?.name || null : null,
       mrp_project_codes: mrpItemMap.get(item.id) || []
     }))
 
