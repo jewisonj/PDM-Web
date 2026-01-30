@@ -74,7 +74,7 @@ export interface Task {
   id: string
   item_id?: string
   file_id?: string
-  task_type: 'GENERATE_DXF' | 'GENERATE_SVG' | 'PARAM_SYNC' | 'SYNC'
+  task_type: 'GENERATE_DXF' | 'GENERATE_SVG'
   status: 'pending' | 'processing' | 'completed' | 'failed'
   payload?: Record<string, unknown>
   error_message?: string
