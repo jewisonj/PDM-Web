@@ -59,6 +59,15 @@ def parse_dxf_to_polygons(
             if len(points) >= 4:
                 direct_polygons.append(Polygon(points))
 
+        elif etype == "SPLINE":
+            points = _discretize_spline(entity, chord_tol)
+            if len(points) >= 3 and entity.closed:
+                poly = Polygon(points)
+                if poly.is_valid and poly.area > 0.001:
+                    direct_polygons.append(poly)
+            elif len(points) >= 2:
+                segments.append(LineString(points))
+
         elif etype == "LWPOLYLINE":
             points = _extract_lwpolyline(entity, chord_tol)
             if len(points) >= 3:
@@ -267,3 +276,12 @@ def _bulge_to_arc_points(
         points.append((x, y))
 
     return points
+
+
+def _discretize_spline(entity, chord_tol: float) -> list[tuple]:
+    """Convert a DXF SPLINE entity to a list of (x, y) points using ezdxf flattening."""
+    try:
+        pts = list(entity.flattening(chord_tol))
+        return [(p.x, p.y) for p in pts]
+    except Exception:
+        return []

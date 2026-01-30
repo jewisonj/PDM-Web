@@ -60,7 +60,11 @@
       "mcp__pdm-supabase__apply_migration",
       "Bash(powershell:*)",
       "mcp__pdm-supabase__get_advisors",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(tasklist /FI \"IMAGENAME eq python.exe\" /V)",
+      "Bash(findstr:*)",
+      "Bash(ping:*)",
+      "Bash(wmic process where \"commandline like ''%worker_loop%''\" get processid,commandline)"
     ],
     "deny": []
   },

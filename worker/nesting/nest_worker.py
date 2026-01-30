@@ -30,6 +30,7 @@ from supabase import create_client
 from dxf_parser import parse_dxf_to_polygons, get_bounding_box, get_total_area
 from nester import nest_parts
 from dxf_writer import write_nested_sheet
+from svg_writer import write_svg_from_dxf
 
 # Load environment
 load_dotenv()
@@ -212,6 +213,35 @@ def process_nest_task(supabase, task: dict):
                 else:
                     raise
 
+            # Generate SVG preview from the DXF we just wrote
+            svg_filename = f"sheet_{sheet.index:02d}.svg"
+            svg_output_path = work_dir / svg_filename
+            svg_storage_path = f"{output_prefix}{svg_filename}"
+
+            try:
+                write_svg_from_dxf(
+                    str(output_path), str(svg_output_path),
+                    float(job["sheet_width_in"]), float(job["sheet_height_in"]),
+                )
+                svg_content = svg_output_path.read_bytes()
+                log(f"  Uploading {svg_storage_path}")
+                try:
+                    supabase.storage.from_(STORAGE_BUCKET).upload(
+                        svg_storage_path, svg_content,
+                        file_options={"content-type": "image/svg+xml"},
+                    )
+                except Exception as e:
+                    if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+                        supabase.storage.from_(STORAGE_BUCKET).update(
+                            svg_storage_path, svg_content,
+                            file_options={"content-type": "image/svg+xml"},
+                        )
+                    else:
+                        raise
+            except Exception as e:
+                log(f"  WARNING: SVG generation failed for {svg_filename}: {e}")
+                svg_storage_path = None
+
             # Build placements data for the manifest
             placements_data = []
             for p in sheet.placements:
@@ -227,6 +257,7 @@ def process_nest_task(supabase, task: dict):
                 "nest_job_id": nest_job_id,
                 "sheet_index": sheet.index,
                 "dxf_path": storage_path,
+                "svg_path": svg_storage_path,
                 "utilization": round(sheet.utilization, 4),
                 "parts_on_sheet": len(sheet.placements),
                 "placements": placements_data,
@@ -269,13 +300,13 @@ def process_nest_task(supabase, task: dict):
         try:
             supabase.storage.from_(STORAGE_BUCKET).upload(
                 manifest_path, manifest_bytes,
-                file_options={"content-type": "application/json"},
+                file_options={"content-type": "application/octet-stream"},
             )
         except Exception as e:
             if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
                 supabase.storage.from_(STORAGE_BUCKET).update(
                     manifest_path, manifest_bytes,
-                    file_options={"content-type": "application/json"},
+                    file_options={"content-type": "application/octet-stream"},
                 )
             else:
                 raise

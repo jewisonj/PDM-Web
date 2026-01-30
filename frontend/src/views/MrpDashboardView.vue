@@ -602,6 +602,23 @@ async function downloadNestSheet(jobId: string, sheetIndex: number) {
   }
 }
 
+const svgPreviewUrl = ref<string | null>(null)
+const svgPreviewLabel = ref('')
+
+async function previewNestSheet(jobId: string, sheetIndex: number) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/nesting/jobs/${jobId}/sheets/${sheetIndex}/svg`)
+    if (!response.ok) throw new Error('SVG preview not available')
+    const data = await response.json()
+    if (data.url) {
+      svgPreviewUrl.value = data.url
+      svgPreviewLabel.value = `Sheet ${sheetIndex}`
+    }
+  } catch (e: any) {
+    error.value = e.message || 'Failed to load SVG preview'
+  }
+}
+
 function formatUtilization(util: number | null | undefined): string {
   if (util == null) return '-'
   return `${(util * 100).toFixed(1)}%`
@@ -886,18 +903,33 @@ onUnmounted(() => {
                   <div v-if="job.status === 'failed'" class="nest-job-error">
                     {{ job.error_message || 'Nesting failed' }}
                   </div>
-                  <!-- Sheet downloads -->
+                  <!-- Sheet results -->
                   <div v-if="job.status === 'completed' && nestResults.has(job.id)" class="nest-sheets">
-                    <button
+                    <div
                       v-for="sheet in nestResults.get(job.id)"
                       :key="sheet.sheet_index"
-                      class="nest-sheet-btn"
-                      @click="downloadNestSheet(job.id, sheet.sheet_index)"
+                      class="nest-sheet-group"
                     >
-                      <i class="pi pi-download"></i>
-                      Sheet {{ sheet.sheet_index }}
-                      <span v-if="sheet.utilization" class="sheet-util">({{ formatUtilization(sheet.utilization) }})</span>
-                    </button>
+                      <span class="nest-sheet-label">
+                        Sheet {{ sheet.sheet_index }}
+                        <span v-if="sheet.utilization" class="sheet-util">({{ formatUtilization(sheet.utilization) }})</span>
+                      </span>
+                      <button
+                        v-if="sheet.svg_path"
+                        class="nest-sheet-btn preview-btn"
+                        @click="previewNestSheet(job.id, sheet.sheet_index)"
+                      >
+                        <i class="pi pi-eye"></i>
+                        Preview
+                      </button>
+                      <button
+                        class="nest-sheet-btn"
+                        @click="downloadNestSheet(job.id, sheet.sheet_index)"
+                      >
+                        <i class="pi pi-download"></i>
+                        DXF
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -992,6 +1024,23 @@ onUnmounted(() => {
       @submit="submitNestJob"
     />
   </div>
+
+  <!-- SVG Preview Modal -->
+  <Teleport to="body">
+    <div v-if="svgPreviewUrl" class="svg-preview-overlay" @click.self="svgPreviewUrl = null">
+      <div class="svg-preview-modal">
+        <div class="svg-preview-header">
+          <span>{{ svgPreviewLabel }}</span>
+          <button class="svg-preview-close" @click="svgPreviewUrl = null">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+        <div class="svg-preview-body">
+          <img :src="svgPreviewUrl" alt="Nest sheet preview" />
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -1771,9 +1820,21 @@ onUnmounted(() => {
 
 .nest-sheets {
   display: flex;
+  flex-direction: column;
   gap: 6px;
-  flex-wrap: wrap;
   margin-top: 6px;
+}
+
+.nest-sheet-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nest-sheet-label {
+  color: #e5e7eb;
+  font-size: 12px;
+  min-width: 120px;
 }
 
 .nest-sheet-btn {
@@ -1794,8 +1855,75 @@ onUnmounted(() => {
   border-color: #475569;
 }
 
+.nest-sheet-btn.preview-btn {
+  border-color: #0e7490;
+  color: #22d3ee;
+}
+
+.nest-sheet-btn.preview-btn:hover {
+  background: #164e63;
+  border-color: #22d3ee;
+}
+
 .sheet-util {
   color: #9ca3af;
   font-size: 11px;
+}
+
+/* SVG Preview Modal */
+.svg-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.svg-preview-modal {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  max-width: 95vw;
+  max-height: 95vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.svg-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid #334155;
+  color: #e5e7eb;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.svg-preview-close {
+  background: none;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+}
+
+.svg-preview-close:hover {
+  color: #e5e7eb;
+}
+
+.svg-preview-body {
+  padding: 16px;
+  overflow: auto;
+}
+
+.svg-preview-body img {
+  max-width: 100%;
+  height: auto;
+  display: block;
 }
 </style>

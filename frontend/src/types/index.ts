@@ -145,6 +145,7 @@ export interface NestSheet {
   nest_job_id: string
   sheet_index: number
   dxf_path: string
+  svg_path?: string
   utilization?: number
   parts_on_sheet?: number
   placements?: Record<string, unknown>[]

@@ -1,0 +1,32 @@
+﻿        Model Name         DESCRIPTION       PROJECT       PRO_MP_MASS  SMT_THICKNESS  PTC_MASTER_MATERIAL  CUT_LENGTH  CUT_TIME   PRICE_EST   Current Rep: Master Rep 
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ STA01020.ASM              MAIN WELDMENT     WATTS MARINE  1804.859543                                                                                                 
+   Materials                                                                                                                                                           
+   ASM_DEF_CSYS                                                                                                                                                        
+   ASM_RIGHT                                                                                                                                                           
+   ASM_TOP                                                                                                                                                             
+   ASM_FRONT                                                                                                                                                           
+   ACS0                                                                                                                                                                
+   STP02730<STP02735>.PRT  SIDE PLATE        WATTS MARINE  126.40205    0.25           STEEL                171.541722  11.300928  135.694062                          
+   STP02890.PRT            HINGE PLATE       WATTS MARINE  0.571602     0.38           STEEL                13.535      1.595751   4.47524                             
+   STP02730<STP02735>.PRT  SIDE PLATE        WATTS MARINE  126.40205    0.25           STEEL                171.541722  11.300928  135.694062                          
+   STP02890.PRT            HINGE PLATE       WATTS MARINE  0.571602     0.38           STEEL                13.535      1.595751   4.47524                             
+   STP02750.PRT            FRONT PLATE       WATTS MARINE  407.668514   0.25           STEEL                939.781917  61.911514  501.297021                          
+   STP02760.PRT            REAR PLATE        WATTS MARINE  387.234737   0.25           STEEL                885.035782  58.304915  474.911814                          
+   STP02790.PRT            SPLITTER PLATE    WATTS MARINE  97.973839    0.25           STEEL                163.883805  10.796435  110.268851                          
+   LID_DEFINITION                                                                                                                                                      
+   STP02880.PRT            BOTTOM PLATE      WATTS MARINE  577.854217   0.25           STEEL                574.167761  37.825366  585.7395                            
+   STP02800.PRT            GOOSNECK BRACKET  WATTS MARINE  0.34831      0.375          STEEL                10.409422   1.204863   3.308222                            
+   STP02800.PRT            GOOSNECK BRACKET  WATTS MARINE  0.34831      0.375          STEEL                10.409422   1.204863   3.308222                            
+   STP02800.PRT            GOOSNECK BRACKET  WATTS MARINE  0.34831      0.375          STEEL                10.409422   1.204863   3.308222                            
+   STP02800.PRT            GOOSNECK BRACKET  WATTS MARINE  0.34831      0.375          STEEL                10.409422   1.204863   3.308222                            
+   STP02950.PRT            DOOR BUSHING      WATTS MARINE  0.143143                    STEEL                                                                           
+   MMC12555K88.PRT         2" NPT BUNG                     0.464495                    STEEL                                                                           
+   MMC12555K88.PRT         2" NPT BUNG                     0.464495                    STEEL                                                                           
+   AUX1                                                                                                                                                                
+   STP02950.PRT            DOOR BUSHING      WATTS MARINE  0.143143                    STEEL                                                                           
+   Insert Here                                                                                                                                                         
+   Sections                                                                                                                                                            
+     A                                                                                                                                                                 
+     B                                                                                                                                                                 
+     C                                                                                                                                                                 

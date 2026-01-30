@@ -287,10 +287,11 @@ def main():
 
     while True:
         try:
-            # Fetch one pending task (oldest first)
+            # Fetch one pending task (oldest first) - only task types this worker handles
             result = supabase.table("work_queue") \
                 .select("*") \
                 .eq("status", "pending") \
+                .in_("task_type", list(TASK_MAP.keys())) \
                 .order("created_at") \
                 .limit(1) \
                 .execute()

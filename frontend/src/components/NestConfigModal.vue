@@ -22,6 +22,7 @@ const emit = defineEmits<{
 }>()
 
 const selectedGroupKey = ref<string | null>(null)
+const expandedGroupKey = ref<string | null>(null)
 const selectedSheetPreset = ref<string | null>(null)
 const customWidth = ref<number | null>(null)
 const customHeight = ref<number | null>(null)
@@ -128,6 +129,29 @@ function handleSubmit() {
                 <div v-if="group.parts_with_dxf < group.part_count" class="group-warning">
                   <i class="pi pi-exclamation-triangle"></i>
                   {{ group.part_count - group.parts_with_dxf }} parts missing DXF
+                </div>
+                <button
+                  class="expand-toggle"
+                  @click.stop="expandedGroupKey = expandedGroupKey === group.group_key ? null : group.group_key"
+                >
+                  <i :class="expandedGroupKey === group.group_key ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"></i>
+                  {{ expandedGroupKey === group.group_key ? 'Hide' : 'Show' }} Parts
+                </button>
+                <div v-if="expandedGroupKey === group.group_key" class="parts-list">
+                  <div
+                    v-for="part in group.parts"
+                    :key="part.item_id"
+                    class="part-row"
+                    :class="{ 'missing-dxf': !part.has_dxf }"
+                  >
+                    <span class="part-number">{{ part.item_number }}</span>
+                    <span class="part-name">{{ part.name || '' }}</span>
+                    <span class="part-qty">x{{ part.quantity }}</span>
+                    <span class="part-dxf-status">
+                      <i v-if="part.has_dxf" class="pi pi-check" style="color: #22c55e;"></i>
+                      <i v-else class="pi pi-times" style="color: #ef4444;"></i>
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -356,6 +380,73 @@ function handleSubmit() {
   font-size: 11px;
   color: #fbbf24;
   margin-top: 6px;
+}
+
+/* Expand Toggle */
+.expand-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 4px 0 0 0;
+  margin-top: 6px;
+}
+
+.expand-toggle:hover {
+  color: #94a3b8;
+}
+
+/* Parts List */
+.parts-list {
+  margin-top: 8px;
+  border-top: 1px solid #1e293b;
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.part-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 40px 24px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: #0f172a;
+}
+
+.part-row.missing-dxf {
+  opacity: 0.5;
+}
+
+.part-number {
+  color: #38bdf8;
+  font-weight: 500;
+  font-family: monospace;
+}
+
+.part-name {
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.part-qty {
+  color: #6ee7b7;
+  text-align: right;
+  font-weight: 500;
+}
+
+.part-dxf-status {
+  text-align: center;
+  font-size: 11px;
 }
 
 /* Sheet Size Options */

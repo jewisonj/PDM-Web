@@ -12,7 +12,7 @@ from uuid import UUID
 from typing import Optional
 from pydantic import BaseModel
 
-from ..services.supabase import get_supabase_client, get_supabase_admin
+from ..services.supabase import get_supabase_admin
 
 router = APIRouter(prefix="/nesting", tags=["nesting"])
 
@@ -40,7 +40,7 @@ async def get_nest_groups(project_id: UUID):
     Returns groups with part counts, total pieces, and DXF availability.
     Only includes parts (item_number 3rd char == 'p') that are not supplier parts.
     """
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Get all project parts with item details
     parts_result = supabase.table("mrp_project_parts") \
@@ -244,7 +244,7 @@ async def create_nest_job(project_id: UUID, body: NestJobCreate):
 @router.get("/jobs/{nest_job_id}")
 async def get_nest_job(nest_job_id: UUID):
     """Get nest job status, items, and results."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Get job
     job_result = supabase.table("nest_jobs") \
@@ -282,7 +282,7 @@ async def get_nest_job(nest_job_id: UUID):
 @router.get("/projects/{project_id}/jobs")
 async def list_nest_jobs(project_id: UUID):
     """List all nest jobs for a project, newest first."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     jobs_result = supabase.table("nest_jobs") \
         .select("*") \
@@ -296,7 +296,7 @@ async def list_nest_jobs(project_id: UUID):
 @router.get("/jobs/{nest_job_id}/sheets/{sheet_index}/download")
 async def download_nest_sheet(nest_job_id: UUID, sheet_index: int):
     """Get a signed download URL for a nested sheet DXF."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Get the result row
     result = supabase.table("nest_results") \
@@ -320,3 +320,31 @@ async def download_nest_sheet(nest_job_id: UUID, sheet_index: int):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Could not generate download URL: {str(e)}")
+
+
+@router.get("/jobs/{nest_job_id}/sheets/{sheet_index}/svg")
+async def get_nest_sheet_svg(nest_job_id: UUID, sheet_index: int):
+    """Get a signed URL for the SVG preview of a nested sheet."""
+    supabase = get_supabase_admin()
+
+    result = supabase.table("nest_results") \
+        .select("svg_path") \
+        .eq("nest_job_id", str(nest_job_id)) \
+        .eq("sheet_index", sheet_index) \
+        .single() \
+        .execute()
+
+    if not result.data or not result.data.get("svg_path"):
+        raise HTTPException(status_code=404, detail="SVG preview not available")
+
+    svg_path = result.data["svg_path"]
+
+    try:
+        url_result = supabase.storage.from_("pdm-files").create_signed_url(svg_path, 3600)
+        return {
+            "url": url_result["signedURL"],
+            "filename": f"sheet_{sheet_index:02d}.svg",
+            "expires_in": 3600,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Could not generate SVG URL: {str(e)}")
