@@ -64,7 +64,8 @@
       "Bash(tasklist /FI \"IMAGENAME eq python.exe\" /V)",
       "Bash(findstr:*)",
       "Bash(ping:*)",
-      "Bash(wmic process where \"commandline like ''%worker_loop%''\" get processid,commandline)"
+      "Bash(wmic process where \"commandline like ''%worker_loop%''\" get processid,commandline)",
+      "Bash(tasklist /FI \"WINDOWTITLE eq uvicorn*\")"
     ],
     "deny": []
   },
