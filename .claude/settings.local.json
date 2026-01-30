@@ -68,7 +68,8 @@
       "mcp__pdm-supabase__list_migrations",
       "Bash(where:*)",
       "Bash(MSYS_NO_PATHCONV=1 tasklist:*)",
-      "mcp__pdm-supabase__get_publishable_keys"
+      "mcp__pdm-supabase__get_publishable_keys",
+      "Bash(fc:*)"
     ],
     "deny": []
   },

@@ -33,6 +33,7 @@ interface Item {
   part_type?: string
   project_id?: string
   project_name?: string
+  mrp_project_codes?: string[]
 }
 
 interface Workstation {
@@ -184,11 +185,14 @@ function getPartType(item: Item): string {
   return 'formed_sm'
 }
 
-// Get unique projects for filter dropdown
+// Get unique projects for filter dropdown (PDM projects + MRP projects)
 const projectOptions = computed(() => {
   const projects = new Set<string>()
   items.value.forEach(item => {
     if (item.project_name) projects.add(item.project_name)
+    if (item.mrp_project_codes) {
+      item.mrp_project_codes.forEach(code => projects.add(`MRP: ${code}`))
+    }
   })
   return Array.from(projects).sort()
 })
@@ -198,7 +202,12 @@ const filteredItems = computed(() => {
   let result = items.value
 
   if (projectFilter.value !== 'all') {
-    result = result.filter(item => item.project_name === projectFilter.value)
+    if (projectFilter.value.startsWith('MRP: ')) {
+      const mrpCode = projectFilter.value.slice(5)
+      result = result.filter(item => item.mrp_project_codes?.includes(mrpCode))
+    } else {
+      result = result.filter(item => item.project_name === projectFilter.value)
+    }
   }
 
   if (partTypeFilter.value !== 'all') {
@@ -359,6 +368,21 @@ async function loadData() {
 
     const itemsWithPdf = new Set((pdfData || []).map(f => f.item_id))
 
+    // Load MRP project memberships (item_id -> project codes)
+    const { data: mrpData } = await supabase
+      .from('mrp_project_parts')
+      .select('item_id, mrp_projects(project_code)')
+
+    const mrpItemMap = new Map<string, string[]>()
+    ;(mrpData || []).forEach((mp: any) => {
+      const code = mp.mrp_projects?.project_code
+      if (code) {
+        const existing = mrpItemMap.get(mp.item_id) || []
+        if (!existing.includes(code)) existing.push(code)
+        mrpItemMap.set(mp.item_id, existing)
+      }
+    })
+
     // Enrich items
     items.value = (itemsData || []).map(item => ({
       ...item,
@@ -366,7 +390,8 @@ async function loadData() {
       routing_count: routingCounts.get(item.id) || 0,
       has_pdf: itemsWithPdf.has(item.id),
       part_type: getPartType(item),
-      project_name: (item as any).projects?.name || null
+      project_name: (item as any).projects?.name || null,
+      mrp_project_codes: mrpItemMap.get(item.id) || []
     }))
 
     // Load workstations

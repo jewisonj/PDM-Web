@@ -421,20 +421,21 @@ async function updateBom() {
 
     if (deleteError) throw deleteError
 
-    // 2. Recursively explode all assemblies
+    // 2. Add top-level assemblies as parts (they are produced items too)
     const allParts = new Map<string, { item_id: string, quantity: number }>()
 
     for (const asm of assemblies) {
-      const existing = allParts.get(asm.item_id)
-      if (existing) {
-        existing.quantity += asm.quantity
-      } else {
-        allParts.set(asm.item_id, { item_id: asm.item_id, quantity: asm.quantity })
-      }
-      await explodeBomRecursive(asm.item_id, asm.quantity, allParts)
+      allParts.set(asm.item_id, { item_id: asm.item_id, quantity: asm.quantity })
     }
 
-    // 3. Get manual parts to avoid conflicts
+    // 3. Recursively explode all assemblies (skip top assemblies in BOM children to avoid double-counting)
+    const topAssemblyIds = new Set(assemblies.map(a => a.item_id))
+
+    for (const asm of assemblies) {
+      await explodeBomRecursive(asm.item_id, asm.quantity, allParts, topAssemblyIds)
+    }
+
+    // 4. Get manual parts to avoid conflicts
     const { data: manualParts } = await supabase
       .from('mrp_project_parts')
       .select('item_id')
@@ -443,7 +444,7 @@ async function updateBom() {
 
     const manualItemIds = new Set((manualParts || []).map(p => p.item_id))
 
-    // 4. Insert BOM-derived parts (skip items that exist as manual)
+    // 5. Insert BOM-derived parts (skip items that exist as manual)
     const newParts = Array.from(allParts.entries())
       .filter(([itemId]) => !manualItemIds.has(itemId))
       .map(([_, part]) => ({
@@ -461,7 +462,7 @@ async function updateBom() {
       if (insertError) throw insertError
     }
 
-    // 5. Update top_assembly_id for backward compat
+    // 6. Update top_assembly_id for backward compat
     await supabase
       .from('mrp_projects')
       .update({ top_assembly_id: assemblies[0].item_id })
@@ -560,7 +561,8 @@ async function updatePartQty(partId: string, newQty: number) {
 async function explodeBomRecursive(
   parentId: string,
   parentQty: number,
-  parts: Map<string, { item_id: string, quantity: number }>
+  parts: Map<string, { item_id: string, quantity: number }>,
+  excludeIds?: Set<string>
 ) {
   const { data: bomEntries } = await supabase
     .from('bom')
@@ -571,6 +573,10 @@ async function explodeBomRecursive(
 
   for (const entry of bomEntries) {
     const totalQty = entry.quantity * parentQty
+
+    // Skip top-level assemblies (they're tracked separately)
+    if (excludeIds && excludeIds.has(entry.child_item_id)) continue
+
     const existing = parts.get(entry.child_item_id)
 
     if (existing) {
@@ -580,7 +586,7 @@ async function explodeBomRecursive(
     }
 
     // Recurse into children
-    await explodeBomRecursive(entry.child_item_id, totalQty, parts)
+    await explodeBomRecursive(entry.child_item_id, totalQty, parts, excludeIds)
   }
 }
 
