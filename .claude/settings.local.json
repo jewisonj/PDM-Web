@@ -65,7 +65,9 @@
       "Bash(findstr:*)",
       "Bash(ping:*)",
       "Bash(wmic process where \"commandline like ''%worker_loop%''\" get processid,commandline)",
-      "Bash(tasklist /FI \"WINDOWTITLE eq uvicorn*\")"
+      "Bash(tasklist /FI \"WINDOWTITLE eq uvicorn*\")",
+      "Bash(tasklist:*)",
+      "mcp__pdm-supabase__list_migrations"
     ],
     "deny": []
   },
