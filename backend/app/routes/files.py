@@ -146,7 +146,27 @@ async def upload_file(
         }
         result = supabase.table("files").insert(file_data).execute()
 
-    return result.data[0]
+    file_record = result.data[0]
+
+    # Auto-queue DXF/SVG generation for STEP files (only parts, 3rd char == 'p')
+    if file_type == "STEP":
+        is_part = len(clean_item_number) >= 3 and clean_item_number[2] == 'p'
+        if is_part:
+            file_id_for_task = file_record["id"]
+            for task_type in ["GENERATE_DXF", "GENERATE_SVG"]:
+                try:
+                    supabase.table("work_queue").insert({
+                        "item_id": item_id,
+                        "file_id": file_id_for_task,
+                        "task_type": task_type,
+                        "payload": {"file_path": storage_path, "item_number": clean_item_number},
+                        "status": "pending"
+                    }).execute()
+                    print(f"Queued {task_type} for {clean_item_number}")
+                except Exception as e:
+                    print(f"Warning: Failed to queue {task_type} for {clean_item_number}: {e}")
+
+    return file_record
 
 
 @router.get("/{file_id}/download")

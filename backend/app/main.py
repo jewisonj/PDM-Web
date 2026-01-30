@@ -17,6 +17,7 @@ from .routes import (
     auth_router,
     tasks_router,
     mrp_router,
+    workspace_router,
 )
 
 settings = get_settings()
@@ -46,6 +47,7 @@ app.include_router(bom_router, prefix="/api")
 app.include_router(projects_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(mrp_router, prefix="/api")
+app.include_router(workspace_router, prefix="/api")
 
 
 @app.get("/health")

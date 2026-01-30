@@ -5,7 +5,7 @@ from typing import Optional
 from uuid import UUID
 from datetime import datetime
 
-from ..services.supabase import get_supabase_client
+from ..services.supabase import get_supabase_client, get_supabase_admin
 from ..models.schemas import Task, TaskCreate
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -156,7 +156,7 @@ async def queue_svg_generation(item_number: str):
 @router.patch("/{task_id}/start")
 async def start_task(task_id: UUID):
     """Mark task as processing (for worker)."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     result = supabase.table("work_queue").update({
         "status": "processing",
@@ -172,7 +172,7 @@ async def start_task(task_id: UUID):
 @router.patch("/{task_id}/complete")
 async def complete_task(task_id: UUID, error_message: Optional[str] = None):
     """Mark task as completed or failed."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     update_data = {
         "status": "failed" if error_message else "completed",

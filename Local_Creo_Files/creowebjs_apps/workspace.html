@@ -585,6 +585,17 @@
     <div class="debug-console" id="debugConsole"></div>
     
     <script>
+        // ===== PDM WEB CONFIGURATION =====
+        // Update these URLs for your environment
+        const PDM_CONFIG = {
+            // FastAPI backend URL
+            apiUrl: 'http://localhost:8000',
+            // Local service URL (file operations on this machine)
+            localServiceUrl: 'http://localhost:8083',
+            // Vue frontend URL
+            frontendUrl: 'http://localhost:5174'
+        };
+
         // Debug logging
         function debugLog(message, level = 'info') {
             const console = document.getElementById('debugConsole');
@@ -657,44 +668,55 @@
                 
                 if (files.length === 0) {
                     debugLog('No CAD files found!', 'error');
-                    document.getElementById('tableBody').innerHTML = 
+                    document.getElementById('tableBody').innerHTML =
                         '<div class="loading">No CAD files found in current working directory: ' + workingDir + '</div>';
                     return;
                 }
-                
-                // Get timestamps using File API
-                debugLog('Getting file timestamps...', 'info');
-                for (let i = 0; i < files.length; i++) {
-                    try {
-                        const response = await fetch('file:///' + files[i].fullPath.replace(/\\/g, '/'), {method: 'HEAD'});
-                        const lastModified = response.headers.get('Last-Modified');
-                        if (lastModified) {
-                            files[i].lastWriteTime = new Date(lastModified).toLocaleString();
-                        } else {
-                            files[i].lastWriteTime = 'Unknown';
+
+                // Get timestamps from local service
+                debugLog('Getting file timestamps from local service...', 'info');
+                try {
+                    const timestampResponse = await fetch(`${PDM_CONFIG.localServiceUrl}/api/file-timestamps`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ files: files })
+                    });
+
+                    if (timestampResponse.ok) {
+                        const timestampData = await timestampResponse.json();
+                        if (timestampData.files) {
+                            // Merge timestamps into file list
+                            timestampData.files.forEach(tsFile => {
+                                const fileEntry = files.find(f => f.filename === tsFile.filename);
+                                if (fileEntry && tsFile.success) {
+                                    fileEntry.lastWriteTime = tsFile.lastWriteTime;
+                                }
+                            });
+                            debugLog(`Retrieved timestamps for ${timestampData.files.length} files`, 'success');
                         }
-                    } catch (e) {
-                        files[i].lastWriteTime = 'Unknown';
+                    } else {
+                        debugLog('Could not get timestamps from local service, using "Unknown"', 'warn');
                     }
+                } catch (e) {
+                    debugLog(`Timestamp service error: ${e.message}. Using "Unknown" for timestamps.`, 'warn');
+                    // Continue without timestamps
                 }
-                
-                // Send to PowerShell server for comparison
-                debugLog('Sending to server for vault comparison...', 'info');
-                const serverUrl = 'http://DATASERVER:8082/api/compare-filelist';
-                
-                const response = await fetch(serverUrl, {
+
+                // Send to FastAPI backend for vault comparison
+                debugLog('Sending to PDM-Web API for vault comparison...', 'info');
+                const response = await fetch(`${PDM_CONFIG.apiUrl}/api/workspace/compare`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         workspacePath: workingDir,
-                        files: files 
+                        files: files
                     })
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
                 }
-                
+
                 const data = await response.json();
                 
                 if (data.error) {
@@ -708,8 +730,8 @@
                 
             } catch (error) {
                 debugLog(`Error loading workspace: ${error.message}`, 'error');
-                document.getElementById('tableBody').innerHTML = 
-                    `<div class="error">Error loading workspace data: ${error.message}<br><br>Make sure the PowerShell server is running on DATASERVER:8082</div>`;
+                document.getElementById('tableBody').innerHTML =
+                    `<div class="error">Error loading workspace data: ${error.message}<br><br>Cannot connect to PDM-Web API at ${PDM_CONFIG.apiUrl}. Make sure the backend is running.<br>For local file operations, also ensure the local service is running at ${PDM_CONFIG.localServiceUrl}</div>`;
             }
         }
         
@@ -980,37 +1002,36 @@
                 alert('No files selected');
                 return;
             }
-            
-            const confirmMsg = `Copy ${files.length} file(s) to CheckIn folder?\n\n` +
-                               files.map(f => f.filename).join('\n') +
-                               `\n\nFiles will be copied (not moved) to:\nD:\\PDM_Vault\\CADData\\CheckIn`;
-            
+
+            const confirmMsg = `Upload ${files.length} file(s) to PDM vault?\n\n` +
+                               files.map(f => f.filename).join('\n');
+
             if (!confirm(confirmMsg)) {
                 return;
             }
-            
+
             debugLog(`Checking in ${files.length} files...`, 'info');
-            
+
             try {
-                const response = await fetch('http://localhost:8083/api/checkin', {
+                const response = await fetch(`${PDM_CONFIG.localServiceUrl}/api/checkin`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ files: files })
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`Server responded with ${response.status}`);
                 }
-                
+
                 const data = await response.json();
-                
+
                 if (data.error) {
                     throw new Error(data.error);
                 }
-                
+
                 const summary = data.summary;
                 let message = `Check-In Complete:\n\n`;
-                message += `✓ ${summary.succeeded} file(s) copied successfully\n`;
+                message += `✓ ${summary.succeeded} file(s) uploaded successfully\n`;
                 if (summary.failed > 0) {
                     message += `✗ ${summary.failed} file(s) failed\n\n`;
                     message += `Failed files:\n`;
@@ -1018,20 +1039,20 @@
                         message += `  - ${r.filename}: ${r.error}\n`;
                     });
                 } else {
-                    message += `\nAll files copied to D:\\PDM_Vault\\CADData\\CheckIn`;
+                    message += `\nAll files uploaded to PDM vault`;
                 }
-                
+
                 alert(message);
                 debugLog(`Check-in complete: ${summary.succeeded} succeeded, ${summary.failed} failed`, 'success');
-                
+
                 // Clear selection after successful check-in
                 if (summary.succeeded > 0) {
                     clearSelection();
                 }
-                
+
             } catch (error) {
                 debugLog(`Check-in error: ${error.message}`, 'error');
-                alert(`Check-In Failed:\n\n${error.message}\n\nMake sure Local_PDM_Services is running on localhost:8083`);
+                alert(`Check-In Failed:\n\n${error.message}\n\nCannot connect to local PDM service at ${PDM_CONFIG.localServiceUrl}. Run PDM-Local-Service.ps1`);
             }
         }
 		
@@ -1040,37 +1061,37 @@
 				alert('No files selected');
 				return;
 			}
-			
-			const confirmMsg = `Download ${files.length} file(s) from vault to workspace?\n\n` +
+
+			const confirmMsg = `Download ${files.length} file(s) from PDM vault to workspace?\n\n` +
 							   files.map(f => f.filename).join('\n') +
 							   `\n\nFiles will be copied to:\n${workspaceDir}`;
-			
+
 			if (!confirm(confirmMsg)) {
 				return;
 			}
-			
+
 			debugLog(`Downloading ${files.length} files...`, 'info');
-			
+
 			try {
-				const response = await fetch('http://localhost:8083/api/download', {
+				const response = await fetch(`${PDM_CONFIG.localServiceUrl}/api/download`, {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ 
+					body: JSON.stringify({
 						files: files,
 						workspaceDir: workspaceDir
 					})
 				});
-				
+
 				if (!response.ok) {
 					throw new Error(`Server responded with ${response.status}`);
 				}
-				
+
 				const data = await response.json();
-				
+
 				if (data.error) {
 					throw new Error(data.error);
 				}
-				
+
 				const summary = data.summary;
 				let message = `Download Complete:\n\n`;
 				message += `✓ ${summary.succeeded} file(s) downloaded successfully\n`;
@@ -1081,22 +1102,22 @@
 						message += `  - ${r.filename}: ${r.error}\n`;
 					});
 				} else {
-					message += `\nAll files copied to ${workspaceDir}`;
+					message += `\nAll files downloaded from PDM vault to:\n${workspaceDir}`;
 				}
-				
+
 				alert(message);
 				debugLog(`Download complete: ${summary.succeeded} succeeded, ${summary.failed} failed`, 'success');
-				
+
 				// Clear selection after successful download
 				if (summary.succeeded > 0) {
 					clearSelection();
 					// Optionally refresh the workspace to show updated files
 					// loadWorkspaceData();
 				}
-				
+
 			} catch (error) {
 				debugLog(`Download error: ${error.message}`, 'error');
-				alert(`Download Failed:\n\n${error.message}\n\nMake sure Local_PDM_Services is running on localhost:8083`);
+				alert(`Download Failed:\n\n${error.message}\n\nCannot connect to local PDM service at ${PDM_CONFIG.localServiceUrl}. Run PDM-Local-Service.ps1`);
 			}
 		}
         

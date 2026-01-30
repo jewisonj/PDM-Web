@@ -35,7 +35,7 @@ def run_freecad_script(script_name, input_file, output_file=None, extra_args=Non
     if not os.path.exists(input_file):
         raise FileNotFoundError(f"Input file not found: {input_file}")
 
-    cmd = ["freecadcmd", script_path, input_file]
+    cmd = ["FreeCADCmd", script_path, input_file]
 
     if output_file:
         cmd.append(output_file)
@@ -66,7 +66,7 @@ def flatten_sheetmetal(input_file, output_file=None, k_factor=0.35):
     extra_args = [str(k_factor)] if k_factor != 0.35 else None
 
     return run_freecad_script(
-        "Flatten sheetmetal portable.py",
+        "worker/flatten_sheetmetal.py",
         input_file,
         output_file,
         extra_args
@@ -80,7 +80,7 @@ def create_bend_drawing(input_file, output_file=None, k_factor=0.35):
     extra_args = [str(k_factor)] if k_factor != 0.35 else None
 
     return run_freecad_script(
-        "Create bend drawing portable.py",
+        "worker/bend_drawing.py",
         input_file,
         output_file,
         extra_args
@@ -92,7 +92,7 @@ def convert_to_stl(input_file, output_file=None):
     log(f"Converting to STL: {input_file}")
 
     return run_freecad_script(
-        "convert_to_stl.py",
+        "tools/convert_to_stl.py",
         input_file,
         output_file
     )
@@ -103,7 +103,7 @@ def convert_to_obj(input_file, output_file=None):
     log(f"Converting to OBJ: {input_file}")
 
     return run_freecad_script(
-        "convert_to_obj.py",
+        "tools/convert_to_obj.py",
         input_file,
         output_file
     )
