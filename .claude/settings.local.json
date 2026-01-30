@@ -51,7 +51,8 @@
       "mcp__MCP_DOCKER__mcp-add",
       "WebSearch",
       "mcp__pdm-supabase__get_project_url",
-      "mcp__pdm-supabase__list_tables"
+      "mcp__pdm-supabase__list_tables",
+      "WebFetch(domain:support.ptc.com)"
     ],
     "deny": []
   },
