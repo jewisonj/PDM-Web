@@ -263,6 +263,190 @@ function Parse-ParameterFile {
 }
 
 
+function Parse-MLBOMFile {
+    <#
+    .SYNOPSIS
+        Parse a Creo multi-level BOM text file preserving hierarchy.
+
+    .DESCRIPTION
+        Unlike Parse-BOMFile which flattens everything to one parent,
+        this function reads the indentation structure to determine
+        parent-child relationships at every assembly level.
+
+        Returns one BOM group per assembly in the tree, each with its
+        direct children only.
+
+    .RETURNS
+        Array of hashtables, each with:
+        - parent_item_number: Assembly item number
+        - children: Array of direct child items with properties
+    #>
+    param([string]$FilePath)
+
+    $lines = Get-Content $FilePath -Encoding UTF8
+
+    # Find header line to get column positions
+    $headerLine = $null
+    $headerIndex = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match 'Model Name') {
+            $headerLine = $lines[$i]
+            $headerIndex = $i
+            break
+        }
+    }
+
+    if (-not $headerLine) {
+        throw "Invalid MLBOM file: no 'Model Name' header found"
+    }
+
+    # Calculate column positions from header
+    $cols = @{
+        ModelName   = $headerLine.IndexOf('Model Name')
+        Description = if ($headerLine.IndexOf('DESCRIPTION') -ge 0) { $headerLine.IndexOf('DESCRIPTION') } else { -1 }
+        Project     = if ($headerLine.IndexOf('PROJECT') -ge 0) { $headerLine.IndexOf('PROJECT') } else { -1 }
+        Mass        = if ($headerLine.IndexOf('PRO_MP_MASS') -ge 0) { $headerLine.IndexOf('PRO_MP_MASS') } else { -1 }
+        Material    = if ($headerLine.IndexOf('PTC_MASTER_MATERIAL') -ge 0) { $headerLine.IndexOf('PTC_MASTER_MATERIAL') } else { -1 }
+        CutLength   = if ($headerLine.IndexOf('CUT_LENGTH') -ge 0) { $headerLine.IndexOf('CUT_LENGTH') } else { -1 }
+        Thickness   = if ($headerLine.IndexOf('SMT_THICKNESS') -ge 0) { $headerLine.IndexOf('SMT_THICKNESS') } else { -1 }
+        CutTime     = if ($headerLine.IndexOf('CUT_TIME') -ge 0) { $headerLine.IndexOf('CUT_TIME') } else { -1 }
+        PriceEst    = if ($headerLine.IndexOf('PRICE_EST') -ge 0) { $headerLine.IndexOf('PRICE_EST') } else { -1 }
+    }
+
+    # First pass: collect all item lines (lines with .ASM or .PRT)
+    $itemLines = @()
+    $inData = $false
+
+    for ($i = $headerIndex + 1; $i -lt $lines.Count; $i++) {
+        $line = $lines[$i]
+
+        if ($line -match '^[\s-]+$' -and $line -match '-{3,}') {
+            $inData = $true
+            continue
+        }
+
+        if (-not $inData) { continue }
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+
+        # Only process lines containing .ASM or .PRT (actual components)
+        if ($line -notmatch '\.(ASM|PRT)') { continue }
+
+        # Skip excluded components (Creo suppressed/excluded)
+        if ($line -match '\bExclude\b') { continue }
+
+        # Skip skeleton parts and datum features
+        if ($line -match '_SKEL\.PRT') { continue }
+        if ($line -match 'ASM_RIGHT|ASM_TOP|ASM_FRONT|ASM_DEF_CSYS') { continue }
+
+        # Extract item number
+        $itemMatch = [regex]::Match($line, '([A-Za-z]{3}\d{4,6}|mmc[A-Za-z0-9]+|spn[A-Za-z0-9]+)', 'IgnoreCase')
+        if (-not $itemMatch.Success) { continue }
+
+        $itemNumber = $itemMatch.Groups[1].Value.ToLower()
+
+        # Calculate indent (leading spaces)
+        $trimmed = $line.TrimStart()
+        $indent = $line.Length - $trimmed.Length
+
+        $isAssembly = $line -match '\.ASM'
+
+        # Extract properties from columns
+        $description = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Description' -EndCol 'Project'
+        $material = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Material' -EndCol 'CutLength'
+        $massStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Mass' -EndCol 'Material'
+        $cutLengthStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutLength' -EndCol 'Thickness'
+        $thicknessStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'Thickness' -EndCol 'CutTime'
+        $cutTimeStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'CutTime' -EndCol 'PriceEst'
+        $priceEstStr = Get-ColumnValue -Line $line -Cols $cols -StartCol 'PriceEst' -EndCol $null
+
+        # Parse numeric values
+        $mass = $null; $cutLength = $null; $thickness = $null; $cutTime = $null; $priceEst = $null
+
+        if ($massStr -and $massStr -match '^[\d.]+$') { $mass = [double]$massStr }
+        if ($cutLengthStr -and $cutLengthStr -match '^[\d.]+$') { $cutLength = [double]$cutLengthStr }
+        if ($thicknessStr -and $thicknessStr -match '^[\d.]+$') { $thickness = [double]$thicknessStr }
+        if ($cutTimeStr -and $cutTimeStr -match '^[\d.]+$') { $cutTime = [double]$cutTimeStr }
+        if ($priceEstStr -and $priceEstStr -match '^[\d.]+$') { $priceEst = [double]$priceEstStr }
+
+        $itemLines += @{
+            item_number = $itemNumber
+            indent      = $indent
+            is_assembly = $isAssembly
+            name        = if ($description) { $description.Trim() } else { $null }
+            material    = if ($material) { $material.Trim() } else { $null }
+            mass        = $mass
+            cut_length  = $cutLength
+            thickness   = $thickness
+            cut_time    = $cutTime
+            price_est   = $priceEst
+        }
+    }
+
+    # Second pass: build parent-child relationships using assembly stack
+    # Stack entries: @{indent; item_number} - only assemblies go on the stack
+    $assemblyStack = [System.Collections.ArrayList]@()
+
+    # bomGroups: parent_item_number -> OrderedDictionary of child_item_number -> properties
+    $bomGroups = @{}
+
+    foreach ($item in $itemLines) {
+        # Pop assemblies at same or deeper indent level
+        while ($assemblyStack.Count -gt 0 -and $assemblyStack[$assemblyStack.Count - 1].indent -ge $item.indent) {
+            $assemblyStack.RemoveAt($assemblyStack.Count - 1)
+        }
+
+        # If there's a parent assembly on the stack, this item is its child
+        if ($assemblyStack.Count -gt 0) {
+            $parentNumber = $assemblyStack[$assemblyStack.Count - 1].item_number
+
+            # Skip zzz (reference) items as children
+            if (-not $item.item_number.StartsWith("zzz")) {
+                if (-not $bomGroups.ContainsKey($parentNumber)) {
+                    $bomGroups[$parentNumber] = @{}
+                }
+
+                if ($bomGroups[$parentNumber].ContainsKey($item.item_number)) {
+                    # Duplicate child under same parent = increment quantity
+                    $bomGroups[$parentNumber][$item.item_number].quantity++
+                }
+                else {
+                    $bomGroups[$parentNumber][$item.item_number] = @{
+                        item_number = $item.item_number
+                        quantity    = 1
+                        name        = $item.name
+                        material    = $item.material
+                        mass        = $item.mass
+                        cut_length  = $item.cut_length
+                        thickness   = $item.thickness
+                        cut_time    = $item.cut_time
+                        price_est   = $item.price_est
+                    }
+                }
+            }
+        }
+
+        # If this is an assembly, push onto the stack so its children can find it
+        if ($item.is_assembly) {
+            $assemblyStack.Add(@{
+                indent      = $item.indent
+                item_number = $item.item_number
+            }) | Out-Null
+        }
+    }
+
+    # Convert to array of BOM groups
+    $result = @()
+    foreach ($parentNumber in $bomGroups.Keys) {
+        $result += @{
+            parent_item_number = $parentNumber
+            children           = @($bomGroups[$parentNumber].Values)
+        }
+    }
+
+    return $result
+}
+
+
 function Get-ColumnValue {
     <#
     .SYNOPSIS

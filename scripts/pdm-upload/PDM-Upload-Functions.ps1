@@ -209,6 +209,71 @@ function Upload-BOM {
 }
 
 
+function Upload-MLBOM {
+    <#
+    .SYNOPSIS
+        Parse a multi-level BOM text file and upload to API.
+
+    .DESCRIPTION
+        Uses Parse-MLBOMFile to extract hierarchical BOM data,
+        then calls /api/bom/bulk once per assembly in the tree.
+        Each assembly's BOM is replaced independently.
+
+    .RETURNS
+        Hashtable with aggregate stats:
+        - assemblies_processed: Number of assemblies uploaded
+        - total_items_created: Sum of items created
+        - total_items_updated: Sum of items updated
+        - total_bom_entries: Sum of BOM entries created
+        - details: Array of per-assembly results
+    #>
+    param([string]$FilePath)
+
+    # Parse the multi-level BOM file
+    $bomGroups = Parse-MLBOMFile -FilePath $FilePath
+
+    if ($bomGroups.Count -eq 0) {
+        throw "No assembly BOM groups found in MLBOM file"
+    }
+
+    $sourceFile = [IO.Path]::GetFileName($FilePath)
+    $uri = "$($Config.ApiUrl)/bom/bulk"
+
+    $totalCreated = 0
+    $totalUpdated = 0
+    $totalBomEntries = 0
+    $details = @()
+
+    foreach ($group in $bomGroups) {
+        if ($group.children.Count -eq 0) { continue }
+
+        # Build request body for this assembly
+        $body = @{
+            parent_item_number = $group.parent_item_number
+            children           = $group.children
+            source_file        = $sourceFile
+        } | ConvertTo-Json -Depth 5
+
+        $result = Invoke-RestMethod -Uri $uri -Method Post -Body $body -ContentType 'application/json'
+
+        $totalCreated += $result.items_created
+        $totalUpdated += $result.items_updated
+        $totalBomEntries += $result.bom_entries_created
+        $details += $result
+
+        Write-Log "  MLBOM: $($group.parent_item_number) -> $($result.bom_entries_created) children ($($result.items_created) new, $($result.items_updated) updated)"
+    }
+
+    return @{
+        assemblies_processed = $bomGroups.Count
+        total_items_created  = $totalCreated
+        total_items_updated  = $totalUpdated
+        total_bom_entries    = $totalBomEntries
+        details              = $details
+    }
+}
+
+
 function Update-Parameters {
     <#
     .SYNOPSIS

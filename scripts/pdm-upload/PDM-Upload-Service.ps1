@@ -105,9 +105,9 @@ function Process-DroppedFile {
             }
 
             'MLBOM' {
-                # Parse and upload multi-level BOM (same endpoint, parser handles structure)
-                $result = Upload-BOM -FilePath $FilePath
-                Write-Log "SUCCESS: Uploaded MLBOM - Parent: $($result.parent_item_number), Children: $($result.bom_entries_created)"
+                # Parse and upload multi-level BOM (preserves hierarchy)
+                $result = Upload-MLBOM -FilePath $FilePath
+                Write-Log "SUCCESS: Uploaded MLBOM - $($result.assemblies_processed) assemblies, $($result.total_bom_entries) total BOM entries ($($result.total_items_created) new items, $($result.total_items_updated) updated)"
             }
 
             'Parameters' {
