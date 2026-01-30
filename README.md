@@ -21,8 +21,7 @@ See `PDM_COMPLETE_OVERVIEW.md` for full system architecture and setup instructio
 - `scripts/` - Migration and deployment scripts
 - `FreeCAD/Tools/` - CAD automation scripts
 - `Documentation/` - System documentation
-- `PDM_Vault/` - Legacy data storage (migration pending)
-- `Legacy/` - Archived legacy system folders (PDM_PowerShell, PDM_WebServer, etc.)
+- `Legacy/` - Archived legacy system folders (PDM_Vault, PDM_PowerShell, PDM_WebServer, etc.)
 
 ## Documentation
 

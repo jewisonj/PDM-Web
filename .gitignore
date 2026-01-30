@@ -23,22 +23,22 @@ FreeCAD/*
 !FreeCAD/Tools/*.bat
 
 ########################
-# PDM Vault - Runtime Data (ignore CAD files, but keep structure)
+# PDM Vault (moved to Legacy/)
 ########################
-PDM_Vault/CADData/
-PDM_Vault/Released/
-PDM_Vault/Transfer/
-PDM_Vault/logs/
-PDM_Vault/*.sqlite
-PDM_Vault/*.sqlite-*
-PDM_Vault/*.db
+Legacy/PDM_Vault/CADData/
+Legacy/PDM_Vault/Released/
+Legacy/PDM_Vault/Transfer/
+Legacy/PDM_Vault/logs/
+Legacy/PDM_Vault/*.sqlite
+Legacy/PDM_Vault/*.sqlite-*
+Legacy/PDM_Vault/*.db
 
 # But keep the schema and empty folder structure
-!PDM_Vault/schema.sql
-!PDM_Vault/CADData/.gitkeep
-!PDM_Vault/Released/.gitkeep
-!PDM_Vault/Transfer/.gitkeep
-!PDM_Vault/logs/.gitkeep
+!Legacy/PDM_Vault/schema.sql
+!Legacy/PDM_Vault/CADData/.gitkeep
+!Legacy/PDM_Vault/Released/.gitkeep
+!Legacy/PDM_Vault/Transfer/.gitkeep
+!Legacy/PDM_Vault/logs/.gitkeep
 
 ########################
 # Databases (don't version)

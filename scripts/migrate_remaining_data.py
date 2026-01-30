@@ -14,7 +14,7 @@ import os
 from supabase import create_client
 
 # Configuration
-SQLITE_PATH = os.path.join(os.path.dirname(__file__), '..', 'PDM_Vault', 'pdm.sqlite')
+SQLITE_PATH = os.path.join(os.path.dirname(__file__), '..', 'Legacy', 'PDM_Vault', 'pdm.sqlite')
 SUPABASE_URL = 'https://lnytnxmmemdzwqburtgf.supabase.co'
 SUPABASE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxueXRueG1tZW1kendxYnVydGdmIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2OTQ5Mjc0MCwiZXhwIjoyMDg1MDY4NzQwfQ.CtVmuoHbAjKN-GICUb6TEQaBS0nS5N8aZr3AZJbnvrY')
 

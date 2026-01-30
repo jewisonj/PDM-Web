@@ -89,8 +89,10 @@ Legacy system folders have been moved to `Legacy/` for cleaner project structure
 - `Legacy/PDM_WebServer/` - Node.js browser (replaced by Vue frontend)
 - `Legacy/PDM-Libraries/` - iTextSharp PDF library (no longer used)
 
-Still at root (actively used or pending migration):
-- `PDM_Vault/` - Schema reference (migrate to PostgreSQL)
+Also archived (migration complete):
+- `Legacy/PDM_Vault/` - Legacy SQLite vault (data migrated to Supabase)
+
+Still at root:
 - `Documentation/` - System docs (27-WEB-MIGRATION-PLAN.md has full plan)
 
 ## Item Numbering (Preserved)

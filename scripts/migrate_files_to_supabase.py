@@ -8,7 +8,7 @@ Usage:
     python migrate_files_to_supabase.py --dry-run
     python migrate_files_to_supabase.py
 
-Actual CADData Structure:
+Actual CADData Structure (legacy, moved to Legacy/PDM_Vault/):
     D:\PDM_Vault\CADData\
     ├── csp0030.prt          (CAD files in root)
     ├── csp0030.drw          (CAD drawings in root)
