@@ -144,127 +144,99 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     print("\nCreating 2D geometry for DXF export...")
 
     edges_2d = []
+    edge_stats = {"Line": 0, "Arc": 0, "Circle": 0, "BSpline": 0, "Other": 0, "Fallback": 0}
 
-    # Process outer wire
-    for edge in flat_face.OuterWire.Edges:
-        if hasattr(edge, 'Curve'):
-            curve_type = edge.Curve.TypeId
+    def process_edge(edge, label=""):
+        """Convert a 3D edge to 2D. Always produces output — falls back to
+        a straight line between vertices if curved-edge processing fails."""
+        if not hasattr(edge, 'Curve'):
+            # No curve attribute — fall back to vertex-to-vertex line
+            if len(edge.Vertexes) >= 2:
+                p1 = get_2d_coords(edge.Vertexes[0].Point)
+                p2 = get_2d_coords(edge.Vertexes[-1].Point)
+                print(f"  {label}Edge has no Curve attr, fallback to line")
+                edge_stats["Fallback"] += 1
+                edges_2d.append(Part.makeLine(p1, p2))
+            return
 
-            if 'Line' in curve_type:
+        curve_type = edge.Curve.TypeId
+
+        if 'Line' in curve_type:
+            p1 = get_2d_coords(edge.Vertexes[0].Point)
+            p2 = get_2d_coords(edge.Vertexes[1].Point)
+            edges_2d.append(Part.makeLine(p1, p2))
+            edge_stats["Line"] += 1
+
+        elif 'Circle' in curve_type:
+            if len(edge.Vertexes) == 2:
+                # Arc
                 p1 = get_2d_coords(edge.Vertexes[0].Point)
                 p2 = get_2d_coords(edge.Vertexes[1].Point)
-                edges_2d.append(Part.makeLine(p1, p2))
+                mid_param = (edge.FirstParameter + edge.LastParameter) / 2
+                mid_point = edge.valueAt(mid_param)
+                mid_2d = get_2d_coords(mid_point)
 
-            elif 'Circle' in curve_type:
-                # Handle arcs and circles
-                center = edge.Curve.Center
+                try:
+                    arc = Part.Arc(p1, mid_2d, p2)
+                    edges_2d.append(arc.toShape())
+                    edge_stats["Arc"] += 1
+                except Exception:
+                    edges_2d.append(Part.makeLine(p1, p2))
+                    edge_stats["Fallback"] += 1
+            elif len(edge.Vertexes) == 0:
+                # Full circle
                 radius = edge.Curve.Radius * scale_factor
-                center_2d = get_2d_coords(center)
-
-                if len(edge.Vertexes) == 2:
-                    # Arc
-                    p1 = get_2d_coords(edge.Vertexes[0].Point)
-                    p2 = get_2d_coords(edge.Vertexes[1].Point)
-
-                    # Create arc through 3 points (start, mid, end)
-                    mid_param = (edge.FirstParameter + edge.LastParameter) / 2
-                    mid_point = edge.valueAt(mid_param)
-                    mid_2d = get_2d_coords(mid_point)
-
-                    try:
-                        arc = Part.Arc(p1, mid_2d, p2)
-                        edges_2d.append(arc.toShape())
-                    except:
-                        # Fallback to line if arc creation fails
-                        edges_2d.append(Part.makeLine(p1, p2))
-                else:
-                    # Full circle
-                    circle = Part.makeCircle(radius, center_2d)
-                    edges_2d.append(circle)
-
-            elif 'BSpline' in curve_type:
-                # Discretize BSpline to polyline to preserve small features
-                # (fillets, non-circular radii from the unfolder)
-                try:
-                    points = edge.discretize(Number=20)
-                    scaled_pts = [get_2d_coords(p) for p in points]
-                    if len(scaled_pts) >= 2:
-                        wire = Part.makePolygon(scaled_pts)
-                        for e in wire.Edges:
-                            edges_2d.append(e)
-                except Exception as ex:
-                    print(f"  WARNING: Failed to discretize BSpline edge: {ex}")
-
+                center_2d = get_2d_coords(edge.Curve.Center)
+                circle = Part.makeCircle(radius, center_2d)
+                edges_2d.append(circle)
+                edge_stats["Circle"] += 1
             else:
-                # Unknown curve type - discretize as fallback
-                print(f"  WARNING: Unknown curve type '{curve_type}', discretizing to polyline")
-                try:
-                    points = edge.discretize(Number=20)
-                    scaled_pts = [get_2d_coords(p) for p in points]
-                    if len(scaled_pts) >= 2:
-                        wire = Part.makePolygon(scaled_pts)
-                        for e in wire.Edges:
-                            edges_2d.append(e)
-                except Exception as ex:
-                    print(f"  WARNING: Failed to discretize edge: {ex}")
+                # Unexpected vertex count — discretize
+                _discretize_edge(edge, label)
+
+        elif 'BSpline' in curve_type:
+            _discretize_edge(edge, label)
+            edge_stats["BSpline"] += 1
+
+        else:
+            print(f"  {label}Unknown curve type '{curve_type}', discretizing")
+            _discretize_edge(edge, label)
+            edge_stats["Other"] += 1
+
+    def _discretize_edge(edge, label=""):
+        """Discretize an edge to polyline points. Falls back to a straight
+        line between start/end vertices if discretization fails."""
+        try:
+            points = edge.discretize(Number=20)
+            scaled_pts = [get_2d_coords(p) for p in points]
+            if len(scaled_pts) >= 2:
+                wire = Part.makePolygon(scaled_pts)
+                for e in wire.Edges:
+                    edges_2d.append(e)
+                return
+        except Exception as ex:
+            print(f"  {label}WARNING: discretize() failed: {ex}")
+
+        # Fallback: straight line between start and end vertices
+        if len(edge.Vertexes) >= 2:
+            p1 = get_2d_coords(edge.Vertexes[0].Point)
+            p2 = get_2d_coords(edge.Vertexes[-1].Point)
+            edges_2d.append(Part.makeLine(p1, p2))
+            edge_stats["Fallback"] += 1
+            print(f"  {label}Fallback: line from vertex to vertex")
+
+    # Process outer wire
+    for i, edge in enumerate(flat_face.OuterWire.Edges):
+        process_edge(edge, f"Outer[{i}] ")
 
     # Process inner wires (holes)
     inner_wires = [w for w in flat_face.Wires if w.hashCode() != flat_face.OuterWire.hashCode()]
-    for wire in inner_wires:
-        for edge in wire.Edges:
-            if hasattr(edge, 'Curve'):
-                curve_type = edge.Curve.TypeId
-
-                if 'Line' in curve_type:
-                    p1 = get_2d_coords(edge.Vertexes[0].Point)
-                    p2 = get_2d_coords(edge.Vertexes[1].Point)
-                    edges_2d.append(Part.makeLine(p1, p2))
-
-                elif 'Circle' in curve_type:
-                    center = edge.Curve.Center
-                    radius = edge.Curve.Radius * scale_factor
-                    center_2d = get_2d_coords(center)
-
-                    if len(edge.Vertexes) == 2:
-                        p1 = get_2d_coords(edge.Vertexes[0].Point)
-                        p2 = get_2d_coords(edge.Vertexes[1].Point)
-                        mid_param = (edge.FirstParameter + edge.LastParameter) / 2
-                        mid_point = edge.valueAt(mid_param)
-                        mid_2d = get_2d_coords(mid_point)
-
-                        try:
-                            arc = Part.Arc(p1, mid_2d, p2)
-                            edges_2d.append(arc.toShape())
-                        except:
-                            edges_2d.append(Part.makeLine(p1, p2))
-                    else:
-                        circle = Part.makeCircle(radius, center_2d)
-                        edges_2d.append(circle)
-
-                elif 'BSpline' in curve_type:
-                    try:
-                        points = edge.discretize(Number=20)
-                        scaled_pts = [get_2d_coords(p) for p in points]
-                        if len(scaled_pts) >= 2:
-                            wire = Part.makePolygon(scaled_pts)
-                            for e in wire.Edges:
-                                edges_2d.append(e)
-                    except Exception as ex:
-                        print(f"  WARNING: Failed to discretize BSpline edge (hole): {ex}")
-
-                else:
-                    print(f"  WARNING: Unknown curve type '{curve_type}' in hole, discretizing")
-                    try:
-                        points = edge.discretize(Number=20)
-                        scaled_pts = [get_2d_coords(p) for p in points]
-                        if len(scaled_pts) >= 2:
-                            wire = Part.makePolygon(scaled_pts)
-                            for e in wire.Edges:
-                                edges_2d.append(e)
-                    except Exception as ex:
-                        print(f"  WARNING: Failed to discretize edge (hole): {ex}")
+    for wi, wire in enumerate(inner_wires):
+        for ei, edge in enumerate(wire.Edges):
+            process_edge(edge, f"Hole[{wi}][{ei}] ")
 
     print(f"Created {len(edges_2d)} 2D edges")
+    print(f"  Edge types: {', '.join(f'{k}={v}' for k, v in edge_stats.items() if v > 0)}")
 
     if not edges_2d:
         raise RuntimeError("No edges created for DXF export")
