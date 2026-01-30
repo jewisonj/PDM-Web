@@ -53,7 +53,7 @@
       "mcp__pdm-supabase__get_project_url",
       "mcp__pdm-supabase__list_tables",
       "WebFetch(domain:support.ptc.com)",
-      "Bash(cmd /c \"docker exec pdm-freecad-worker python3 /scripts/worker/run_job.py flatten /data/files/xxp00871.stp /data/files/xxp00871.dxf\")",
+      "Bash(cmd:*)",
       "mcp__pdm-supabase__execute_sql",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:pypi.org)",
@@ -61,13 +61,13 @@
       "Bash(powershell:*)",
       "mcp__pdm-supabase__get_advisors",
       "Bash(timeout:*)",
-      "Bash(tasklist /FI \"IMAGENAME eq python.exe\" /V)",
       "Bash(findstr:*)",
       "Bash(ping:*)",
-      "Bash(wmic process where \"commandline like ''%worker_loop%''\" get processid,commandline)",
-      "Bash(tasklist /FI \"WINDOWTITLE eq uvicorn*\")",
       "Bash(tasklist:*)",
-      "mcp__pdm-supabase__list_migrations"
+      "Bash(wmic:*)",
+      "mcp__pdm-supabase__list_migrations",
+      "Bash(where:*)",
+      "Bash(MSYS_NO_PATHCONV=1 tasklist:*)"
     ],
     "deny": []
   },

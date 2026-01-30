@@ -108,14 +108,19 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
         use_axes = ('y', 'z')
         print("Face orientation: YZ plane")
 
+    # Scale factor: mm to inches (applied during edge creation to avoid
+    # transformGeometry() which converts all curves to BSpline)
+    scale_factor = 1.0 / 25.4
+
     def get_2d_coords(point):
-        """Extract 2D coordinates based on face orientation"""
+        """Extract 2D coordinates based on face orientation, scaled to inches."""
+        sf = scale_factor
         if use_axes == ('x', 'y'):
-            return FreeCAD.Vector(point.x, point.y, 0)
+            return FreeCAD.Vector(point.x * sf, point.y * sf, 0)
         elif use_axes == ('x', 'z'):
-            return FreeCAD.Vector(point.x, point.z, 0)
+            return FreeCAD.Vector(point.x * sf, point.z * sf, 0)
         else:  # ('y', 'z')
-            return FreeCAD.Vector(point.y, point.z, 0)
+            return FreeCAD.Vector(point.y * sf, point.z * sf, 0)
 
     # Get all points for bounding box calculation
     all_points = []
@@ -132,8 +137,8 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     part_height = max_y - min_y
 
     print(f"\nFlat pattern dimensions:")
-    print(f"  {part_width:.3f} mm x {part_height:.3f} mm")
-    print(f"  ({part_width / 25.4:.3f}\" x {part_height / 25.4:.3f}\")")
+    print(f"  {part_width * 25.4:.3f} mm x {part_height * 25.4:.3f} mm")
+    print(f"  ({part_width:.3f}\" x {part_height:.3f}\")")
 
     # Create 2D edges from the flat face outline
     print("\nCreating 2D geometry for DXF export...")
@@ -153,7 +158,7 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
             elif 'Circle' in curve_type:
                 # Handle arcs and circles
                 center = edge.Curve.Center
-                radius = edge.Curve.Radius
+                radius = edge.Curve.Radius * scale_factor
                 center_2d = get_2d_coords(center)
 
                 if len(edge.Vertexes) == 2:
@@ -177,6 +182,32 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
                     circle = Part.makeCircle(radius, center_2d)
                     edges_2d.append(circle)
 
+            elif 'BSpline' in curve_type:
+                # Discretize BSpline to polyline to preserve small features
+                # (fillets, non-circular radii from the unfolder)
+                try:
+                    points = edge.discretize(Number=20)
+                    scaled_pts = [get_2d_coords(p) for p in points]
+                    if len(scaled_pts) >= 2:
+                        wire = Part.makePolygon(scaled_pts)
+                        for e in wire.Edges:
+                            edges_2d.append(e)
+                except Exception as ex:
+                    print(f"  WARNING: Failed to discretize BSpline edge: {ex}")
+
+            else:
+                # Unknown curve type - discretize as fallback
+                print(f"  WARNING: Unknown curve type '{curve_type}', discretizing to polyline")
+                try:
+                    points = edge.discretize(Number=20)
+                    scaled_pts = [get_2d_coords(p) for p in points]
+                    if len(scaled_pts) >= 2:
+                        wire = Part.makePolygon(scaled_pts)
+                        for e in wire.Edges:
+                            edges_2d.append(e)
+                except Exception as ex:
+                    print(f"  WARNING: Failed to discretize edge: {ex}")
+
     # Process inner wires (holes)
     inner_wires = [w for w in flat_face.Wires if w.hashCode() != flat_face.OuterWire.hashCode()]
     for wire in inner_wires:
@@ -191,7 +222,7 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
 
                 elif 'Circle' in curve_type:
                     center = edge.Curve.Center
-                    radius = edge.Curve.Radius
+                    radius = edge.Curve.Radius * scale_factor
                     center_2d = get_2d_coords(center)
 
                     if len(edge.Vertexes) == 2:
@@ -210,24 +241,40 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
                         circle = Part.makeCircle(radius, center_2d)
                         edges_2d.append(circle)
 
+                elif 'BSpline' in curve_type:
+                    try:
+                        points = edge.discretize(Number=20)
+                        scaled_pts = [get_2d_coords(p) for p in points]
+                        if len(scaled_pts) >= 2:
+                            wire = Part.makePolygon(scaled_pts)
+                            for e in wire.Edges:
+                                edges_2d.append(e)
+                    except Exception as ex:
+                        print(f"  WARNING: Failed to discretize BSpline edge (hole): {ex}")
+
+                else:
+                    print(f"  WARNING: Unknown curve type '{curve_type}' in hole, discretizing")
+                    try:
+                        points = edge.discretize(Number=20)
+                        scaled_pts = [get_2d_coords(p) for p in points]
+                        if len(scaled_pts) >= 2:
+                            wire = Part.makePolygon(scaled_pts)
+                            for e in wire.Edges:
+                                edges_2d.append(e)
+                    except Exception as ex:
+                        print(f"  WARNING: Failed to discretize edge (hole): {ex}")
+
     print(f"Created {len(edges_2d)} 2D edges")
 
     if not edges_2d:
         raise RuntimeError("No edges created for DXF export")
 
-    # Create compound from edges
+    # Create compound from edges (already scaled to inches during creation)
     compound = Part.makeCompound(edges_2d)
-
-    # Apply scale for DXF export (mm to inches compensation)
-    # DXF importers often assume inches, so we pre-scale by 1/25.4
-    scale_factor = 1.0 / 25.4
-    matrix = FreeCAD.Matrix()
-    matrix.scale(scale_factor, scale_factor, scale_factor)
-    scaled_compound = compound.transformGeometry(matrix)
 
     # Create object for export
     export_obj = doc.addObject("Part::Feature", "FlatPattern2D")
-    export_obj.Shape = scaled_compound
+    export_obj.Shape = compound
     doc.recompute()
 
     # Export to DXF
@@ -237,9 +284,8 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     if os.path.exists(output_dxf):
         size = os.path.getsize(output_dxf)
         print(f"SUCCESS: Created {output_dxf} ({size} bytes)")
-        print(f"\nDXF dimensions (after scaling back ×25.4):")
-        print(f"  {part_width:.3f} mm x {part_height:.3f} mm")
-        print(f"  ({part_width / 25.4:.3f}\" x {part_height / 25.4:.3f}\")")
+        print(f"\nDXF dimensions (inches):")
+        print(f"  {part_width:.3f}\" x {part_height:.3f}\"")
     else:
         raise RuntimeError("DXF file was not created")
 

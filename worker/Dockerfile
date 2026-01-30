@@ -16,9 +16,8 @@ RUN mkdir -p /data/input /data/output /scripts
 # The addon provides unfold/flatten capabilities for sheet metal parts
 COPY FreeCAD/Mod/sheetmetal /root/.FreeCAD/Mod/sheetmetal
 
-# Copy processing scripts
+# Copy processing scripts (FreeCAD tools baked in; worker scripts mounted at runtime)
 COPY FreeCAD/Tools/*.py /scripts/
-COPY worker/scripts/*.py /scripts/
 
 # Set working directory
 WORKDIR /data
