@@ -119,7 +119,7 @@ async def generate_print_packet(project_id: str) -> dict:
 
     # 5. Fetch raw materials
     materials_result = supabase.table("routing_materials").select(
-        "item_id, qty_required, raw_materials(part_number, material_type, material_code, dim1_in, dim2_in, wall_or_thk_in)"
+        "item_id, qty_required, blank_width_in, blank_height_in, raw_materials(part_number, material_type, material_code, dim1_in, dim2_in, wall_or_thk_in)"
     ).in_("item_id", item_ids).execute()
 
     materials_by_item = {}
@@ -515,7 +515,7 @@ def _create_cover_sheet(
             c.drawString(180, y, dims[:25])
 
             if mat["material_type"] == "SM":
-                c.drawString(350, y, f"{mat['total_qty']:.1f} sheets")
+                c.drawString(350, y, f"{mat['total_qty']:.1f} lb")
             else:
                 total_in = mat["total_qty"]
                 total_ft = total_in / 12

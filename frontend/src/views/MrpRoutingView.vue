@@ -1060,14 +1060,21 @@ onMounted(() => {
                 </option>
               </select>
             </div>
+            <!-- Blank dimensions (SM only) -->
+            <div v-if="selectedMaterialIsSM" class="blank-dims">
+              <label>Blank W:</label>
+              <input v-model.number="blankWidth" type="number" min="0.1" step="0.1" placeholder="W (in)" class="dim-input" />
+              <label>x H:</label>
+              <input v-model.number="blankHeight" type="number" min="0.1" step="0.1" placeholder="H (in)" class="dim-input" />
+            </div>
             <div class="material-actions">
               <button class="calc-btn" @click="calculateMaterial" :disabled="!selectedMaterial">
                 Calc
               </button>
               <span v-if="calculatedLength !== null" class="calc-result">
-                {{ calculatedLength }}" needed
+                {{ calculatedLength }}{{ selectedMaterialIsSM ? ' lb' : '" needed' }}
               </span>
-              <input v-model.number="materialQty" type="number" min="0.1" step="0.1" placeholder="Qty" class="qty-input" />
+              <input v-model.number="materialQty" type="number" min="0.01" step="0.01" placeholder="Qty" class="qty-input" />
               <button class="assign-btn" @click="assignMaterial" :disabled="!selectedMaterial">
                 Assign
               </button>
@@ -1077,7 +1084,12 @@ onMounted(() => {
             <div v-if="itemMaterials.length > 0" class="assigned-materials">
               <div v-for="mat in itemMaterials" :key="mat.id" class="assigned-item">
                 <span class="mat-pn">{{ mat.material?.part_number }}</span>
-                <span class="mat-qty">{{ mat.qty_required }}</span>
+                <span class="mat-qty">
+                  {{ mat.qty_required }}{{ mat.material?.material_type === 'SM' ? ' lb' : '"' }}
+                  <span v-if="mat.blank_width_in && mat.blank_height_in" class="blank-info">
+                    ({{ mat.blank_width_in }}" x {{ mat.blank_height_in }}")
+                  </span>
+                </span>
                 <button class="remove-mat-btn" @click="removeMaterial(mat.id!)">&times;</button>
               </div>
             </div>
@@ -1799,6 +1811,34 @@ onMounted(() => {
   background: #020617;
   color: #e5e7eb;
   font-size: 12px;
+}
+
+.blank-dims {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.blank-dims label {
+  white-space: nowrap;
+}
+
+.dim-input {
+  width: 80px;
+  padding: 6px 8px;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  background: #020617;
+  color: #e5e7eb;
+  font-size: 12px;
+}
+
+.blank-info {
+  color: #94a3b8;
+  font-size: 11px;
 }
 
 .material-actions {
