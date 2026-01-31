@@ -937,7 +937,7 @@ onMounted(() => {
               <span class="col-station">{{ step.station_code }}</span>
               <span class="col-name">{{ step.station_name }}</span>
               <span class="col-time">
-                <input v-model.number="step.est_time_min" type="number" min="0" class="time-input" /> min
+                <input v-model.number="step.est_time_min" type="number" min="0" step="0.1" class="time-input" /> min
                 <span v-if="step.station_code === '012' && selectedItem?.cut_time" class="cut-time-hint">(from cut_time)</span>
               </span>
               <span class="col-actions">
@@ -960,7 +960,7 @@ onMounted(() => {
                 {{ station.station_code }} - {{ station.station_name }}
               </option>
             </select>
-            <input v-model.number="addStationTime" type="number" min="0" placeholder="Est. min" class="time-input-sm" />
+            <input v-model.number="addStationTime" type="number" min="0" step="0.1" placeholder="Est. min" class="time-input-sm" />
             <button class="add-btn" @click="addRoutingStep" :disabled="!addStationId">
               <i class="pi pi-plus"></i> Add Station
             </button>
@@ -993,7 +993,7 @@ onMounted(() => {
           <div class="section-title">Raw Material Requirements</div>
           <div class="material-section">
             <div v-if="selectedItem.mass" class="part-mass">
-              Part mass: <strong>{{ selectedItem.mass }} lb</strong>
+              Part mass: <strong>{{ selectedItem.mass?.toFixed(1) }} lb</strong>
             </div>
             <div class="material-filters">
               <select v-model="selectedMaterialType" class="mat-select">

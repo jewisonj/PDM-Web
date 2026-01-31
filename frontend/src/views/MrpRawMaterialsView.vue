@@ -38,8 +38,8 @@ const displayedMaterials = computed(() => {
   return allMaterials.value.filter(m => {
     const search = searchInput.value.toLowerCase()
     const matchSearch = !search ||
-      m.part_number.toLowerCase().includes(search) ||
-      m.material.toLowerCase().includes(search) ||
+      (m.part_number || '').toLowerCase().includes(search) ||
+      (m.material || '').toLowerCase().includes(search) ||
       (m.profile || '').toLowerCase().includes(search)
 
     const matchType = !typeFilter.value || m.type === typeFilter.value
@@ -240,11 +240,11 @@ onMounted(() => {
         >
           <td>{{ m.part_number }}</td>
           <td>
-            <span :class="['badge', `badge-${m.type.toLowerCase()}`]">{{ m.type }}</span>
+            <span :class="['badge', `badge-${(m.type || '').toLowerCase()}`]">{{ m.type }}</span>
           </td>
           <td>{{ getDimensions(m) }}</td>
           <td>
-            <span :class="['badge', `badge-${m.material_code.toLowerCase()}`]">{{ m.material_code }}</span>
+            <span :class="['badge', `badge-${(m.material_code || '').toLowerCase()}`]">{{ m.material_code }}</span>
             {{ m.material }}
           </td>
           <td>{{ m.stock_length_ft ? m.stock_length_ft + ' ft' : 'Sheet' }}</td>
