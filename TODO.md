@@ -69,22 +69,23 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ## In Progress
 
-### FreeCAD Docker Worker - Testing & Refinement
-**Status:** Pipeline exists end-to-end, being tested and improved
-**Priority:** HIGH
+### FreeCAD Docker Worker - Operational Testing
+**Status:** Pipeline fully built, needs real-world testing
+**Priority:** MEDIUM
 
-**What's Done:**
+**Full Pipeline (Complete):**
 - [x] Docker container built (`worker/freecad-worker`)
-- [x] Scripts exist: `flatten_sheetmetal.py`, `bend_drawing.py`
-- [x] API endpoints queue tasks: `/api/tasks/generate-dxf`, `/api/tasks/generate-svg`
-- [x] Database table: `work_queue` with status lifecycle
-- [x] Auto-queue on STEP upload in `backend/app/routes/files.py`
-- [x] `worker/worker_loop.py` polls work_queue for pending tasks
+- [x] FreeCAD scripts: `flatten_sheetmetal.py`, `bend_drawing.py`
+- [x] Auto-queue on STEP upload (`backend/app/routes/files.py`)
+- [x] `worker/worker_loop.py` — polls `work_queue`, claims tasks, runs FreeCAD via docker exec, uploads output to Supabase Storage, registers file records
+- [x] Atomic task claiming (safe for multiple workers)
+- [x] Error handling with status tracking (pending → processing → completed/failed)
+- [x] Temp file cleanup after processing
 
-**Being Tested/Improved:**
-- [ ] Verify worker_loop successfully processes queued tasks end-to-end
-- [ ] Error handling and retry logic for failed tasks
-- [ ] Edge cases with complex STEP geometry
+**Remaining:**
+- [ ] Test with real STEP files to verify DXF/SVG output quality
+- [ ] Verify Docker container stays healthy under load
+- [ ] Consider retry logic for transient failures (network, Docker restart)
 
 ---
 
@@ -394,7 +395,7 @@ cd Local_Creo_Files\Powershell
 
 ## Next Actions (Prioritized)
 
-1. **Connect FreeCAD worker to work queue** - Complete the polling loop integration
+1. **Test FreeCAD worker end-to-end** - Upload a STEP, verify DXF/SVG appear automatically
 2. **Clean up TypeScript errors** - Run type-check and fix obvious issues
 3. **Lifecycle release validation** - Enforce prerequisites for state transitions
 4. **Revision management** - Endpoint for creating new revisions
