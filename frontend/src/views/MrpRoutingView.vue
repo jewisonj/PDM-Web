@@ -35,6 +35,10 @@ interface Item {
   project_id?: string
   project_name?: string
   mrp_project_codes?: string[]
+  is_supplier_part?: boolean
+  unit_price?: number | null
+  supplier_name?: string | null
+  supplier_pn?: string | null
 }
 
 interface Workstation {
@@ -124,6 +128,12 @@ const blankHeight = ref<number | null>(null)
 const costSettings = ref<CostSetting[]>([])
 const editingCostIndex = ref<number | null>(null)
 const editingCostValue = ref<string>('')
+
+// Purchased part state
+const purchasePrice = ref<number | null>(null)
+const purchaseSupplier = ref<string>('')
+const purchasePn = ref<string>('')
+const savingPurchase = ref(false)
 
 // Detect if selected material is sheet metal
 const selectedMaterialIsSM = computed(() => {
@@ -551,7 +561,7 @@ async function loadData() {
     // Load items with project info
     const { data: itemsData, error: itemsError } = await supabase
       .from('items')
-      .select('id, item_number, name, description, lifecycle_state, material, thickness, cut_length, cut_time, mass, project_id, projects(name, status)')
+      .select('id, item_number, name, description, lifecycle_state, material, thickness, cut_length, cut_time, mass, project_id, is_supplier_part, unit_price, supplier_name, supplier_pn, projects(name, status)')
       .order('item_number')
 
     if (itemsError) throw itemsError
@@ -663,6 +673,11 @@ async function selectItem(item: Item) {
   itemFiles.value = []
   itemMaterials.value = []
   pdfUrl.value = null
+
+  // Populate purchased part fields
+  purchasePrice.value = item.unit_price ?? null
+  purchaseSupplier.value = item.supplier_name ?? ''
+  purchasePn.value = item.supplier_pn ?? ''
 
   try {
     // Load routing with station info
@@ -956,6 +971,40 @@ function calculateMaterial() {
     const mass = selectedItem.value.mass
     const lengthInches = (mass / material.weight_lb_per_ft * 12) + 2
     calculatedLength.value = Math.round(lengthInches * 10) / 10
+  }
+}
+
+async function updatePurchaseInfo() {
+  if (!selectedItem.value) return
+  savingPurchase.value = true
+  try {
+    const { error: updateError } = await supabase
+      .from('items')
+      .update({
+        unit_price: purchasePrice.value,
+        supplier_name: purchaseSupplier.value || null,
+        supplier_pn: purchasePn.value || null,
+        is_supplier_part: true
+      })
+      .eq('id', selectedItem.value.id)
+
+    if (updateError) throw updateError
+
+    // Update local item data
+    selectedItem.value.unit_price = purchasePrice.value
+    selectedItem.value.supplier_name = purchaseSupplier.value || null
+    selectedItem.value.supplier_pn = purchasePn.value || null
+    selectedItem.value.is_supplier_part = true
+
+    // Update in items list too
+    const idx = items.value.findIndex(i => i.id === selectedItem.value!.id)
+    if (idx !== -1) {
+      items.value[idx] = { ...items.value[idx], ...selectedItem.value }
+    }
+  } catch (e: any) {
+    error.value = e.message || 'Failed to update purchase info'
+  } finally {
+    savingPurchase.value = false
   }
 }
 
@@ -1379,6 +1428,31 @@ onMounted(() => {
                 <span class="mat-cost">{{ formatCost(getMaterialCost(mat)) }}</span>
                 <button class="remove-mat-btn" @click="removeMaterial(mat.id!)">&times;</button>
               </div>
+            </div>
+          </div>
+
+          <!-- Purchased Part Info -->
+          <div v-if="selectedItem?.is_supplier_part || selectedItem?.item_number?.startsWith('mmc') || selectedItem?.item_number?.startsWith('spn')" class="section-title">Purchased Part Info</div>
+          <div v-if="selectedItem?.is_supplier_part || selectedItem?.item_number?.startsWith('mmc') || selectedItem?.item_number?.startsWith('spn')" class="purchase-section">
+            <div class="purchase-fields">
+              <div class="purchase-field">
+                <label>Supplier</label>
+                <input v-model="purchaseSupplier" type="text" placeholder="e.g. McMaster-Carr" class="purchase-input" />
+              </div>
+              <div class="purchase-field">
+                <label>Supplier P/N</label>
+                <input v-model="purchasePn" type="text" placeholder="e.g. 93337A110" class="purchase-input" />
+              </div>
+              <div class="purchase-field price-field">
+                <label>Unit Price</label>
+                <div class="price-input-wrap">
+                  <span class="dollar-sign">$</span>
+                  <input v-model.number="purchasePrice" type="number" min="0" step="0.01" placeholder="0.00" class="purchase-input price-input" />
+                </div>
+              </div>
+              <button class="update-purchase-btn" @click="updatePurchaseInfo" :disabled="savingPurchase">
+                {{ savingPurchase ? 'Saving...' : 'Update' }}
+              </button>
             </div>
           </div>
 
@@ -2338,6 +2412,99 @@ onMounted(() => {
 
 .remove-mat-btn:hover {
   color: #f87171;
+}
+
+/* Purchased Part Section */
+.purchase-section {
+  background: #0f172a;
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #1e293b;
+}
+
+.purchase-fields {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.purchase-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 140px;
+}
+
+.purchase-field label {
+  font-size: 11px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.purchase-input {
+  padding: 6px 8px;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  background: #020617;
+  color: #e5e7eb;
+  font-size: 12px;
+}
+
+.purchase-input:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+
+.price-field {
+  flex: 0 0 120px;
+  min-width: 120px;
+}
+
+.price-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.dollar-sign {
+  padding: 6px 0 6px 8px;
+  background: #020617;
+  border: 1px solid #334155;
+  border-right: none;
+  border-radius: 4px 0 0 4px;
+  color: #6ee7b7;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.price-input {
+  border-radius: 0 4px 4px 0 !important;
+  flex: 1;
+}
+
+.update-purchase-btn {
+  padding: 6px 16px;
+  background: #059669;
+  border: none;
+  border-radius: 4px;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+
+.update-purchase-btn:hover:not(:disabled) {
+  background: #047857;
+}
+
+.update-purchase-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Action Buttons */
