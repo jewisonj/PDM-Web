@@ -157,3 +157,12 @@ docker-compose up -d freecad-worker
 
 **Total Documentation Files:** 30+
 **Status:** Current
+
+---
+
+## Project Management
+
+**Global TODO:** `TODO.md` (project root) - Comprehensive task tracking, feature status, and development roadmap
+**Planning Docs (Reference):**
+- `Update-Compare.md` - Migration gap analysis (workspace comparison completed)
+- `Nest_plan.md` - Nesting service implementation plan (completed)

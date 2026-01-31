@@ -77,6 +77,19 @@ const newProject = ref({
 
 const statusOptions = ['Setup', 'Released', 'On Hold', 'Complete']
 
+// Cost estimate state
+interface CostEstimate {
+  labor_cost: number
+  material_cost: number
+  outsourced_cost: number
+  purchased_cost: number
+  overhead_multiplier: number
+  subtotal: number
+  total: number
+}
+const projectCost = ref<CostEstimate | null>(null)
+const loadingCost = ref(false)
+
 // Computed properties for selected project
 const projectParts = computed(() => selectedProject.value?.parts || [])
 
@@ -210,13 +223,29 @@ async function selectProject(project: MrpProject) {
   showDetailPanel.value = true
   packetUrl.value = null  // Clear packet URL when switching projects
   packetSuccess.value = ''
+  projectCost.value = null
 
-  // Load parts, assemblies, and check for existing print packet in parallel
+  // Load parts, assemblies, cost estimate, and check for existing print packet in parallel
   await Promise.all([
     loadProjectParts(project.id),
     loadProjectAssemblies(project.id),
-    loadExistingPacket(project.id)
+    loadExistingPacket(project.id),
+    loadCostEstimate(project.id)
   ])
+}
+
+async function loadCostEstimate(projectId: string) {
+  loadingCost.value = true
+  try {
+    const response = await fetch(`${API_BASE_URL}/mrp/projects/${projectId}/cost-estimate`)
+    if (response.ok) {
+      projectCost.value = await response.json()
+    }
+  } catch (e) {
+    console.debug('Failed to load cost estimate:', e)
+  } finally {
+    loadingCost.value = false
+  }
 }
 
 async function loadExistingPacket(projectId: string) {
@@ -709,6 +738,10 @@ function goToProjectTracking() {
   router.push('/mrp/tracking')
 }
 
+function goToCostSettings() {
+  router.push('/mrp/settings')
+}
+
 // === Nesting Functions ===
 
 async function openNestModal() {
@@ -911,6 +944,10 @@ onUnmounted(() => {
           <span class="nav-dot lookup"></span>
           Part Lookup
         </button>
+        <button class="nav-btn settings" @click="goToCostSettings">
+          <span class="nav-dot settings"></span>
+          Cost Settings
+        </button>
         <button class="nav-btn tracking" @click="goToProjectTracking">
           <span class="nav-dot tracking"></span>
           Project Tracking
@@ -1029,6 +1066,41 @@ onUnmounted(() => {
               <div class="stat-box">
                 <div class="stat-value">{{ totalHours }}h</div>
                 <div class="stat-label">Est. Hours</div>
+              </div>
+              <div class="stat-box cost-stat" v-if="projectCost">
+                <div class="stat-value">${{ Math.round(projectCost.total).toLocaleString() }}</div>
+                <div class="stat-label">Est. Cost</div>
+              </div>
+              <div class="stat-box cost-stat" v-else-if="loadingCost">
+                <div class="stat-value">...</div>
+                <div class="stat-label">Est. Cost</div>
+              </div>
+            </div>
+
+            <!-- Cost Breakdown -->
+            <div v-if="projectCost && projectCost.total > 0" class="cost-breakdown">
+              <div class="section-label">Cost Breakdown</div>
+              <div class="cost-rows">
+                <div v-if="projectCost.labor_cost > 0" class="cost-row">
+                  <span class="cost-label">Labor</span>
+                  <span class="cost-value">${{ projectCost.labor_cost.toFixed(2) }}</span>
+                </div>
+                <div v-if="projectCost.material_cost > 0" class="cost-row">
+                  <span class="cost-label">Material</span>
+                  <span class="cost-value">${{ projectCost.material_cost.toFixed(2) }}</span>
+                </div>
+                <div v-if="projectCost.outsourced_cost > 0" class="cost-row">
+                  <span class="cost-label">Outsourced</span>
+                  <span class="cost-value">${{ projectCost.outsourced_cost.toFixed(2) }}</span>
+                </div>
+                <div v-if="projectCost.purchased_cost > 0" class="cost-row">
+                  <span class="cost-label">Purchased</span>
+                  <span class="cost-value">${{ projectCost.purchased_cost.toFixed(2) }}</span>
+                </div>
+                <div class="cost-row cost-total">
+                  <span class="cost-label">Total</span>
+                  <span class="cost-value">${{ projectCost.total.toFixed(2) }}</span>
+                </div>
               </div>
             </div>
 
@@ -1477,6 +1549,7 @@ onUnmounted(() => {
 .nav-dot.shop { background: #eab308; }
 .nav-dot.lookup { background: #22d3ee; }
 .nav-dot.tracking { background: #a855f7; }
+.nav-dot.settings { background: #10b981; }
 
 .refresh-btn {
   display: flex;
@@ -1839,6 +1912,49 @@ onUnmounted(() => {
 .stat-label {
   font-size: 11px;
   color: #9ca3af;
+}
+
+.cost-stat .stat-value {
+  color: #10b981;
+}
+
+/* Cost Breakdown */
+.cost-breakdown {
+  margin-bottom: 16px;
+  background: #020617;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.cost-rows {
+  margin-top: 6px;
+}
+
+.cost-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.cost-label {
+  color: #9ca3af;
+}
+
+.cost-value {
+  color: #e5e7eb;
+  font-family: monospace;
+}
+
+.cost-total {
+  border-top: 1px solid #1e293b;
+  margin-top: 4px;
+  padding-top: 6px;
+  font-weight: 600;
+}
+
+.cost-total .cost-value {
+  color: #10b981;
 }
 
 /* Status Section */

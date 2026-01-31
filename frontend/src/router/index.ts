@@ -82,6 +82,12 @@ const router = createRouter({
       component: () => import('../views/MrpRawMaterialsView.vue'),
       meta: { requiresAuth: true }
     },
+    {
+      path: '/mrp/settings',
+      name: 'mrp-settings',
+      component: () => import('../views/MrpCostSettingsView.vue'),
+      meta: { requiresAuth: true }
+    },
   ]
 })
 

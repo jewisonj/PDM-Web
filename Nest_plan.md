@@ -1,5 +1,13 @@
-# Headless DXF Nesting Service on Fly.io  
+# Headless DXF Nesting Service on Fly.io
 ## Supabase-Integrated API Architecture & Implementation Plan
+
+**STATUS:** REFERENCE DOCUMENT (Nesting Service COMPLETED)
+
+**Current Status:** Nesting automation fully implemented in v3.1
+- Docker worker running Bottom-Left Fill algorithm
+- Full API integration with MRP system
+- See active documentation: `Documentation/29-NESTING-AUTOMATION.md`
+- Last updated: 2026-01-30
 
 ---
 

@@ -18,6 +18,8 @@ interface RawMaterial {
   qty_on_hand: number
   qty_on_order: number
   reorder_point: number
+  price_per_unit: number | null
+  material_type: string
 }
 
 const router = useRouter()
@@ -111,6 +113,23 @@ function trackChange(id: string, field: keyof RawMaterial, value: string) {
   if (material) {
     (material as any)[field] = parseInt(value) || 0
   }
+}
+
+function trackPriceChange(id: string, value: string) {
+  const current = changes.value.get(id) || {}
+  const newChanges = new Map(changes.value)
+  const numVal = value === '' ? null : parseFloat(value) || null
+  newChanges.set(id, { ...current, price_per_unit: numVal })
+  changes.value = newChanges
+
+  const material = allMaterials.value.find(m => m.id === id)
+  if (material) {
+    material.price_per_unit = numVal
+  }
+}
+
+function getPriceUnit(m: RawMaterial): string {
+  return m.material_type === 'SM' ? '$/lb' : '$/ft'
 }
 
 async function saveAll() {
@@ -227,6 +246,7 @@ onMounted(() => {
           <th>Dimensions</th>
           <th>Material</th>
           <th>Stock Length</th>
+          <th>Price/Unit</th>
           <th>On Hand</th>
           <th>On Order</th>
           <th>Reorder Point</th>
@@ -248,6 +268,17 @@ onMounted(() => {
             {{ m.material }}
           </td>
           <td>{{ m.stock_length_ft ? m.stock_length_ft + ' ft' : 'Sheet' }}</td>
+          <td class="price-cell">
+            <input
+              type="number"
+              :value="m.price_per_unit ?? ''"
+              step="0.01"
+              min="0"
+              placeholder="default"
+              @change="trackPriceChange(m.id, ($event.target as HTMLInputElement).value)"
+            />
+            <span class="price-unit">{{ getPriceUnit(m) }}</span>
+          </td>
           <td :class="getStockClass(m)">
             <input
               type="number"
@@ -475,6 +506,32 @@ h1 {
 
 .has-changes {
   background: #1e3a5c !important;
+}
+
+.price-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.price-cell input[type="number"] {
+  width: 80px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #1f2937;
+  background: #020617;
+  color: #e5e7eb;
+}
+
+.price-cell input::placeholder {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.price-unit {
+  color: #9ca3af;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .status-msg {

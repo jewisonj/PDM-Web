@@ -41,6 +41,9 @@ interface Workstation {
   station_code: string
   station_name: string
   sort_order: number
+  hourly_rate: number | null
+  is_outsourced: boolean
+  outsourced_cost_default: number | null
 }
 
 interface RoutingStep {
@@ -52,6 +55,7 @@ interface RoutingStep {
   sequence: number
   est_time_min: number
   notes: string
+  cost_override: number | null
 }
 
 interface RawMaterial {
@@ -67,6 +71,12 @@ interface RawMaterial {
   stock_length_ft?: number
   weight_lb_per_ft?: number
   density_lb_per_cuin?: number
+  price_per_unit: number | null
+}
+
+interface CostSetting {
+  setting_key: string
+  setting_value: number
 }
 
 interface RoutingMaterial {
@@ -108,6 +118,11 @@ const materialQty = ref<number>(1)
 const calculatedLength = ref<number | null>(null)
 const blankWidth = ref<number | null>(null)
 const blankHeight = ref<number | null>(null)
+
+// Cost state
+const costSettings = ref<CostSetting[]>([])
+const editingCostIndex = ref<number | null>(null)
+const editingCostValue = ref<string>('')
 
 // Detect if selected material is sheet metal
 const selectedMaterialIsSM = computed(() => {
@@ -246,6 +261,111 @@ const filteredItems = computed(() => {
 const totalEstTime = computed(() => {
   return routing.value.reduce((sum, r) => sum + (r.est_time_min || 0), 0)
 })
+
+// Cost helper: get a cost setting value by key
+function getCostSetting(key: string): number {
+  const s = costSettings.value.find(c => c.setting_key === key)
+  return s ? Number(s.setting_value) : 0
+}
+
+// Cost helper: get the workstation for a routing step
+function getStepWorkstation(step: RoutingStep): Workstation | undefined {
+  return workstations.value.find(w => w.id === step.station_id)
+}
+
+// Cost helper: calculate cost for a single routing step
+function getStepCost(step: RoutingStep): number {
+  const ws = getStepWorkstation(step)
+  if (!ws) return 0
+
+  if (ws.is_outsourced) {
+    return step.cost_override ?? ws.outsourced_cost_default ?? 0
+  }
+
+  if (step.cost_override != null) return step.cost_override
+
+  const rate = ws.hourly_rate ?? getCostSetting('default_labor_rate')
+  return ((step.est_time_min || 0) / 60) * rate
+}
+
+// Cost helper: is this step outsourced?
+function isStepOutsourced(step: RoutingStep): boolean {
+  const ws = getStepWorkstation(step)
+  return ws?.is_outsourced ?? false
+}
+
+// Total labor cost (non-outsourced steps)
+const totalLaborCost = computed(() => {
+  return routing.value
+    .filter(r => !isStepOutsourced(r))
+    .reduce((sum, r) => sum + getStepCost(r), 0)
+})
+
+// Total outsourced cost
+const totalOutsourcedCost = computed(() => {
+  return routing.value
+    .filter(r => isStepOutsourced(r))
+    .reduce((sum, r) => sum + getStepCost(r), 0)
+})
+
+// Material cost for a single routing material
+function getMaterialCost(rm: RoutingMaterial): number {
+  const mat = rm.material
+  if (!mat) return 0
+
+  if (mat.material_type === 'SM') {
+    const pricePerLb = mat.price_per_unit ?? getCostSetting('default_sm_price_per_lb')
+    return (rm.qty_required || 0) * pricePerLb
+  } else {
+    // Tubing: recalculate length from item mass for accuracy
+    const pricePerFt = mat.price_per_unit ?? getCostSetting('default_tube_price_per_ft')
+    if (selectedItem.value?.mass && mat.weight_lb_per_ft) {
+      const lengthFt = (selectedItem.value.mass / mat.weight_lb_per_ft) + (2 / 12)
+      return lengthFt * pricePerFt
+    }
+    // Fallback: use qty_required as inches
+    return ((rm.qty_required || 0) / 12) * pricePerFt
+  }
+}
+
+// Total material cost
+const totalMaterialCost = computed(() => {
+  return itemMaterials.value.reduce((sum, rm) => sum + getMaterialCost(rm), 0)
+})
+
+// Total estimated cost
+const totalEstCost = computed(() => {
+  return totalLaborCost.value + totalOutsourcedCost.value + totalMaterialCost.value
+})
+
+// Format dollar amount
+function formatCost(val: number): string {
+  return '$' + val.toFixed(2)
+}
+
+// Click-to-edit cost override handlers
+function startEditCost(index: number) {
+  const step = routing.value[index]
+  editingCostIndex.value = index
+  editingCostValue.value = (step.cost_override ?? getStepCost(step)).toFixed(2)
+}
+
+function commitEditCost(index: number) {
+  const step = routing.value[index]
+  const val = parseFloat(editingCostValue.value)
+  if (!isNaN(val) && val >= 0) {
+    step.cost_override = val
+  }
+  editingCostIndex.value = null
+}
+
+function cancelEditCost() {
+  editingCostIndex.value = null
+}
+
+function clearCostOverride(index: number) {
+  routing.value[index].cost_override = null
+}
 
 // Available stations not yet in routing
 const availableStations = computed(() => {
@@ -420,6 +540,14 @@ async function loadData() {
     if (stationsError) throw stationsError
     workstations.value = stationsData || []
 
+    // Load cost settings
+    const { data: costData, error: costError } = await supabase
+      .from('cost_settings')
+      .select('setting_key, setting_value')
+
+    if (costError) throw costError
+    costSettings.value = costData || []
+
     // Load raw materials
     const { data: materialsData, error: materialsError } = await supabase
       .from('raw_materials')
@@ -557,7 +685,8 @@ function addRoutingStep() {
     station_name: station.station_name,
     sequence: lastSequence + 10,
     est_time_min: estTime,
-    notes: ''
+    notes: '',
+    cost_override: null
   })
 
   addStationId.value = ''
@@ -606,7 +735,8 @@ function applyTemplate(templateKey: string) {
       station_name: station?.station_name,
       sequence: (i + 1) * 10,
       est_time_min: estTime,
-      notes: ''
+      notes: '',
+      cost_override: null
     }
   })
 }
@@ -638,7 +768,8 @@ async function saveRouting() {
           station_id: r.station_id,
           sequence: r.sequence,
           est_time_min: r.est_time_min || 0,
-          notes: r.notes || null
+          notes: r.notes || null,
+          cost_override: r.cost_override ?? null
         })))
 
       if (insertError) throw insertError
@@ -682,11 +813,11 @@ async function createStation() {
         sort_order: maxOrder + 1
       })
       .select()
-      .single()
 
     if (insertError) throw insertError
+    if (!data || data.length === 0) throw new Error('Insert returned no data — check RLS policies')
 
-    workstations.value.push(data)
+    workstations.value.push(data[0])
     workstations.value.sort((a, b) => a.sort_order - b.sort_order)
 
     newStationCode.value = ''
@@ -694,6 +825,7 @@ async function createStation() {
     successMessage.value = 'Station created'
     setTimeout(() => { successMessage.value = '' }, 3000)
   } catch (e: any) {
+    console.error('createStation error:', e)
     error.value = e.message || 'Failed to create station'
   } finally {
     creatingStation.value = false
@@ -760,13 +892,14 @@ async function assignMaterial() {
         *,
         raw_materials(*)
       `)
-      .single()
 
     if (insertError) throw insertError
+    if (!data || data.length === 0) throw new Error('Insert returned no data — check RLS policies')
 
+    const row = data[0]
     itemMaterials.value.push({
-      ...data,
-      material: data.raw_materials
+      ...row,
+      material: row.raw_materials
     })
 
     selectedMaterial.value = ''
@@ -962,6 +1095,7 @@ onMounted(() => {
               <span class="col-station">Station</span>
               <span class="col-name">Name</span>
               <span class="col-time">Est. Time</span>
+              <span class="col-cost">Est. Cost</span>
               <span class="col-actions"></span>
             </div>
 
@@ -980,10 +1114,61 @@ onMounted(() => {
               </span>
               <span class="col-seq">{{ step.sequence }}</span>
               <span class="col-station">{{ step.station_code }}</span>
-              <span class="col-name">{{ step.station_name }}</span>
+              <span class="col-name">
+                {{ step.station_name }}
+                <span v-if="isStepOutsourced(step)" class="outsourced-tag">outsourced</span>
+              </span>
               <span class="col-time">
-                <input v-model.number="step.est_time_min" type="number" min="0" step="0.1" class="time-input" /> min
+                <input v-model.number="step.est_time_min" type="number" min="0" step="0.1" class="time-input" :class="{ 'input-dimmed': isStepOutsourced(step) }" /> min
                 <span v-if="step.station_code === '012' && selectedItem?.cut_time" class="cut-time-hint">(from cut_time)</span>
+              </span>
+              <span class="col-cost">
+                <!-- Outsourced: always editable flat cost -->
+                <template v-if="isStepOutsourced(step)">
+                  <span class="cost-dollar">$</span>
+                  <input
+                    type="number"
+                    :value="step.cost_override ?? getStepWorkstation(step)?.outsourced_cost_default ?? ''"
+                    min="0"
+                    step="0.5"
+                    placeholder="flat $"
+                    class="cost-input outsourced-input"
+                    @change="step.cost_override = parseFloat(($event.target as HTMLInputElement).value) || null"
+                  />
+                </template>
+                <!-- In-house: click-to-edit calculated value -->
+                <template v-else>
+                  <template v-if="editingCostIndex === index">
+                    <span class="cost-dollar">$</span>
+                    <input
+                      v-model="editingCostValue"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      class="cost-input cost-editing"
+                      @blur="commitEditCost(index)"
+                      @keyup.enter="commitEditCost(index)"
+                      @keyup.escape="cancelEditCost()"
+                      ref="costEditInput"
+                    />
+                  </template>
+                  <template v-else>
+                    <span
+                      class="cost-display"
+                      :class="{ 'cost-overridden': step.cost_override != null }"
+                      @click="startEditCost(index)"
+                      :title="step.cost_override != null ? 'Overridden (click to edit, x to reset)' : 'Click to override'"
+                    >
+                      {{ formatCost(getStepCost(step)) }}
+                    </span>
+                    <button
+                      v-if="step.cost_override != null"
+                      class="cost-reset-btn"
+                      @click.stop="clearCostOverride(index)"
+                      title="Reset to calculated"
+                    >&times;</button>
+                  </template>
+                </template>
               </span>
               <span class="col-actions">
                 <button class="remove-btn" @click="removeRoutingStep(index)" title="Remove">
@@ -993,7 +1178,13 @@ onMounted(() => {
             </div>
 
             <div class="table-footer">
-              <strong>Total: {{ totalEstTime }} min</strong>
+              <span class="footer-time"><strong>Total: {{ totalEstTime }} min</strong></span>
+              <span class="footer-costs">
+                <span v-if="totalLaborCost > 0">Labor: {{ formatCost(totalLaborCost) }}</span>
+                <span v-if="totalOutsourcedCost > 0">Outsourced: {{ formatCost(totalOutsourcedCost) }}</span>
+                <span v-if="totalMaterialCost > 0">Material: {{ formatCost(totalMaterialCost) }}</span>
+                <span class="footer-total">Est. Cost: <strong>{{ formatCost(totalEstCost) }}</strong></span>
+              </span>
             </div>
           </div>
 
@@ -1090,6 +1281,7 @@ onMounted(() => {
                     ({{ mat.blank_width_in }}" x {{ mat.blank_height_in }}")
                   </span>
                 </span>
+                <span class="mat-cost">{{ formatCost(getMaterialCost(mat)) }}</span>
                 <button class="remove-mat-btn" @click="removeMaterial(mat.id!)">&times;</button>
               </div>
             </div>
@@ -1533,7 +1725,7 @@ onMounted(() => {
 
 .table-header {
   display: grid;
-  grid-template-columns: 70px 60px 80px 1fr 100px 40px;
+  grid-template-columns: 70px 50px 70px 1fr 100px 110px 36px;
   gap: 8px;
   padding: 10px 12px;
   background: #1e293b;
@@ -1545,7 +1737,7 @@ onMounted(() => {
 
 .table-row {
   display: grid;
-  grid-template-columns: 70px 60px 80px 1fr 100px 40px;
+  grid-template-columns: 70px 50px 70px 1fr 100px 110px 36px;
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid #1e293b;
@@ -1656,10 +1848,122 @@ onMounted(() => {
 }
 
 .table-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 10px 12px;
   background: #1e293b;
   font-size: 13px;
   color: #e5e7eb;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.footer-costs {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.footer-total {
+  color: #10b981;
+}
+
+/* Cost column */
+.col-cost {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.cost-dollar {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.cost-input {
+  width: 72px;
+  padding: 4px 6px;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  background: #020617;
+  color: #e5e7eb;
+  font-size: 12px;
+  text-align: right;
+}
+
+.cost-input:focus {
+  border-color: #3b82f6;
+  outline: none;
+}
+
+.outsourced-input {
+  border-color: #92400e;
+}
+
+.outsourced-input:focus {
+  border-color: #f59e0b;
+}
+
+.cost-editing {
+  border-color: #f59e0b;
+  background: #1c1917;
+}
+
+.cost-display {
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 3px;
+  color: #9ca3af;
+  font-size: 12px;
+  transition: background 0.15s;
+}
+
+.cost-display:hover {
+  background: #374151;
+  color: #e5e7eb;
+}
+
+.cost-overridden {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  font-weight: 500;
+}
+
+.cost-reset-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.cost-reset-btn:hover {
+  color: #f87171;
+}
+
+.outsourced-tag {
+  font-size: 10px;
+  background: #92400e;
+  color: #fde68a;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+}
+
+.input-dimmed {
+  opacity: 0.4;
+}
+
+.mat-cost {
+  color: #10b981;
+  font-size: 12px;
+  font-weight: 500;
+  margin-left: 8px;
 }
 
 /* Add Station */

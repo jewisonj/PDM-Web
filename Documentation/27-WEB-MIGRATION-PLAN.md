@@ -189,63 +189,93 @@ pdm-web/
 
 ## Migration Phases
 
-### Phase 1: Database Setup
+### Phase 1: Database Setup ✅ COMPLETED
 - [x] Create Supabase project
-- [ ] Apply database migrations (schema above)
-- [ ] Set up Supabase Auth (email/password)
-- [ ] Create initial users (Jack, Dan, Shop)
-- [ ] Configure Supabase Storage buckets
+- [x] Apply database migrations (schema above)
+- [x] Set up Supabase Auth (email/password)
+- [x] Create initial users (Jack, Dan, Shop)
+- [x] Configure Supabase Storage buckets
 
-### Phase 2: Backend API
-- [ ] Set up FastAPI project structure
-- [ ] Configure Supabase client
-- [ ] Implement CRUD routes:
-  - [ ] Items (create, read, update, search)
-  - [ ] Files (upload, download, list)
-  - [ ] BOM (create, read, tree query)
-  - [ ] Projects (CRUD)
-- [ ] Implement auth middleware (JWT validation)
-- [ ] Add work queue endpoints
+### Phase 2: Backend API ✅ COMPLETED
+- [x] Set up FastAPI project structure
+- [x] Configure Supabase client (dual-client pattern: anon + admin)
+- [x] Implement CRUD routes:
+  - [x] Items (create, read, update, search, upsert)
+  - [x] Files (upload, download, list, auto-create items)
+  - [x] BOM (create, read, tree query, bulk upload)
+  - [x] Projects (CRUD, archived status)
+- [x] Implement auth middleware (JWT validation)
+- [x] Add work queue endpoints (generate-dxf, generate-svg, nest-parts)
 
-### Phase 3: Frontend Core
-- [ ] Initialize Vue 3 + Vite project
-- [ ] Set up Pinia stores (auth, items, files)
-- [ ] Configure Supabase JS client
-- [ ] Build views:
-  - [ ] Login page
-  - [ ] Item browser (table with filters)
-  - [ ] Item detail (metadata, files, BOM, history)
-  - [ ] File upload interface
-  - [ ] BOM tree viewer
-- [ ] Add search functionality
+### Phase 3: Frontend Core ✅ COMPLETED
+- [x] Initialize Vue 3 + Vite project
+- [x] Set up Pinia stores (auth, items, files, projects, mrp)
+- [x] Configure Supabase JS client
+- [x] Build views:
+  - [x] Login page
+  - [x] Item browser (table with filters, search, lifecycle state filter)
+  - [x] Item detail (metadata, files, BOM tree, where-used, lifecycle history)
+  - [x] File upload interface
+  - [x] BOM tree viewer (recursive multi-level)
+  - [x] MRP Dashboard, Routing Editor, Shop View, Raw Materials, Part Lookup, Project Tracking
+- [x] Add search functionality (client-side + server-side)
 
-### Phase 4: File Processing
-- [ ] Verify FreeCAD Docker worker
-- [ ] Create API endpoint to trigger processing
-- [ ] Implement job status polling
-- [ ] Connect file uploads to work queue
-- [ ] Test DXF/SVG generation pipeline
+### Phase 4: File Processing 🔄 PARTIAL
+- [x] Verify FreeCAD Docker worker (container built and tested)
+- [x] Create API endpoints to queue tasks (`/api/tasks/generate-dxf`, `/api/tasks/generate-svg`)
+- [x] Implement job status polling (TasksView.vue)
+- [ ] **Connect file uploads to work queue** (STEP uploads don't auto-queue tasks yet)
+- [ ] **Worker polling loop** (worker_loop.py exists but not integrated with queue polling)
+- [x] Test DXF/SVG generation pipeline (manual docker exec works)
 
-### Phase 5: Data Migration
-- [ ] Write SQLite → Supabase migration script
-- [ ] Migrate items table
-- [ ] Migrate files (upload to Supabase Storage)
-- [ ] Migrate BOM relationships
-- [ ] Verify data integrity
+### Phase 5: Data Migration ⏭️ SKIPPED
+- Data migration from legacy SQLite was performed manually
+- All production data now lives in Supabase
+- Legacy vault archived to `Legacy/PDM_Vault/`
 
-### Phase 6: Advanced Features
-- [ ] Lifecycle state transitions
-- [ ] Revision management (A → B → C)
-- [ ] Checkout/lock functionality
-- [ ] Release workflow
-- [ ] Search improvements (full-text)
+### Phase 6: Advanced Features 🔄 PARTIAL
+- [x] Lifecycle state transitions (manual via API)
+- [ ] Revision management (A → B → C) - **Not yet implemented**
+- [ ] Checkout/lock functionality - **Not yet implemented**
+- [ ] Release workflow with validation - **Not yet implemented**
+- [x] Search improvements (ilike queries, filters by project and lifecycle state)
 
-### Phase 7: Deployment
-- [ ] Deploy backend to cloud (Fly.io or similar)
-- [ ] Deploy frontend (Vercel/Netlify)
-- [ ] Set up FreeCAD worker in cloud
-- [ ] Configure production Supabase
-- [ ] CI/CD pipeline
+### Phase 7: Deployment 🔄 PARTIAL
+- [x] Deploy backend locally (uvicorn on port 8001)
+- [x] Deploy frontend locally (Vite dev server on port 5174)
+- [x] Set up FreeCAD worker in Docker (local Docker Compose)
+- [x] Set up Nesting worker in Docker (local Docker Compose)
+- [x] Configure Supabase (production-ready cloud instance)
+- [ ] **Deploy to cloud** (Fly.io config exists in `DEPLOY.md` but not deployed)
+- [ ] CI/CD pipeline - **Not yet set up**
+
+---
+
+## Additional Phases Completed (v3.1)
+
+### Phase 8: MRP System ✅ COMPLETED
+- [x] MRP Dashboard with project tracking
+- [x] Routing Editor with operation definition
+- [x] Shop View for work order tracking
+- [x] Raw Materials inventory management
+- [x] Part Lookup cross-project search
+- [x] Project Tracking with status workflows
+
+### Phase 9: Nesting Automation ✅ COMPLETED
+- [x] Docker nesting worker with Bottom-Left Fill algorithm
+- [x] DXF parser (lines, arcs, circles, LWPOLYLINE)
+- [x] Multi-sheet output with utilization tracking
+- [x] Frontend configuration modal (NestConfigModal.vue)
+- [x] API endpoints for job creation and status
+- [x] Database tables: nest_jobs, nest_job_items, nest_results
+- [x] Documentation: `29-NESTING-AUTOMATION.md`
+
+### Phase 10: CreoJS Web Integration ✅ COMPLETED
+- [x] Moved CreoJS apps from local files to `frontend/public/creojs/`
+- [x] Added Vite dev proxy for `/api` requests
+- [x] Updated workspace.html with auto-origin detection
+- [x] Workspace comparison API endpoint (`POST /api/workspace/compare`)
+- [x] Local service for file operations (`PDM-Local-Service.ps1` on port 8083)
 
 ---
 
@@ -298,17 +328,29 @@ Files flow: Supabase Storage → Worker → Supabase Storage
 
 ## Success Criteria (MVP)
 
-- [ ] User can log in (Jack, Dan, Shop accounts)
-- [ ] User can view items list with search/filter
-- [ ] User can view item details (metadata, files, BOM)
-- [ ] User can upload STEP files
-- [ ] System generates DXF/SVG from STEP
-- [ ] User can download any file type
-- [ ] User can view/edit BOM relationships
-- [ ] Basic lifecycle state management
+- [x] User can log in (Jack, Dan, Shop accounts) ✅
+- [x] User can view items list with search/filter ✅
+- [x] User can view item details (metadata, files, BOM) ✅
+- [x] User can upload STEP files ✅
+- [x] System generates DXF/SVG from STEP ✅ (manual docker exec works, auto-queue pending)
+- [x] User can download any file type ✅
+- [x] User can view/edit BOM relationships ✅
+- [x] Basic lifecycle state management ✅
 
 ---
 
-**Document Version:** 2.0
-**Updated:** 2025-01-27
-**Status:** Ready for Implementation
+## Current Status Summary
+
+**Migration Progress:** ~85% Complete
+
+**Completed:** Core PDM functionality, MRP system, nesting automation, CreoJS web integration, workspace comparison
+**In Progress:** FreeCAD worker queue integration (polling loop exists but not connected)
+**Pending:** Cloud deployment, automated lifecycle workflows, revision management
+
+**Next Priority:** Connect FreeCAD worker polling loop to work queue for automated DXF/SVG generation
+
+---
+
+**Document Version:** 3.0
+**Updated:** 2026-01-30
+**Status:** Core Implementation Complete, Advanced Features In Progress
