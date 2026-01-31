@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-01-30
-**Current Version:** v3.1
+**Last Updated:** 2026-01-31
+**Current Version:** v3.2
 **Project Status:** Active Development
 
 ---
@@ -14,16 +14,37 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.1 - Jan 2026)
+## Recently Completed (v3.2 - Jan 2026)
 
-### CreoJS Web Hosting Migration
+### Per-Material Pricing Model (v3.2)
+- [x] Replaced generic defaults with per-alloy pricing (CS: $0.85/lb, AL: $3.00/lb, SS: $3.50/lb)
+- [x] Tube $/ft now derived at runtime from $/lb × weight_lb_per_ft
+- [x] Sheet metal materials show "default" placeholder with effective price
+- [x] All SM price_per_unit cleared to use new per-alloy defaults
+- [x] Cost settings view updated to show per-alloy defaults
+- [x] Pricing agent created (`.claude/agents/pricing.md`)
+
+### Material Assignment Auto-Prefill (v3.2)
+- [x] Auto-map item.material to material_code (STEEL→CS, 304SS→SS, ALUMINUM→AL)
+- [x] Find closest matching thickness within 15% tolerance
+- [x] Golden border on assigned material rows for visibility
+- [x] [Mat] badge with golden border in part list when material assigned
+- [x] Auto-calculate blank mass when W and H dimensions filled
+
+### Purchased Parts Enhancement (v3.2)
+- [x] Purchased Part Information section in routing editor
+- [x] Auto-populate supplier name for McMaster parts (mmc prefix)
+- [x] McMaster product page link with external icon
+- [x] Editable supplier info for other supplier parts (spn prefix)
+
+### CreoJS Web Hosting Migration (v3.1)
 - [x] Moved CreoJS apps from `Local_Creo_Files/creowebjs_apps/` to `frontend/public/creojs/`
 - [x] Added Vite dev proxy for `/api` requests in `vite.config.ts`
 - [x] Updated `workspace.html` with `PDM_CONFIG` auto-origin detection
 - [x] Removed hardcoded localhost URLs (now uses `window.location.origin`)
 - [x] All CreoJS apps now served from web frontend instead of file:/// URLs
 
-### Workspace Comparison Tool
+### Workspace Comparison Tool (v3.1)
 - [x] Backend endpoint: `POST /api/workspace/compare` compares local Creo files against vault
 - [x] Local service: `PDM-Local-Service.ps1` on port 8083 handles file operations
 - [x] Added `files.updated_at` column with trigger
@@ -31,14 +52,14 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 - [x] Fixed item number regex ordering (mmc/spn/zzz before standard pattern)
 - [x] Auto-touch local files after upload to sync timestamps
 
-### MRP System
+### MRP System (v3.0-v3.2)
 - [x] MRP Dashboard - Project tracking, routing status, nesting results, cost estimate
-- [x] Routing Editor - Operation definition, sheet metal material calc
+- [x] Routing Editor - Operation definition, sheet metal material calc, purchased part info
 - [x] Shop View - Work order tracking for shop floor
 - [x] Raw Materials view - Material inventory management
 - [x] Part Lookup - Cross-project part search
 - [x] Project Tracking - MRP project lifecycle management
-- [x] Cost Settings - Configurable labor/overhead rates
+- [x] Cost Settings - Per-alloy defaults, configurable labor/overhead rates
 - [x] Project Cost Estimate - Labor, material, outsourced, purchased breakdown
 
 ### Auto-Processing Pipeline
@@ -325,11 +346,14 @@ Fetch supplier information for `mmc`-prefixed items.
 **Risk:** Regressions during refactoring
 **Future:** Add Vitest for frontend, pytest for backend
 
-### Documentation Needs Update
-**Files Needing Review:**
-- [x] `Update-Compare.md` - Mark as REFERENCE (workspace comparison is complete)
-- [x] `Nest_plan.md` - Mark as REFERENCE (nesting service is built)
-- [ ] `27-WEB-MIGRATION-PLAN.md` - Update phase checkboxes based on completed work
+### Documentation Status
+**Recently Updated:**
+- [x] `Update-Compare.md` - Marked as REFERENCE (workspace comparison is complete)
+- [x] `Nest_plan.md` - Marked as REFERENCE (nesting service is built)
+- [x] `27-WEB-MIGRATION-PLAN.md` - Updated phase checkboxes based on completed work
+- [x] `24-VERSION-HISTORY.md` - v3.2 release notes added
+- [x] `TODO.md` - Updated with v3.2 completed features
+- [x] `.claude/agents/pricing.md` - New pricing agent created
 
 ---
 

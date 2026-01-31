@@ -7,9 +7,47 @@
 
 ## Current Version
 
-### v3.1 (2026-01-30) -- Workspace Comparison and Local Service
+### v3.2 (2026-01-31) -- Per-Material Pricing and Purchased Parts Enhancement
 
 **Status:** Current Production Release
+
+#### New Features
+
+- **Per-Material Pricing Defaults** -- Replaced generic material pricing ($0.85/lb SM, $8.00/ft tube) with per-alloy defaults: `default_cs_price_per_lb` ($0.85), `default_al_price_per_lb` ($3.00), `default_ss_price_per_lb` ($3.50). Tube $/ft is now derived at runtime as `$/lb × weight_lb_per_ft`.
+- **Material Auto-Prefill** -- When selecting a part with no routing materials assigned, the system auto-maps `item.material` (STEEL, 304SS, ALUMINUM) to `material_code` (CS/AL/SS) and finds closest matching thickness within 15% tolerance.
+- **Auto-Calculate Blank Mass** -- Auto-trigger blank mass calculation when both width and height dimensions are filled in the routing editor.
+- **Material Assignment Badge** -- Added `[Mat]` badge with golden border (`#b8860b`) in part list when material is assigned to routing.
+- **Purchased Part Info Section** -- Added "Purchased Part Information" section to routing editor showing supplier name, part number, and unit price for `mmc`/`spn` prefixed items.
+- **McMaster Auto-Fill** -- Automatically populate supplier name ("McMaster-Carr") and add product page link when `mmc` prefix detected. For other supplier parts (`spn`), supplier info is editable.
+
+#### Database Changes
+
+- **Migration `replace_material_price_defaults_per_alloy`** -- Replaced `default_sm_price_per_lb` ($0.85) and `default_tube_price_per_ft` ($8.00) with three per-alloy keys: `default_cs_price_per_lb`, `default_al_price_per_lb`, `default_ss_price_per_lb`.
+- **Migration `clear_sm_price_per_unit_use_defaults`** -- Cleared all `raw_materials.price_per_unit` for SM materials to ensure they use the new per-alloy defaults.
+
+#### UI/UX Improvements
+
+- Golden border on assigned material rows in routing editor for visibility.
+- Sheet metal materials now show "default" placeholder with effective price (matching tube style).
+- Purchased part section appears contextually based on item number prefix.
+- McMaster parts get automatic product page link with external icon.
+
+#### Files Changed
+
+- `frontend/src/views/MrpRoutingView.vue` -- Major updates: per-alloy pricing, auto-prefill, auto-calculate, Mat badge, purchased part section.
+- `frontend/src/views/MrpCostSettingsView.vue` -- Updated for per-alloy pricing display.
+- `frontend/src/views/MrpDashboardView.vue` -- Updated to show material assignment badge in part list.
+- `backend/app/routes/mrp.py` -- Updated cost-estimate endpoint for per-alloy defaults.
+- `.claude/agents/pricing.md` -- New specialized pricing agent with cost estimation expertise.
+- `CLAUDE.md` -- Added pricing agent to agent table.
+
+---
+
+## Previous Versions
+
+### v3.1 (2026-01-30) -- Workspace Comparison and Local Service
+
+**Status:** Previous (superseded by v3.2)
 
 #### New Features
 

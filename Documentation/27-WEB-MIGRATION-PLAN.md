@@ -341,16 +341,29 @@ Files flow: Supabase Storage → Worker → Supabase Storage
 
 ## Current Status Summary
 
-**Migration Progress:** ~85% Complete
+**Migration Progress:** ~90% Complete
 
-**Completed:** Core PDM functionality, MRP system, nesting automation, CreoJS web integration, workspace comparison
-**In Progress:** FreeCAD worker queue integration (polling loop exists but not connected)
-**Pending:** Cloud deployment, automated lifecycle workflows, revision management
+**Completed:**
+- Core PDM functionality (items, files, BOM, projects, lifecycle tracking)
+- MRP system (dashboard, routing, shop view, materials, cost estimation)
+- Per-material pricing with auto-prefill and purchased part info
+- Nesting automation (DXF parser, Bottom-Left Fill, multi-sheet output)
+- CreoJS web integration (workspace comparison, local service)
 
-**Next Priority:** Connect FreeCAD worker polling loop to work queue for automated DXF/SVG generation
+**In Progress:**
+- FreeCAD worker queue integration (polling loop exists but not connected)
+
+**Pending:**
+- Cloud deployment
+- Automated lifecycle workflows
+- Revision management
+- Per-station labor rates (all currently use $100/hr default)
+- Per-material raw material pricing (87 materials all use alloy defaults)
+
+**Next Priority:** Set per-station labor rates and populate raw material pricing for accurate cost estimates
 
 ---
 
-**Document Version:** 3.0
-**Updated:** 2026-01-30
-**Status:** Core Implementation Complete, Advanced Features In Progress
+**Document Version:** 3.1
+**Updated:** 2026-01-31
+**Status:** Core Implementation Complete, MRP Cost Estimation Active, Advanced Features In Progress

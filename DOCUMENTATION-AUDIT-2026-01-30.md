@@ -1,6 +1,6 @@
 # PDM-Web Documentation Audit Report
 
-**Date:** 2026-01-30
+**Date:** 2026-01-31 (Updated)
 **Conducted By:** Documentation Agent
 **Scope:** Comprehensive review of all project documentation
 
@@ -8,13 +8,13 @@
 
 ## Executive Summary
 
-The PDM-Web project documentation has been comprehensively audited and updated to reflect the current state of the v3.1 release. Key findings:
+The PDM-Web project documentation has been comprehensively audited and updated to reflect the current state of the v3.2 release. Key findings:
 
-- **Major Features Recently Completed:** CreoJS web hosting, workspace comparison, MRP system, nesting automation, MLBOM parser
-- **Documentation Status:** 30+ active documentation files, all reviewed and updated where necessary
-- **New Additions:** Global TODO.md created for centralized task tracking
+- **Major Features Recently Completed:** Per-material pricing model, material auto-prefill, purchased parts enhancement, CreoJS web hosting, workspace comparison, MRP system, nesting automation, MLBOM parser
+- **Documentation Status:** 30+ active documentation files, all reviewed and updated for v3.2
+- **New Additions:** Pricing agent (`.claude/agents/pricing.md`), v3.2 release notes
 - **Planning Docs Updated:** `Update-Compare.md` and `Nest_plan.md` marked as REFERENCE (features completed)
-- **Migration Plan Updated:** `27-WEB-MIGRATION-PLAN.md` updated with accurate phase completion status
+- **Migration Plan Updated:** `27-WEB-MIGRATION-PLAN.md` updated with 90% completion status and current priorities
 
 ---
 
@@ -138,7 +138,20 @@ Comprehensive task tracking document covering:
 
 ### 5. Updated Version History (24-VERSION-HISTORY.md)
 
-Already current with v3.1 release notes (workspace comparison, local service, bug fixes)
+v3.2 release notes added covering:
+- Per-material pricing model (per-alloy defaults)
+- Material auto-prefill with thickness tolerance matching
+- Auto-calculate blank mass feature
+- Material assignment badge ([Mat] with golden border)
+- Purchased part information section
+- McMaster auto-fill with product page links
+
+### 6. Updated Development Notes (15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md)
+
+Added lessons learned from v3.2:
+- Per-alloy pricing architecture pattern
+- Material auto-prefill logic with 15% tolerance
+- McMaster parts read-only supplier convention
 
 ---
 
@@ -296,7 +309,7 @@ The PDM-Web project is in excellent shape:
 ---
 
 **Audit Conducted By:** Documentation Agent
-**Files Created:** `TODO.md`
-**Files Updated:** `27-WEB-MIGRATION-PLAN.md`, `Update-Compare.md`, `Nest_plan.md`, `00-TABLE-OF-CONTENTS.md`
+**Files Created:** `TODO.md`, `.claude/agents/pricing.md`
+**Files Updated:** `27-WEB-MIGRATION-PLAN.md`, `Update-Compare.md`, `Nest_plan.md`, `00-TABLE-OF-CONTENTS.md`, `24-VERSION-HISTORY.md`, `15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md`, `TODO.md`
 **Total Documentation Files Reviewed:** 40+
-**Status:** All documentation current and accurate as of 2026-01-30
+**Status:** All documentation current and accurate as of 2026-01-31 (v3.2)

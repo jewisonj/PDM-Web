@@ -490,9 +490,12 @@ A `.env` file in `backend/` provides these values for local development. In prod
 11. **Always convert UTC to local time** before comparing vault timestamps with local file timestamps. Use `dt.astimezone()`.
 12. **Check mmc/spn/zzz patterns before standard pattern** -- the standard `[a-z]{3}\d{4,6}` regex will truncate McMaster and supplier part numbers.
 13. **Touch local files after upload** -- update `LastWriteTime` to `Get-Date` after a successful check-in so timestamps stay in sync with vault.
+14. **Per-alloy pricing model** -- Material prices are stored as $/lb per alloy (CS, AL, SS) in `cost_settings`. Tube $/ft is derived at runtime as `$/lb × weight_lb_per_ft`. Changing a single $/lb default updates all sheet metal AND tube of that alloy simultaneously.
+15. **Material auto-prefill logic** -- When auto-assigning materials to a part, map `item.material` text field (STEEL, 304SS, ALUMINUM) to `material_code` (CS, SS, AL), then find closest thickness match within 15% tolerance. This prevents exact-match failures when sheet thicknesses don't perfectly align.
+16. **McMaster parts are read-only supplier info** -- For `mmc` prefix items, auto-populate supplier name as "McMaster-Carr" and provide product page link. Don't allow editing supplier name for McMaster parts to maintain data consistency.
 
 ---
 
-**Last Updated:** 2026-01-30
-**Version:** 3.1
+**Last Updated:** 2026-01-31
+**Version:** 3.2
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)
