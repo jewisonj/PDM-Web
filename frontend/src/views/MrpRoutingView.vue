@@ -66,6 +66,7 @@ interface RawMaterial {
   wall_or_thk_in?: number
   stock_length_ft?: number
   weight_lb_per_ft?: number
+  density_lb_per_cuin?: number
 }
 
 interface RoutingMaterial {
@@ -73,6 +74,8 @@ interface RoutingMaterial {
   item_id: string
   material_id: string
   qty_required: number
+  blank_width_in?: number
+  blank_height_in?: number
   material?: RawMaterial
 }
 
@@ -103,6 +106,15 @@ const selectedMaterialSize = ref<string>('all')
 const selectedMaterial = ref<string>('')
 const materialQty = ref<number>(1)
 const calculatedLength = ref<number | null>(null)
+const blankWidth = ref<number | null>(null)
+const blankHeight = ref<number | null>(null)
+
+// Detect if selected material is sheet metal
+const selectedMaterialIsSM = computed(() => {
+  if (!selectedMaterial.value) return false
+  const mat = rawMaterials.value.find(m => m.id === selectedMaterial.value)
+  return mat?.material_type === 'SM'
+})
 
 // Create new station
 const newStationCode = ref('')
@@ -319,6 +331,13 @@ watch([projectFilter, partTypeFilter, routingStatusFilter, searchQuery], () => {
     status: routingStatusFilter.value,
     search: searchQuery.value,
   }))
+})
+
+// Reset blank dimension fields when material type changes
+watch(selectedMaterialType, () => {
+  blankWidth.value = null
+  blankHeight.value = null
+  calculatedLength.value = null
 })
 
 async function refreshData() {
@@ -682,21 +701,36 @@ async function createStation() {
 }
 
 function calculateMaterial() {
-  if (!selectedItem.value?.mass || !selectedMaterial.value) {
+  if (!selectedMaterial.value) {
     calculatedLength.value = null
     return
   }
 
   const material = rawMaterials.value.find(m => m.id === selectedMaterial.value)
-  if (!material || !material.weight_lb_per_ft) {
+  if (!material) {
     calculatedLength.value = null
     return
   }
 
-  // Formula: (mass / weight_per_ft * 12) + 2" for tubes
-  const mass = selectedItem.value.mass
-  const lengthInches = (mass / material.weight_lb_per_ft * 12) + 2
-  calculatedLength.value = Math.round(lengthInches * 10) / 10
+  if (material.material_type === 'SM') {
+    // Sheet metal: blank mass = width * height * thickness * density
+    if (!blankWidth.value || !blankHeight.value || !material.wall_or_thk_in || !material.density_lb_per_cuin) {
+      calculatedLength.value = null
+      return
+    }
+    const blankMass = blankWidth.value * blankHeight.value * material.wall_or_thk_in * material.density_lb_per_cuin
+    calculatedLength.value = Math.round(blankMass * 100) / 100
+    materialQty.value = calculatedLength.value
+  } else {
+    // Tubing: length = (part_mass / weight_per_ft * 12) + 2"
+    if (!selectedItem.value?.mass || !material.weight_lb_per_ft) {
+      calculatedLength.value = null
+      return
+    }
+    const mass = selectedItem.value.mass
+    const lengthInches = (mass / material.weight_lb_per_ft * 12) + 2
+    calculatedLength.value = Math.round(lengthInches * 10) / 10
+  }
 }
 
 async function assignMaterial() {
@@ -706,13 +740,22 @@ async function assignMaterial() {
   }
 
   try {
+    const insertData: Record<string, any> = {
+      item_id: selectedItem.value.id,
+      material_id: selectedMaterial.value,
+      qty_required: materialQty.value
+    }
+
+    // Include blank dimensions for sheet metal
+    const material = rawMaterials.value.find(m => m.id === selectedMaterial.value)
+    if (material?.material_type === 'SM' && blankWidth.value && blankHeight.value) {
+      insertData.blank_width_in = blankWidth.value
+      insertData.blank_height_in = blankHeight.value
+    }
+
     const { data, error: insertError } = await supabase
       .from('routing_materials')
-      .insert({
-        item_id: selectedItem.value.id,
-        material_id: selectedMaterial.value,
-        qty_required: materialQty.value
-      })
+      .insert(insertData)
       .select(`
         *,
         raw_materials(*)
@@ -729,6 +772,8 @@ async function assignMaterial() {
     selectedMaterial.value = ''
     materialQty.value = 1
     calculatedLength.value = null
+    blankWidth.value = null
+    blankHeight.value = null
     successMessage.value = 'Material assigned'
     setTimeout(() => { successMessage.value = '' }, 3000)
   } catch (e: any) {
