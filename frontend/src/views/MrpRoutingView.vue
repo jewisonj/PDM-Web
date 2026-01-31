@@ -30,6 +30,7 @@ interface Item {
   has_routing?: boolean
   routing_count?: number
   has_pdf?: boolean
+  has_material?: boolean
   part_type?: string
   project_id?: string
   project_name?: string
@@ -474,6 +475,13 @@ watch(selectedMaterialType, () => {
   calculatedLength.value = null
 })
 
+// Auto-calculate when both blank dimensions are filled in
+watch([blankWidth, blankHeight], () => {
+  if (blankWidth.value && blankHeight.value && selectedMaterial.value) {
+    calculateMaterial()
+  }
+})
+
 // Map item.material string to raw_materials material_code (CS/AL/SS)
 function mapMaterialCode(itemMaterial: string | undefined): string | null {
   if (!itemMaterial) return null
@@ -571,6 +579,15 @@ async function loadData() {
 
     const itemsWithPdf = new Set((pdfData || []).map(f => f.item_id))
 
+    // Get items with materials assigned
+    const { data: matData, error: matError } = await supabase
+      .from('routing_materials')
+      .select('item_id')
+
+    if (matError) throw matError
+
+    const itemsWithMaterial = new Set((matData || []).map(m => m.item_id))
+
     // Load MRP project memberships (item_id -> project codes)
     const { data: mrpData } = await supabase
       .from('mrp_project_parts')
@@ -592,6 +609,7 @@ async function loadData() {
       has_routing: routingCounts.has(item.id),
       routing_count: routingCounts.get(item.id) || 0,
       has_pdf: itemsWithPdf.has(item.id),
+      has_material: itemsWithMaterial.has(item.id),
       part_type: getPartType(item),
       project_name: (item as any).projects?.status !== 'archived' ? (item as any).projects?.name || null : null,
       mrp_project_codes: mrpItemMap.get(item.id) || []
@@ -1115,6 +1133,7 @@ onMounted(() => {
                 <i class="pi pi-file-pdf"></i>
               </span>
               <span class="item-number">{{ item.item_number }}</span>
+              <span v-if="item.has_material" class="mat-badge" title="Material assigned">Mat</span>
               <span v-if="item.has_routing" class="ops-badge" :title="`${item.routing_count} operations`">
                 {{ item.routing_count }} ops
               </span>
@@ -1643,6 +1662,15 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: #e5e7eb;
+}
+
+.mat-badge {
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #b8860b;
+  color: #fbbf24;
+  font-size: 9px;
+  font-weight: 600;
 }
 
 .ops-badge {
