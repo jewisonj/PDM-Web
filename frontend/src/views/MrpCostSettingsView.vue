@@ -32,6 +32,7 @@ interface RawMaterial {
   wall_or_thk_in: number | null
   wall_or_thk_code: string | null
   stock_length_ft: number | null
+  weight_lb_per_ft: number | null
   price_per_unit: number | null
 }
 
@@ -53,15 +54,17 @@ const materialTypeFilter = ref('')
 // Display labels for setting keys
 const settingLabels: Record<string, string> = {
   default_labor_rate: 'Default Labor Rate',
-  default_sm_price_per_lb: 'Default Sheet Metal Price',
-  default_tube_price_per_ft: 'Default Tubing Price',
+  default_cs_price_per_lb: 'Carbon Steel Price',
+  default_al_price_per_lb: 'Aluminum Price',
+  default_ss_price_per_lb: 'Stainless Steel Price',
   overhead_multiplier: 'Overhead Multiplier'
 }
 
 const settingUnits: Record<string, string> = {
   default_labor_rate: '$/hr',
-  default_sm_price_per_lb: '$/lb',
-  default_tube_price_per_ft: '$/ft',
+  default_cs_price_per_lb: '$/lb',
+  default_al_price_per_lb: '$/lb',
+  default_ss_price_per_lb: '$/lb',
   overhead_multiplier: 'x'
 }
 
@@ -159,7 +162,9 @@ function getPriceUnit(m: RawMaterial): string {
 }
 
 function getDefaultPrice(m: RawMaterial): number | null {
-  const key = m.material_type === 'SM' ? 'default_sm_price_per_lb' : 'default_tube_price_per_ft'
+  const codeMap: Record<string, string> = { CS: 'default_cs_price_per_lb', AL: 'default_al_price_per_lb', SS: 'default_ss_price_per_lb' }
+  const key = codeMap[m.material_code]
+  if (!key) return null
   const setting = costSettings.value.find(s => s.setting_key === key)
   return setting ? setting.setting_value : null
 }
@@ -440,8 +445,11 @@ onMounted(() => {
                 <template v-if="m.price_per_unit != null">
                   ${{ m.price_per_unit }}{{ getPriceUnit(m).replace('$', '') }}
                 </template>
+                <template v-else-if="m.material_type !== 'SM' && m.weight_lb_per_ft">
+                  <span class="default-badge">${{ ((getDefaultPrice(m) || 0) * m.weight_lb_per_ft).toFixed(2) }}/ft</span>
+                </template>
                 <template v-else>
-                  <span class="default-badge">${{ getDefaultPrice(m) }}{{ getPriceUnit(m).replace('$', '') }}</span>
+                  <span class="default-badge">${{ getDefaultPrice(m) }}/lb</span>
                 </template>
               </td>
             </tr>

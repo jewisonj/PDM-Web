@@ -308,17 +308,31 @@ const totalOutsourcedCost = computed(() => {
     .reduce((sum, r) => sum + getStepCost(r), 0)
 })
 
+// Cost helper: get default $/lb for a material code (CS, AL, SS)
+function getDefaultPricePerLb(materialCode: string): number {
+  const keyMap: Record<string, string> = { CS: 'default_cs_price_per_lb', AL: 'default_al_price_per_lb', SS: 'default_ss_price_per_lb' }
+  return getCostSetting(keyMap[materialCode] || '')
+}
+
 // Material cost for a single routing material
 function getMaterialCost(rm: RoutingMaterial): number {
   const mat = rm.material
   if (!mat) return 0
 
   if (mat.material_type === 'SM') {
-    const pricePerLb = mat.price_per_unit ?? getCostSetting('default_sm_price_per_lb')
+    // Sheet metal: price_per_unit is $/lb, fallback to per-material default $/lb
+    const pricePerLb = mat.price_per_unit ?? getDefaultPricePerLb(mat.material_code)
     return (rm.qty_required || 0) * pricePerLb
   } else {
-    // Tubing: recalculate length from item mass for accuracy
-    const pricePerFt = mat.price_per_unit ?? getCostSetting('default_tube_price_per_ft')
+    // Tubing: if price_per_unit is set, it's a direct $/ft override
+    // Otherwise, derive $/ft from default $/lb * weight_lb_per_ft
+    let pricePerFt: number
+    if (mat.price_per_unit != null) {
+      pricePerFt = mat.price_per_unit
+    } else {
+      const pricePerLb = getDefaultPricePerLb(mat.material_code)
+      pricePerFt = pricePerLb * (mat.weight_lb_per_ft || 0)
+    }
     if (selectedItem.value?.mass && mat.weight_lb_per_ft) {
       const lengthFt = (selectedItem.value.mass / mat.weight_lb_per_ft) + (2 / 12)
       return lengthFt * pricePerFt
@@ -459,6 +473,58 @@ watch(selectedMaterialType, () => {
   blankHeight.value = null
   calculatedLength.value = null
 })
+
+// Map item.material string to raw_materials material_code (CS/AL/SS)
+function mapMaterialCode(itemMaterial: string | undefined): string | null {
+  if (!itemMaterial) return null
+  const m = itemMaterial.toUpperCase()
+  if (m.includes('SS') || m.includes('STAINLESS')) return 'SS'
+  if (m.includes('AL') || m.includes('ALUMINUM') || m.includes('ALUMINIUM')) return 'AL'
+  if (m.includes('STEEL') || m === 'CS' || m === 'CRS' || m === 'HRS' || m === 'HSLA') return 'CS'
+  return null
+}
+
+// Find closest matching wall_or_thk_in from available SM raw materials
+function findClosestThickness(targetThk: number, materialCode: string): RawMaterial | null {
+  const candidates = rawMaterials.value.filter(
+    m => m.material_type === 'SM' && m.material_code === materialCode
+  )
+  if (candidates.length === 0) return null
+
+  let best = candidates[0]
+  let bestDiff = Math.abs((best.wall_or_thk_in || 0) - targetThk)
+  for (const c of candidates) {
+    const diff = Math.abs((c.wall_or_thk_in || 0) - targetThk)
+    if (diff < bestDiff) {
+      best = c
+      bestDiff = diff
+    }
+  }
+  // Only match if within 15% tolerance
+  if (bestDiff > targetThk * 0.15 && bestDiff > 0.005) return null
+  return best
+}
+
+// Auto-prefill material filters from item properties
+function prefillMaterialFromItem(item: Item) {
+  const code = mapMaterialCode(item.material)
+  if (!code || !item.thickness || item.thickness <= 0) return
+
+  const match = findClosestThickness(item.thickness, code)
+  if (!match) return
+
+  // Set filters to narrow to this exact material
+  selectedMaterialType.value = 'SM'
+  // Build the size label the same way materialSizeOptions does
+  selectedMaterialSize.value = `${match.wall_or_thk_in}" thick`
+  // Wait one tick for filteredMaterials to update, then select the specific material
+  setTimeout(() => {
+    const found = filteredMaterials.value.find(m => m.id === match.id)
+    if (found) {
+      selectedMaterial.value = found.id
+    }
+  }, 0)
+}
 
 async function refreshData() {
   const previousItemNumber = selectedItem.value?.item_number
@@ -630,6 +696,16 @@ async function selectItem(item: Item) {
       await loadPdfPreview(pdfFile)
     } else {
       showPdfPreview.value = false
+    }
+
+    // Auto-prefill material filters if no materials assigned yet
+    if (itemMaterials.value.length === 0) {
+      prefillMaterialFromItem(item)
+    } else {
+      // Reset filters when item already has materials
+      selectedMaterialType.value = 'all'
+      selectedMaterialSize.value = 'all'
+      selectedMaterial.value = ''
     }
   } catch (e: any) {
     error.value = e.message || 'Failed to load item data'
@@ -2207,6 +2283,7 @@ onMounted(() => {
   gap: 8px;
   padding: 6px 8px;
   background: #1e293b;
+  border: 1px solid #b8860b;
   border-radius: 4px;
   margin-bottom: 4px;
   font-size: 12px;

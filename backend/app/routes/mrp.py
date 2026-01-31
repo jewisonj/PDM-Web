@@ -55,9 +55,13 @@ async def get_project_cost_estimate(project_id: UUID):
     settings_result = supabase.table("cost_settings").select("setting_key, setting_value").execute()
     settings = {r["setting_key"]: float(r["setting_value"]) for r in (settings_result.data or [])}
     default_labor_rate = settings.get("default_labor_rate", 65.0)
-    default_sm_price = settings.get("default_sm_price_per_lb", 3.50)
-    default_tube_price = settings.get("default_tube_price_per_ft", 8.0)
     overhead_multiplier = settings.get("overhead_multiplier", 1.0)
+    # Per-material $/lb defaults (used for both sheet metal and tube)
+    default_price_per_lb = {
+        "CS": settings.get("default_cs_price_per_lb", 0.85),
+        "AL": settings.get("default_al_price_per_lb", 3.00),
+        "SS": settings.get("default_ss_price_per_lb", 3.50),
+    }
 
     # Load project parts
     parts_result = supabase.table("mrp_project_parts").select(
@@ -86,7 +90,7 @@ async def get_project_cost_estimate(project_id: UUID):
 
     # Load routing materials for all items
     rm_result = supabase.table("routing_materials").select(
-        "item_id, qty_required, raw_materials(material_type, weight_lb_per_ft, price_per_unit)"
+        "item_id, qty_required, raw_materials(material_type, material_code, weight_lb_per_ft, price_per_unit)"
     ).in_("item_id", item_ids).execute()
 
     # Group routing materials by item_id
@@ -150,14 +154,22 @@ async def get_project_cost_estimate(project_id: UUID):
         for rm in rm_by_item.get(item_id, []):
             raw = rm.get("raw_materials") or {}
             mat_type = raw.get("material_type", "")
+            mat_code = raw.get("material_code", "")
             price = raw.get("price_per_unit")
+            mat_default_per_lb = default_price_per_lb.get(mat_code, 0.85)
 
             if mat_type == "SM":
-                per_lb = float(price) if price is not None else default_sm_price
+                # Sheet metal: price_per_unit is $/lb, fallback to per-material default
+                per_lb = float(price) if price is not None else mat_default_per_lb
                 item_material += float(rm.get("qty_required") or 0) * per_lb
             else:
-                per_ft = float(price) if price is not None else default_tube_price
+                # Tubing: price_per_unit is a direct $/ft override
+                # Otherwise derive $/ft from per-material $/lb * weight_lb_per_ft
                 wt_per_ft = float(raw.get("weight_lb_per_ft") or 0)
+                if price is not None:
+                    per_ft = float(price)
+                else:
+                    per_ft = mat_default_per_lb * wt_per_ft
                 if item_mass > 0 and wt_per_ft > 0:
                     length_ft = (item_mass / wt_per_ft) + (2 / 12)
                     item_material += length_ft * per_ft

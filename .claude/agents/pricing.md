@@ -28,9 +28,12 @@ The cost estimation system has three cost layers that roll up per-item and per-p
 | setting_key | setting_value | description |
 |---|---|---|
 | `default_labor_rate` | **100.00** | Default shop labor rate ($/hr) when station has no specific rate |
-| `default_sm_price_per_lb` | **0.85** | Default sheet metal price ($/lb) when material has no specific price |
-| `default_tube_price_per_ft` | **8.00** | Default tubing price ($/ft) when material has no specific price |
+| `default_cs_price_per_lb` | **0.85** | Default carbon steel price ($/lb) for sheet metal AND tubing |
+| `default_al_price_per_lb` | **3.00** | Default aluminum price ($/lb) for sheet metal AND tubing |
+| `default_ss_price_per_lb` | **3.50** | Default stainless steel price ($/lb) for sheet metal AND tubing |
 | `overhead_multiplier` | **1.20** | Multiplier applied to project total (1.0 = no overhead, 1.2 = 20% markup) |
+
+**Key design**: Material prices are $/lb by alloy, not by type. Tube $/ft is *derived* at runtime as `$/lb * weight_lb_per_ft`. This means changing a single $/lb default updates all sheet metal AND tube of that alloy simultaneously.
 
 ### `workstations` - Station definitions with rates
 | station_code | station_name | hourly_rate | is_outsourced | outsourced_cost_default |
@@ -105,13 +108,25 @@ For each routing step:
 
 ### Per-Item Material Cost
 ```
+default_per_lb = { CS: 0.85, AL: 3.00, SS: 3.50 }  // from cost_settings
+
 For each routing_material:
   raw = raw_materials record
+  mat_default_per_lb = default_per_lb[raw.material_code]
+
   if raw.material_type == 'SM':
-    price_per_lb = raw.price_per_unit ?? default_sm_price_per_lb
+    // Sheet metal: price_per_unit is $/lb override, fallback to per-material default
+    price_per_lb = raw.price_per_unit ?? mat_default_per_lb
     material_cost = qty_required * price_per_lb
+
   else (SQ, OT):
-    price_per_ft = raw.price_per_unit ?? default_tube_price_per_ft
+    // Tubing: price_per_unit is a direct $/ft override
+    // If NULL, derive $/ft from per-material $/lb * weight_lb_per_ft
+    if raw.price_per_unit != NULL:
+      price_per_ft = raw.price_per_unit
+    else:
+      price_per_ft = mat_default_per_lb * raw.weight_lb_per_ft
+
     if item.mass > 0 AND raw.weight_lb_per_ft > 0:
       length_ft = (item.mass / raw.weight_lb_per_ft) + (2/12)  // +2" waste allowance
       material_cost = length_ft * price_per_ft
@@ -329,12 +344,8 @@ Full project cost rollup. Joins mrp_project_parts -> items -> routing -> worksta
 
 ## Known Gaps and Improvement Opportunities
 
-### 1. No Per-Material Prices Set
-Every `raw_materials.price_per_unit` is NULL. The $0.85/lb default for ALL sheet metal is inaccurate because:
-- Aluminum costs ~$2.00-$2.50/lb
-- Stainless costs ~$2.50-$3.50/lb
-- Carbon steel varies by gauge but ~$0.45-$0.70/lb
-- The current default of $0.85/lb over-prices CS and under-prices AL/SS
+### 1. Per-Material Prices (DONE)
+Sheet metal price_per_unit is set per-material (CS=$0.85, AL=$3.00, SS=$3.50/lb). Tube prices are NULL and derived from $/lb * weight_lb_per_ft at runtime. The cost_settings table has per-alloy defaults that drive both SM and tube pricing from a single $/lb value per alloy.
 
 ### 2. No Per-Station Rates Set
 Every `workstations.hourly_rate` is NULL. The $100/hr flat rate for all stations is a rough approximation:
