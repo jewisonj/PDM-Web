@@ -142,6 +142,15 @@ const selectedMaterialIsSM = computed(() => {
   return mat?.material_type === 'SM'
 })
 
+// McMaster-Carr product URL
+const mcmasterUrl = computed(() => {
+  if (!selectedItem.value) return null
+  const pn = selectedItem.value.item_number.toLowerCase()
+  if (!pn.startsWith('mmc')) return null
+  const mcPn = selectedItem.value.item_number.slice(3)
+  return `https://www.mcmaster.com/${mcPn}/`
+})
+
 // Create new station
 const newStationCode = ref('')
 const newStationName = ref('')
@@ -674,10 +683,19 @@ async function selectItem(item: Item) {
   itemMaterials.value = []
   pdfUrl.value = null
 
-  // Populate purchased part fields
+  // Populate purchased part fields — auto-fill from item number for mmc/spn parts
   purchasePrice.value = item.unit_price ?? null
-  purchaseSupplier.value = item.supplier_name ?? ''
-  purchasePn.value = item.supplier_pn ?? ''
+  const pn = item.item_number.toLowerCase()
+  if (pn.startsWith('mmc')) {
+    purchaseSupplier.value = item.supplier_name || 'McMaster-Carr'
+    purchasePn.value = item.supplier_pn || item.item_number.slice(3).toUpperCase()
+  } else if (pn.startsWith('spn')) {
+    purchaseSupplier.value = item.supplier_name || ''
+    purchasePn.value = item.supplier_pn || item.item_number.slice(3).toUpperCase()
+  } else {
+    purchaseSupplier.value = item.supplier_name ?? ''
+    purchasePn.value = item.supplier_pn ?? ''
+  }
 
   try {
     // Load routing with station info
@@ -1454,6 +1472,9 @@ onMounted(() => {
                 {{ savingPurchase ? 'Saving...' : 'Update' }}
               </button>
             </div>
+            <a v-if="mcmasterUrl" :href="mcmasterUrl" target="_blank" class="mcmaster-link">
+              View on McMaster-Carr &rarr;
+            </a>
           </div>
 
           <!-- Save / Clear Buttons -->
@@ -2505,6 +2526,20 @@ onMounted(() => {
 .update-purchase-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.mcmaster-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #38bdf8;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.mcmaster-link:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
 }
 
 /* Action Buttons */
