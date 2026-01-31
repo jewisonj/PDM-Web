@@ -1540,6 +1540,7 @@ onMounted(() => {
 }
 
 .col-time {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -1564,6 +1565,9 @@ onMounted(() => {
 }
 
 .cut-time-hint {
+  position: absolute;
+  right: 100%;
+  margin-right: 6px;
   font-size: 10px;
   color: #6ee7b7;
   white-space: nowrap;
