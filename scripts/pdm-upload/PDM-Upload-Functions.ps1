@@ -81,11 +81,10 @@ function Get-FileAction {
     }
 
     # Check for specific text file names (BOM/param files)
-    switch ($fileName) {
-        'param.txt'  { return 'Parameters' }
-        'bom.txt'    { return 'BOM' }
-        'mlbom.txt'  { return 'MLBOM' }
-    }
+    # Also handle _1, _2, etc. suffixes from duplicate drops (e.g. param_1.txt, bom_2.txt)
+    if ($fileName -match '^param(_\d+)?\.txt$')  { return 'Parameters' }
+    if ($fileName -match '^bom(_\d+)?\.txt$')    { return 'BOM' }
+    if ($fileName -match '^mlbom(_\d+)?\.txt$')  { return 'MLBOM' }
 
     # Skip other ignored extensions (after checking for specific .txt files above)
     if ($ignoreExtensions -contains $ext) {
