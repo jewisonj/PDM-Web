@@ -70,7 +70,8 @@
       "Bash(MSYS_NO_PATHCONV=1 tasklist:*)",
       "mcp__pdm-supabase__get_publishable_keys",
       "Bash(fc:*)",
-      "mcp__pdm-supabase__get_logs"
+      "mcp__pdm-supabase__get_logs",
+      "Bash(pushd \"J:\\\\PDM-Web\\\\frontend\")"
     ],
     "deny": []
   },

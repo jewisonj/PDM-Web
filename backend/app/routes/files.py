@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import Optional
 from uuid import UUID
 
-from ..services.supabase import get_supabase_client, get_supabase_admin
+from ..services.supabase import get_supabase_admin
 from ..models.schemas import FileInfo, FileCreate
 
 router = APIRouter(prefix="/files", tags=["files"])
@@ -73,7 +73,7 @@ async def list_files(
     offset: int = 0,
 ):
     """List files with optional filtering."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     query = supabase.table("files").select("*")
 
@@ -91,9 +91,12 @@ async def list_files(
 @router.get("/{file_id}", response_model=FileInfo)
 async def get_file(file_id: UUID):
     """Get file metadata by ID."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
-    result = supabase.table("files").select("*").eq("id", str(file_id)).single().execute()
+    try:
+        result = supabase.table("files").select("*").eq("id", str(file_id)).single().execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
 
     if not result.data:
         raise HTTPException(status_code=404, detail="File not found")
@@ -214,10 +217,12 @@ async def upload_file(
 @router.get("/{file_id}/download")
 async def get_download_url(file_id: UUID):
     """Get a signed download URL for a file."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
-    # Get file record
-    file_result = supabase.table("files").select("file_path, file_name").eq("id", str(file_id)).single().execute()
+    try:
+        file_result = supabase.table("files").select("file_path, file_name").eq("id", str(file_id)).single().execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
 
     if not file_result.data:
         raise HTTPException(status_code=404, detail="File not found")
@@ -227,9 +232,12 @@ async def get_download_url(file_id: UUID):
     if not file_path:
         raise HTTPException(status_code=404, detail="File not in storage")
 
+    # Strip bucket prefix if stored in file_path (e.g. "pdm-files/hbl2310/file.prt" -> "hbl2310/file.prt")
+    storage_path = file_path.removeprefix("pdm-files/")
+
     # Create signed URL (valid for 1 hour)
     try:
-        url_result = supabase.storage.from_("pdm-files").create_signed_url(file_path, 3600)
+        url_result = supabase.storage.from_("pdm-files").create_signed_url(storage_path, 3600)
         return {
             "url": url_result["signedURL"],
             "filename": file_result.data["file_name"],
@@ -242,10 +250,12 @@ async def get_download_url(file_id: UUID):
 @router.delete("/{file_id}")
 async def delete_file(file_id: UUID):
     """Delete a file."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
-    # Get file path first
-    file_result = supabase.table("files").select("file_path").eq("id", str(file_id)).single().execute()
+    try:
+        file_result = supabase.table("files").select("file_path").eq("id", str(file_id)).single().execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
 
     if not file_result.data:
         raise HTTPException(status_code=404, detail="File not found")

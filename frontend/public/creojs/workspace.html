@@ -467,7 +467,7 @@
                 var session = pfcGetCurrentSession();
                 var fileType = filename.toLowerCase();
                 var modelType;
-                
+
                 if (fileType.endsWith('.prt')) {
                     modelType = pfcModelType.MDL_PART;
                 } else if (fileType.endsWith('.asm')) {
@@ -477,10 +477,10 @@
                 } else {
                     return {success: false, error: "Unknown file type"};
                 }
-                
+
                 var descr = pfcModelDescriptor.Create(modelType, filename, "");
                 var model = session.RetrieveModel(descr);
-                
+
                 if (model != null) {
                     // Create window but DON'T activate it to allow multiple files to stay open
                     var window = session.GetModelWindow(model);
@@ -492,6 +492,54 @@
                     return {success: true};
                 } else {
                     return {success: false, error: "Could not retrieve model"};
+                }
+            } catch (e) {
+                return {success: false, error: e.toString()};
+            }
+        }
+
+        function reloadModelFromDisk(filename) {
+            // Reload a model from disk after it has been updated (e.g. downloaded from vault).
+            // Creo prioritizes in-session data over what's on disk, so we must erase
+            // the in-session copy first, then re-retrieve the fresh file.
+            try {
+                var session = pfcGetCurrentSession();
+                var fileType = filename.toLowerCase();
+                var modelType;
+
+                if (fileType.endsWith('.prt')) {
+                    modelType = pfcModelType.MDL_PART;
+                } else if (fileType.endsWith('.asm')) {
+                    modelType = pfcModelType.MDL_ASSEMBLY;
+                } else if (fileType.endsWith('.drw')) {
+                    modelType = pfcModelType.MDL_DRAWING;
+                } else {
+                    return {success: false, error: "Unknown file type: " + filename};
+                }
+
+                var descr = pfcModelDescriptor.Create(modelType, filename, "");
+
+                // Check if model is already in session
+                try {
+                    var existingModel = session.GetModelFromDescr(descr);
+                    if (existingModel != null) {
+                        existingModel.Erase();  // Remove from session only (not from disk)
+                    }
+                } catch (e) {
+                    // Model not in session - that's fine, just retrieve fresh
+                }
+
+                // Retrieve fresh copy from disk
+                var model = session.RetrieveModel(descr);
+
+                if (model != null) {
+                    var window = session.GetModelWindow(model);
+                    if (window == null) {
+                        window = session.CreateModelWindow(model);
+                    }
+                    return {success: true, reloaded: true};
+                } else {
+                    return {success: false, error: "Could not retrieve model from disk"};
                 }
             } catch (e) {
                 return {success: false, error: e.toString()};
@@ -1091,8 +1139,38 @@
 				}
 
 				const summary = data.summary;
+				const successFiles = data.results.filter(r => r.success);
+
+				// Reload downloaded files in Creo session
+				let reloaded = 0;
+				let reloadFailed = 0;
+				if (typeof CreoJS !== 'undefined' && successFiles.length > 0) {
+					for (const r of successFiles) {
+						try {
+							debugLog(`Reloading ${r.filename} in Creo...`, 'info');
+							const result = await CreoJS.reloadModelFromDisk(r.filename);
+							if (result && result.success) {
+								reloaded++;
+								debugLog(`  Reloaded ${r.filename}`, 'success');
+							} else {
+								reloadFailed++;
+								debugLog(`  Could not reload ${r.filename}: ${result ? result.error : 'unknown'}`, 'warn');
+							}
+						} catch (e) {
+							reloadFailed++;
+							debugLog(`  Reload error for ${r.filename}: ${e.message}`, 'warn');
+						}
+					}
+				}
+
 				let message = `Download Complete:\n\n`;
 				message += `✓ ${summary.succeeded} file(s) downloaded successfully\n`;
+				if (reloaded > 0) {
+					message += `✓ ${reloaded} file(s) reloaded in Creo\n`;
+				}
+				if (reloadFailed > 0) {
+					message += `⚠ ${reloadFailed} file(s) downloaded but not reloaded in Creo\n`;
+				}
 				if (summary.failed > 0) {
 					message += `✗ ${summary.failed} file(s) failed\n\n`;
 					message += `Failed files:\n`;
@@ -1104,13 +1182,12 @@
 				}
 
 				alert(message);
-				debugLog(`Download complete: ${summary.succeeded} succeeded, ${summary.failed} failed`, 'success');
+				debugLog(`Download complete: ${summary.succeeded} succeeded, ${summary.failed} failed, ${reloaded} reloaded`, 'success');
 
-				// Clear selection after successful download
+				// Clear selection and refresh workspace after successful download
 				if (summary.succeeded > 0) {
 					clearSelection();
-					// Optionally refresh the workspace to show updated files
-					// loadWorkspaceData();
+					loadWorkspaceData();
 				}
 
 			} catch (error) {

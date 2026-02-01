@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from uuid import UUID
 
-from ..services.supabase import get_supabase_client, get_supabase_admin
+from ..services.supabase import get_supabase_admin
 from ..models.schemas import Item, ItemCreate, ItemUpdate, ItemWithFiles, ItemSearchParams
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -20,7 +20,7 @@ async def list_items(
     offset: int = 0,
 ):
     """List items with optional filtering."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Join with projects to get project name
     query = supabase.table("items").select("*, projects(name)")
@@ -57,10 +57,15 @@ async def list_items(
 @router.get("/{item_number}", response_model=ItemWithFiles)
 async def get_item(item_number: str):
     """Get item by item_number with associated files."""
-    supabase = get_supabase_client()
+    # Use admin client - this endpoint is called by the PowerShell local service
+    # which doesn't carry user auth tokens. RLS only allows 'authenticated' role
+    # for SELECT, so anon key returns 0 rows and .single() throws.
+    supabase = get_supabase_admin()
 
-    # Get item with project name
-    result = supabase.table("items").select("*, projects(name)").eq("item_number", item_number.lower()).single().execute()
+    try:
+        result = supabase.table("items").select("*, projects(name)").eq("item_number", item_number.lower()).single().execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
 
     if not result.data:
         raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
@@ -84,7 +89,7 @@ async def get_item(item_number: str):
 @router.post("", response_model=Item)
 async def create_item(item: ItemCreate):
     """Create a new item."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Normalize item_number to lowercase
     item_data = item.model_dump()
@@ -116,7 +121,7 @@ async def update_item(item_number: str, item: ItemUpdate, upsert: bool = False):
     Uses admin client for upsert operations (trusted internal service).
     """
     # Use admin client for upsert (internal service), regular client otherwise
-    supabase = get_supabase_admin() if upsert else get_supabase_client()
+    supabase = get_supabase_admin() if upsert else get_supabase_admin()
     normalized_number = item_number.lower()
 
     # Filter out None values
@@ -170,7 +175,7 @@ async def update_item(item_number: str, item: ItemUpdate, upsert: bool = False):
 @router.delete("/{item_number}")
 async def delete_item(item_number: str):
     """Delete an item."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     result = supabase.table("items").delete().eq("item_number", item_number.lower()).execute()
 
@@ -183,10 +188,12 @@ async def delete_item(item_number: str):
 @router.get("/{item_number}/history")
 async def get_item_history(item_number: str):
     """Get lifecycle history for an item."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
-    # Get item ID first
-    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).single().execute()
+    try:
+        item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).single().execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
 
     if not item_result.data:
         raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
