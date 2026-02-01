@@ -28,7 +28,7 @@ $script:ColumnMap = @(
     @{ header = 'PTC_MASTER_MATERIAL'; field = 'material';   type = 'string' }
     @{ header = 'CUT_LENGTH';          field = 'cut_length'; type = 'number' }
     @{ header = 'CUT_TIME';            field = 'cut_time';   type = 'number' }
-    @{ header = 'PRICE_EST';           field = 'price_est';  type = 'number' }
+    # PRICE_EST removed - MRP pricing engine calculates cost estimates now
 )
 
 # Additional headers to track for column boundary detection (not extracted as properties)
