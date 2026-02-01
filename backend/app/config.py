@@ -21,7 +21,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = [
         "http://localhost:5174",
         "http://localhost:3000",
-        "http://100.106.248.91:5174",  # Tailnet
+        "http://localhost:8083",        # PDM-Local-Service (CreoJS workspace)
+        "http://100.106.248.91:5174",   # Tailnet
     ]
     cors_allow_all: bool = False  # Set via env var for dev
 

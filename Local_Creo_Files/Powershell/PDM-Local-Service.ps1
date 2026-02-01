@@ -27,10 +27,13 @@ $Global:Port = 8083
 $Global:ServiceName = "PDM-Local-Service"
 
 # PDM-Web API URL - same as PDM-Upload config
-# Change this to match your environment
-$Global:ApiUrl = "http://localhost:8001/api"
+# Local development:
+# $Global:ApiUrl = "http://localhost:8001/api"
 # Production:
-# $Global:ApiUrl = "https://pdm-web.fly.dev/api"
+$Global:ApiUrl = "https://pdm-web.fly.dev/api"
+
+# Path to CreoJS web apps (workspace.html, etc.)
+$Global:WebAppsDir = Join-Path (Split-Path -Parent $PSScriptRoot) "creowebjs_apps"
 
 # ============================================
 # Logging
@@ -403,6 +406,43 @@ function Handle-Download {
 }
 
 # ============================================
+# Handler: GET /workspace.html (and other static files)
+# ============================================
+
+function Handle-StaticFile {
+    param(
+        [System.Net.HttpListenerResponse]$Response,
+        [string]$FileName
+    )
+
+    $filePath = Join-Path $Global:WebAppsDir $FileName
+
+    if (-not (Test-Path $filePath)) {
+        $Response.StatusCode = 404
+        Write-ServiceLog "Static file not found: $filePath" "WARN"
+        return
+    }
+
+    $ext = [IO.Path]::GetExtension($FileName).ToLower()
+    $contentType = switch ($ext) {
+        '.html' { 'text/html; charset=utf-8' }
+        '.js'   { 'application/javascript' }
+        '.css'  { 'text/css' }
+        '.svg'  { 'image/svg+xml' }
+        '.png'  { 'image/png' }
+        default { 'application/octet-stream' }
+    }
+
+    $buffer = [IO.File]::ReadAllBytes($filePath)
+    $Response.ContentType = $contentType
+    $Response.StatusCode = 200
+    $Response.ContentLength64 = $buffer.Length
+    $Response.OutputStream.Write($buffer, 0, $buffer.Length)
+
+    Write-ServiceLog "Served: $FileName ($($buffer.Length) bytes)" "INFO"
+}
+
+# ============================================
 # Main HTTP Server Loop
 # ============================================
 
@@ -418,7 +458,9 @@ try {
     Write-ServiceLog "API Backend: $Global:ApiUrl" "INFO"
     Write-ServiceLog "Press Ctrl+C to stop..." "WARN"
     Write-ServiceLog "==================================================" "INFO"
+    Write-ServiceLog "Web Apps: $Global:WebAppsDir" "INFO"
     Write-ServiceLog "Endpoints:" "INFO"
+    Write-ServiceLog "  GET  /workspace.html       - CreoJS workspace app" "INFO"
     Write-ServiceLog "  POST /api/file-timestamps  - Local file timestamps" "INFO"
     Write-ServiceLog "  POST /api/checkin           - Upload files to vault" "INFO"
     Write-ServiceLog "  POST /api/download          - Download files from vault" "INFO"
@@ -470,8 +512,14 @@ try {
                     }
                 }
                 default {
-                    $response.StatusCode = 404
-                    Write-ServiceLog "404 Not Found: $method $url" "WARN"
+                    # Serve static files from creowebjs_apps (e.g. /workspace.html)
+                    if ($method -eq "GET" -and $url -match '^\/.+\.\w+$') {
+                        $fileName = $url.TrimStart('/')
+                        Handle-StaticFile -Response $response -FileName $fileName
+                    } else {
+                        $response.StatusCode = 404
+                        Write-ServiceLog "404 Not Found: $method $url" "WARN"
+                    }
                 }
             }
         }

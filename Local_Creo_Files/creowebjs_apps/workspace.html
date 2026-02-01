@@ -586,14 +586,15 @@
     
     <script>
         // ===== PDM WEB CONFIGURATION =====
-        // Update these URLs for your environment
+        // When served by PDM-Local-Service (localhost:8083), local file ops
+        // go to the same origin and API calls go to the deployed backend.
+        // When served from fly.dev, API is the origin but local ops still
+        // need the local service (requires HTTP, won't work from HTTPS page).
+        const _isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
         const PDM_CONFIG = {
-            // FastAPI backend URL
-            apiUrl: 'http://localhost:8001',
-            // Local service URL (file operations on this machine)
-            localServiceUrl: 'http://localhost:8083',
-            // Vue frontend URL
-            frontendUrl: 'http://localhost:5174'
+            apiUrl: _isLocal ? 'https://pdm-web.fly.dev' : window.location.origin,
+            localServiceUrl: _isLocal ? window.location.origin : 'http://localhost:8083',
+            frontendUrl: _isLocal ? 'https://pdm-web.fly.dev' : window.location.origin
         };
 
         // Debug logging
