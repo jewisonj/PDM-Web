@@ -28,6 +28,8 @@ Most automation that was previously handled by PowerShell Windows services is no
 
 These scripts form the "upload bridge" -- a local service that watches a folder on the engineer's workstation and automatically uploads files to the PDM-Web API.
 
+**Deployment:** The scripts are deployed to `C:\PDM-Upload\` and launched via `Start-PDMUpload.bat`. The batch file automatically syncs the latest scripts from the project source (`J:\PDM-Web\scripts\pdm-upload\`) before starting the service, ensuring code changes propagate automatically.
+
 ### How It Works
 
 1. The engineer (or Creo) drops files into `C:\PDM-Upload\`.
@@ -56,26 +58,28 @@ C:\PDM-Upload\              <-- Drop files here
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `ApiUrl` | `http://localhost:8000/api` | PDM-Web API base URL |
+| `ApiUrl` | `https://pdm-web.fly.dev/api` | PDM-Web API base URL (production by default) |
 | `WatchFolder` | `C:\PDM-Upload` | Local folder to monitor for new files |
 | `LogFile` | `C:\PDM-Upload\pdm-upload.log` | Log file path |
 | `PollInterval` | `500` (ms) | Delay after file detection before processing |
 | `MaxLogSize` | `10MB` | Log file rotation threshold |
 
-**Switching to production API:**
+**Switching between production and local API:**
 
-Edit `PDM-Upload-Config.ps1` and change the `ApiUrl` value:
+By default, the upload service uses the production API (`https://pdm-web.fly.dev/api`) so uploads work without running a local backend. For local development or offline work, edit `PDM-Upload-Config.ps1` and change the `ApiUrl` value:
 
 ```powershell
 $Config = @{
     # Local development:
-    # ApiUrl = "http://localhost:8000/api"
+    ApiUrl = "http://localhost:8001/api"
 
-    # Production:
-    ApiUrl = "https://pdm-web.fly.dev/api"
+    # Production (default):
+    # ApiUrl = "https://pdm-web.fly.dev/api"
     # ...
 }
 ```
+
+**Note:** The actual port for local development is `8001` (not `8000`). Check `backend/.env` for the `API_PORT` value.
 
 **Logging:**
 
@@ -98,12 +102,20 @@ Log format:
 
 **Starting the service:**
 
+Recommended method (auto-syncs scripts):
+```batch
+C:\PDM-Upload\Start-PDMUpload.bat
+```
+
+Or run directly:
 ```powershell
 cd scripts\pdm-upload
 .\PDM-Upload-Service.ps1
 ```
 
 Leave the PowerShell window open. Press Ctrl+C to stop.
+
+**Auto-sync:** The `Start-PDMUpload.bat` launcher copies all 4 .ps1 files from `J:\PDM-Web\scripts\pdm-upload\` to `C:\PDM-Upload\` before starting the service. If the project drive is unavailable, it falls back to local copies with a warning.
 
 **Startup behavior:**
 
@@ -162,10 +174,12 @@ Determines what action to take based on filename and extension.
 | Action | Trigger | Description |
 |--------|---------|-------------|
 | `Upload` | `.step`, `.stp`, `.pdf`, `.dxf`, `.svg`, `.prt`, `.asm`, `.drw` | Upload as file attachment |
-| `BOM` | File named `bom.txt` | Parse as single-level BOM |
-| `MLBOM` | File named `mlbom.txt` | Parse as multi-level BOM |
-| `Parameters` | File named `param.txt` | Parse as parameter update |
+| `BOM` | File named `bom.txt` or `bom_1.txt`, `bom_2.txt`, etc. | Parse as single-level BOM |
+| `MLBOM` | File named `mlbom.txt` or `mlbom_1.txt`, `mlbom_2.txt`, etc. | Parse as multi-level BOM |
+| `Parameters` | File named `param.txt` or `param_1.txt`, `param_2.txt`, etc. | Parse as parameter update |
 | `Skip` | All other files | Ignore (logs, configs, images, etc.) |
+
+**Duplicate filename handling:** Uses regex patterns to match `param.txt`, `bom.txt`, and `mlbom.txt` with optional `_\d+` suffixes (e.g., `param_1.txt`, `bom_2.txt`). Windows adds these suffixes when files are dropped faster than the watcher can process them.
 
 **Ignored files:** Script files (`.ps1`, `.bat`), config files, images, and a hardcoded list of known service files are always skipped.
 
@@ -240,7 +254,9 @@ Model Name         DESCRIPTION            PROJECT   PRO_MP_MASS   PTC_MASTER_MAT
    WMP20090.PRT   Shaft                  PROJ1     1.2           Aluminum             300         2.5
 ```
 
-**Supported columns:** `Model Name`, `DESCRIPTION`, `PROJECT`, `PRO_MP_MASS`, `PTC_MASTER_MATERIAL`, `CUT_LENGTH`, `SMT_THICKNESS`, `CUT_TIME`, `PRICE_EST`
+**Supported columns:** `Model Name`, `DESCRIPTION`, `PROJECT`, `PRO_MP_MASS`, `PTC_MASTER_MATERIAL`, `CUT_LENGTH`, `SMT_THICKNESS`, `CUT_TIME`
+
+**Note:** `PRICE_EST` is no longer extracted from Creo exports. The MRP pricing engine is the single source of truth for cost estimates. If the column exists in the export, the parser ignores it to prevent overwriting calculated pricing data.
 
 **Parsing behavior:**
 - Column positions are calculated dynamically from the header line.

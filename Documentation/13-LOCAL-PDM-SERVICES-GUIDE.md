@@ -247,6 +247,8 @@ The PDM-Local-Service is a PowerShell HTTP server that bridges Creo's embedded b
 
 **Note:** This service replaces the legacy `Local-FileTimestamp-Service.ps1` (formerly in `Local_Creo_Files/Powershell/Backup/`), which has been deleted. All functionality is consolidated into `PDM-Local-Service.ps1`.
 
+**Production API:** The service now points to the production API (`https://pdm-web.fly.dev/api`) by default, and serves workspace.html and other static files from the `creowebjs_apps/` directory. This allows Creo's browser to load workspace.html from `http://localhost:8083/workspace.html` (all HTTP) and communicate with the cloud API (HTTP→HTTPS is allowed, avoiding mixed content issues).
+
 ### Start the Service
 
 Open a PowerShell window:
@@ -258,16 +260,20 @@ cd Local_Creo_Files\Powershell
 
 The service runs on `localhost:8083` and provides:
 - `GET /health` -- Health check
+- `GET /workspace.html` (and other static files) -- Serve CreoJS web apps from `creowebjs_apps/` directory
 - `POST /api/file-timestamps` -- Get local file modification times
-- `POST /api/checkin` -- Upload a local file to the vault (via FastAPI backend)
+- `POST /api/checkin` -- Upload a local file to the vault (via FastAPI backend → Supabase)
 - `POST /api/download` -- Download a vault file to a local directory
 
 ### Why This Service Exists
 
 Creo's embedded Chromium browser runs in a sandbox that prevents JavaScript from accessing the local file system. The PDM-Local-Service bridges this gap by:
-1. Reading local file timestamps for workspace comparison
-2. Uploading local files to the FastAPI backend on check-in
-3. Downloading vault files to local directories on checkout
+1. Serving workspace.html and other CreoJS apps (avoiding mixed content issues with HTTPS)
+2. Reading local file timestamps for workspace comparison
+3. Uploading local files to the FastAPI backend on check-in
+4. Downloading vault files to local directories on checkout
+
+**Mixed Content Security:** By serving workspace.html from `http://localhost:8083`, all requests stay within HTTP (local service calls) or go HTTP→HTTPS (cloud API calls). This avoids browser mixed content blocking (HTTPS→HTTP is blocked, but HTTP→HTTPS is allowed).
 
 ### Test the Service
 
@@ -285,6 +291,8 @@ Invoke-RestMethod -Uri "http://localhost:8083/api/file-timestamps" -Method Post 
 
 - **Regex ordering:** Item numbers are extracted from filenames with `mmc`/`spn`/`zzz` patterns checked before the standard `[a-z]{3}\d{4,6}` pattern. This prevents McMaster part number truncation (see Dev Notes lesson #12).
 - **File touch after upload:** After a successful check-in, the service updates the local file's `LastWriteTime` to `Get-Date` so it stays in sync with the vault timestamp (see Dev Notes lesson #13).
+- **Static file serving:** Serves workspace.html and other CreoJS apps from `creowebjs_apps/` directory. Creo's browser points to `http://localhost:8083/workspace.html` instead of the production HTTPS URL.
+- **API URL:** Points to production API (`https://pdm-web.fly.dev/api`) by default. For local backend development, change `$Global:ApiUrl` to `http://localhost:8001/api`.
 
 ---
 

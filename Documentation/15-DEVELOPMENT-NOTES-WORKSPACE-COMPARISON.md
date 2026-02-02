@@ -277,6 +277,184 @@ $file.LastWriteTime = Get-Date
 
 **Prevention:** After uploading a file, always update the local file's `LastWriteTime` to the current time so it stays in sync with the vault's `updated_at` timestamp.
 
+### 14. CreoJS Workspace Mixed Content (HTTPS → HTTP Blocked)
+
+**Symptom:** After workspace.html was deployed to the production domain (`https://pdm-web.fly.dev`), the workspace comparison feature failed to load local file timestamps. Browser console showed "Mixed Content" errors when trying to fetch from `http://localhost:8083`.
+
+**Root Cause:** Browsers enforce mixed content security: HTTPS pages cannot make HTTP requests, even to localhost. When workspace.html moved from local development to being served from the production HTTPS domain, all calls to the local PDM-Local-Service (HTTP) were blocked by the browser.
+
+**Diagnosis:**
+1. Opened browser developer console and saw "Mixed Content: The page at 'https://pdm-web.fly.dev/...' was loaded over HTTPS, but requested an insecure XMLHttpRequest endpoint 'http://localhost:8083/api/file-timestamps'. This request has been blocked."
+2. Confirmed the security rule: HTTPS→HTTP is blocked, but HTTP→HTTPS is allowed.
+
+**Fix:** Changed the serving model to keep all workspace operations in HTTP:
+
+1. **PDM-Local-Service now serves static files** from `creowebjs_apps/` directory:
+   - Added `Handle-StaticFile` function to serve `.html`, `.js`, `.css`, `.svg` files
+   - Mapped `GET /workspace.html` (and other static files) to the file handler
+   - Set `$Global:WebAppsDir` to point to `creowebjs_apps/` directory
+   - Changed `$Global:ApiUrl` to point to production (`https://pdm-web.fly.dev/api`)
+
+2. **Workspace.html auto-detects its origin**:
+```javascript
+const _isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const PDM_CONFIG = {
+    apiUrl: _isLocal ? 'https://pdm-web.fly.dev' : window.location.origin,
+    localServiceUrl: _isLocal ? window.location.origin : 'http://localhost:8083',
+    frontendUrl: _isLocal ? 'https://pdm-web.fly.dev' : window.location.origin
+};
+```
+When served from localhost (the expected case), `localServiceUrl` uses same origin (localhost:8083) and `apiUrl` points to fly.dev. This keeps all local service calls as HTTP→HTTP and cloud API calls as HTTP→HTTPS (allowed).
+
+3. **Backend CORS config** added `http://localhost:8083` to allowed origins in `backend/app/config.py`:
+```python
+cors_origins: list[str] = [
+    "http://localhost:5174",
+    "http://localhost:3000",
+    "http://localhost:8083",        # PDM-Local-Service (CreoJS workspace)
+    "http://100.106.248.91:5174",   # Tailnet
+]
+```
+
+4. **Creo browser now points to** `http://localhost:8083/workspace.html` instead of the production HTTPS URL. All HTTP, so no mixed content issues. API calls to fly.dev work fine (HTTP→HTTPS is allowed, only HTTPS→HTTP is blocked).
+
+**Files Changed:**
+- `Local_Creo_Files/Powershell/PDM-Local-Service.ps1` -- Added static file serving, changed API URL to fly.dev
+- `Local_Creo_Files/creowebjs_apps/workspace.html` -- Added config auto-detection
+- `backend/app/config.py` -- Added `http://localhost:8083` to CORS origins
+
+**Prevention:** Always serve workspace.html from the local PDM-Local-Service (HTTP) to avoid mixed content issues. The service acts as a bridge between local file operations and the cloud API.
+
+### 15. Upload Service Production API Switch
+
+**Symptom:** Upload service was failing with "Unable to connect to the remote server" errors every time a file was dropped into the watch folder.
+
+**Root Cause:** `PDM-Upload-Config.ps1` had `ApiUrl = "http://localhost:8001/api"` but the developer's local FastAPI backend wasn't running during normal CAD work. The upload service tried to connect to localhost and failed.
+
+**Fix:** Changed the default `ApiUrl` in `PDM-Upload-Config.ps1` from `http://localhost:8001/api` to `https://pdm-web.fly.dev/api`:
+```powershell
+$Config = @{
+    # Local development:
+    # ApiUrl = "http://localhost:8001/api"
+    # Production:
+    ApiUrl = "https://pdm-web.fly.dev/api"
+    # ...
+}
+```
+
+**Trade-off:** Upload service now depends on internet connectivity and production API availability. For offline development or when testing API changes, switch `ApiUrl` back to localhost and run the backend locally.
+
+**Files Changed:** `scripts/pdm-upload/PDM-Upload-Config.ps1`
+
+**Prevention:** Consider the user's typical workflow. If they don't run the backend locally most of the time, default to the production API URL.
+
+### 16. Duplicate Filename Handling (param_1.txt, bom_2.txt)
+
+**Symptom:** When multiple files were dropped into the watch folder in rapid succession (e.g., Creo exporting param.txt, BOM.txt, and a STEP file), Windows added `_1`, `_2` suffixes to duplicate filenames before the service could process them. These numbered files (e.g., `param_1.txt`, `bom_2.txt`) were silently skipped as "unsupported file type".
+
+**Root Cause:** `Get-FileAction` in `PDM-Upload-Functions.ps1` used exact string matching to identify special files:
+```powershell
+if ($fileName -eq 'param.txt')  { return 'Parameters' }
+if ($fileName -eq 'bom.txt')    { return 'BOM' }
+if ($fileName -eq 'mlbom.txt')  { return 'MLBOM' }
+```
+When Windows renamed the file to `param_1.txt`, it no longer matched the exact string.
+
+**Diagnosis:** Checked the log file and saw:
+```
+2026-02-01 10:30:45 Processing: param_1.txt
+2026-02-01 10:30:45 Skipping unsupported file: param_1.txt
+```
+Opened `param_1.txt` and confirmed it was a valid Creo parameter export with correct format.
+
+**Fix:** Changed exact matching to regex patterns that accept the `_\d+` suffix:
+```powershell
+# Check for specific text file names (BOM/param files)
+# Also handle _1, _2, etc. suffixes from duplicate drops (e.g. param_1.txt, bom_2.txt)
+if ($fileName -match '^param(_\d+)?\.txt$')  { return 'Parameters' }
+if ($fileName -match '^bom(_\d+)?\.txt$')    { return 'BOM' }
+if ($fileName -match '^mlbom(_\d+)?\.txt$')  { return 'MLBOM' }
+```
+
+**Files Changed:** `scripts/pdm-upload/PDM-Upload-Functions.ps1`
+
+**Prevention:** Use regex patterns for filename matching when Windows may add suffixes or users may rename files with variations. The pattern `^param(_\d+)?\.txt$` matches `param.txt`, `param_1.txt`, `param_2.txt`, etc.
+
+### 17. Auto-Sync Upload Scripts on Service Launch
+
+**Symptom:** After making changes to the upload scripts in the project source directory (`J:\PDM-Web\scripts\pdm-upload\`), the deployed service at `C:\PDM-Upload\` continued to run old code. The developer had to manually copy the updated scripts to `C:\PDM-Upload\` every time.
+
+**Root Cause:** The upload service runs from `C:\PDM-Upload\` with copies of the .ps1 files. Code changes in the project directory didn't automatically propagate to the deployed location.
+
+**Fix:** Modified `Start-PDMUpload.bat` to auto-sync scripts before starting the service:
+```batch
+REM Sync scripts from project source before starting
+set "SOURCE=J:\PDM-Web\scripts\pdm-upload"
+if exist "%SOURCE%\PDM-Upload-Service.ps1" (
+    echo Syncing scripts from %SOURCE% ...
+    copy /Y "%SOURCE%\PDM-Upload-Config.ps1"    "C:\PDM-Upload\" >nul
+    copy /Y "%SOURCE%\PDM-Upload-Functions.ps1"  "C:\PDM-Upload\" >nul
+    copy /Y "%SOURCE%\PDM-Upload-Service.ps1"    "C:\PDM-Upload\" >nul
+    copy /Y "%SOURCE%\PDM-BOM-Parser.ps1"        "C:\PDM-Upload\" >nul
+    echo Scripts synced.
+) else (
+    echo WARNING: Project source not found at %SOURCE%, using local copies.
+)
+```
+
+**Files Changed:** `scripts/pdm-upload/Start-PDMUpload.bat`
+
+**Benefits:**
+- Developers get the latest script changes automatically on service restart
+- No manual copy steps required
+- Still works if the project drive is unavailable (falls back to local copies with a warning)
+- Single batch file to launch ensures scripts are always in sync
+
+**Prevention:** For deployed services that run from copied scripts, add auto-sync to the launcher so code changes propagate automatically.
+
+### 18. PRICE_EST Removed from Creo Upload Pipeline
+
+**Symptom:** Cost estimates calculated by the MRP pricing engine were being overwritten with stale Creo parameter values every time a BOM or parameter file was uploaded.
+
+**Root Cause:** `PDM-BOM-Parser.ps1` included `PRICE_EST` in the `$script:ColumnMap`, so Creo BOM exports and parameter updates overwrote the `price_est` column in the database:
+```powershell
+$script:ColumnMap = @(
+    @{ header = 'DESCRIPTION';         field = 'name';       type = 'string' }
+    @{ header = 'PRO_MP_MASS';         field = 'mass';       type = 'number' }
+    # ...
+    @{ header = 'PRICE_EST';           field = 'price_est';  type = 'number' }  # <-- Problem
+)
+```
+
+**Diagnosis:** Checked the Creo parameter exports and saw that `PRICE_EST` values were weeks old (from the last time a cost was manually entered in Creo). After uploading a BOM, the database `price_est` column was overwritten with these stale values instead of the live calculated estimates from the MRP pricing engine.
+
+**Fix:** Removed `PRICE_EST` from `$script:ColumnMap` in `PDM-BOM-Parser.ps1`:
+```powershell
+$script:ColumnMap = @(
+    @{ header = 'DESCRIPTION';         field = 'name';       type = 'string' }
+    @{ header = 'PRO_MP_MASS';         field = 'mass';       type = 'number' }
+    @{ header = 'SMT_THICKNESS';       field = 'thickness';  type = 'number' }
+    @{ header = 'PTC_MASTER_MATERIAL'; field = 'material';   type = 'string' }
+    @{ header = 'CUT_LENGTH';          field = 'cut_length'; type = 'number' }
+    @{ header = 'CUT_TIME';            field = 'cut_time';   type = 'number' }
+    # PRICE_EST removed - MRP pricing engine calculates cost estimates now
+)
+```
+
+The `PRICE_EST` column can still exist in Creo exports. The parser just ignores it.
+
+**Design Principle:** The MRP pricing engine is the single source of truth for cost estimates. CAD metadata (Creo parameters) should not overwrite calculated pricing data. Cost estimates are derived from:
+- Material pricing ($/lb per alloy)
+- Labor rates ($/hr per operation type)
+- Overhead and markup percentages
+- Real-time workstation rates
+
+These are managed in the MRP UI and should not be overridden by static Creo parameters.
+
+**Files Changed:** `scripts/pdm-upload/PDM-BOM-Parser.ps1`
+
+**Prevention:** Separate calculated/derived fields (like cost estimates) from source-of-truth fields (like mass, thickness, material). Only allow the authoritative system to write calculated values.
+
 ---
 
 ## Coding Patterns
@@ -493,9 +671,14 @@ A `.env` file in `backend/` provides these values for local development. In prod
 14. **Per-alloy pricing model** -- Material prices are stored as $/lb per alloy (CS, AL, SS) in `cost_settings`. Tube $/ft is derived at runtime as `$/lb × weight_lb_per_ft`. Changing a single $/lb default updates all sheet metal AND tube of that alloy simultaneously.
 15. **Material auto-prefill logic** -- When auto-assigning materials to a part, map `item.material` text field (STEEL, 304SS, ALUMINUM) to `material_code` (CS, SS, AL), then find closest thickness match within 15% tolerance. This prevents exact-match failures when sheet thicknesses don't perfectly align.
 16. **McMaster parts are read-only supplier info** -- For `mmc` prefix items, auto-populate supplier name as "McMaster-Carr" and provide product page link. Don't allow editing supplier name for McMaster parts to maintain data consistency.
+17. **CreoJS Workspace serves from localhost HTTP** -- Serve workspace.html from PDM-Local-Service on `http://localhost:8083` to avoid mixed content (HTTPS→HTTP blocked). The local service serves static files and bridges to cloud API (HTTP→HTTPS is allowed).
+18. **Upload service uses production API by default** -- `PDM-Upload-Config.ps1` points to `https://pdm-web.fly.dev/api` so uploads work without running local backend. Switch to localhost for offline development.
+19. **Regex filename matching for duplicates** -- Use `^param(_\d+)?\.txt$` pattern to handle Windows `_1`, `_2` suffixes when files drop faster than processing.
+20. **Auto-sync scripts on service launch** -- `Start-PDMUpload.bat` copies latest .ps1 files from project source to `C:\PDM-Upload\` before starting service.
+21. **PRICE_EST removed from Creo parser** -- MRP pricing engine owns cost estimates. Parser ignores `PRICE_EST` column to prevent CAD metadata from overwriting calculated prices.
 
 ---
 
-**Last Updated:** 2026-01-31
-**Version:** 3.2
+**Last Updated:** 2026-02-01
+**Version:** 3.2.1
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)
