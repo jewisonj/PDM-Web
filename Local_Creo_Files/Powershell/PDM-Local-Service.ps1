@@ -208,75 +208,91 @@ function Handle-CheckIn {
             continue
         }
 
-        # Upload to FastAPI backend
+        # Upload to FastAPI backend (with retry on network errors)
         $uri = "$Global:ApiUrl/files/upload"
-        $httpClient = $null
-        $form = $null
+        $maxAttempts = 3
+        $uploadSuccess = $false
 
-        try {
-            $httpClient = New-Object System.Net.Http.HttpClient
-            $form = New-Object System.Net.Http.MultipartFormDataContent
+        for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            $httpClient = $null
+            $form = $null
 
-            # Add item_number field
-            $itemField = New-Object System.Net.Http.StringContent($itemNumber)
-            $form.Add($itemField, "item_number")
+            try {
+                $httpClient = New-Object System.Net.Http.HttpClient
+                $httpClient.Timeout = [TimeSpan]::FromSeconds(30)
+                $form = New-Object System.Net.Http.MultipartFormDataContent
 
-            # Add file
-            $fileBytes = [IO.File]::ReadAllBytes($fullPath)
-            $fileContent = New-Object System.Net.Http.ByteArrayContent(,$fileBytes)
+                # Add item_number field
+                $itemField = New-Object System.Net.Http.StringContent($itemNumber)
+                $form.Add($itemField, "item_number")
 
-            # Determine MIME type
-            $ext = [IO.Path]::GetExtension($filename).ToLower()
-            $mimeType = switch ($ext) {
-                '.pdf'  { 'application/pdf' }
-                '.step' { 'application/step' }
-                '.stp'  { 'application/step' }
-                '.dxf'  { 'application/dxf' }
-                '.svg'  { 'image/svg+xml' }
-                default { 'application/octet-stream' }
-            }
-            $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse($mimeType)
-            $form.Add($fileContent, "file", $filename)
+                # Add file
+                $fileBytes = [IO.File]::ReadAllBytes($fullPath)
+                $fileContent = New-Object System.Net.Http.ByteArrayContent(,$fileBytes)
 
-            $apiResponse = $httpClient.PostAsync($uri, $form).Result
-
-            if ($apiResponse.IsSuccessStatusCode) {
-                # Touch file's LastWriteTime to match upload time so timestamps align
-                try {
-                    (Get-Item $fullPath).LastWriteTime = Get-Date
-                } catch {
-                    Write-ServiceLog "  Warning: could not touch $fullPath : $_" "WARN"
+                # Determine MIME type
+                $ext = [IO.Path]::GetExtension($filename).ToLower()
+                $mimeType = switch ($ext) {
+                    '.pdf'  { 'application/pdf' }
+                    '.step' { 'application/step' }
+                    '.stp'  { 'application/step' }
+                    '.dxf'  { 'application/dxf' }
+                    '.svg'  { 'image/svg+xml' }
+                    default { 'application/octet-stream' }
                 }
-                Write-ServiceLog "  Uploaded: $filename -> item $itemNumber" "SUCCESS"
-                $results += @{
-                    filename   = $filename
-                    success    = $true
-                    itemNumber = $itemNumber
+                $fileContent.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse($mimeType)
+                $form.Add($fileContent, "file", $filename)
+
+                $apiResponse = $httpClient.PostAsync($uri, $form).Result
+
+                if ($apiResponse.IsSuccessStatusCode) {
+                    # Touch file's LastWriteTime to match upload time so timestamps align
+                    try {
+                        (Get-Item $fullPath).LastWriteTime = Get-Date
+                    } catch {
+                        Write-ServiceLog "  Warning: could not touch $fullPath : $_" "WARN"
+                    }
+                    Write-ServiceLog "  Uploaded: $filename -> item $itemNumber" "SUCCESS"
+                    $results += @{
+                        filename   = $filename
+                        success    = $true
+                        itemNumber = $itemNumber
+                    }
+                    $succeeded++
+                    $uploadSuccess = $true
+                } else {
+                    $errorBody = $apiResponse.Content.ReadAsStringAsync().Result
+                    Write-ServiceLog "  Upload failed ($($apiResponse.StatusCode)): $filename - $errorBody" "ERROR"
+                    $results += @{
+                        filename = $filename
+                        success  = $false
+                        error    = "API error ($($apiResponse.StatusCode)): $errorBody"
+                    }
+                    $failed++
+                    $uploadSuccess = $true  # Don't retry HTTP errors (4xx/5xx), only network errors
                 }
-                $succeeded++
-            } else {
-                $errorBody = $apiResponse.Content.ReadAsStringAsync().Result
-                Write-ServiceLog "  Upload failed ($($apiResponse.StatusCode)): $filename - $errorBody" "ERROR"
-                $results += @{
-                    filename = $filename
-                    success  = $false
-                    error    = "API error ($($apiResponse.StatusCode)): $errorBody"
+            }
+            catch {
+                if ($attempt -lt $maxAttempts) {
+                    $waitSec = $attempt * 2
+                    Write-ServiceLog "  Network error uploading $filename (attempt $attempt/$maxAttempts), retrying in ${waitSec}s..." "WARN"
+                    Start-Sleep -Seconds $waitSec
+                } else {
+                    Write-ServiceLog "  Failed after $maxAttempts attempts: $filename - $_" "ERROR"
+                    $results += @{
+                        filename = $filename
+                        success  = $false
+                        error    = "Upload failed after $maxAttempts attempts: $_"
+                    }
+                    $failed++
                 }
-                $failed++
             }
-        }
-        catch {
-            Write-ServiceLog "  Exception uploading $filename : $_" "ERROR"
-            $results += @{
-                filename = $filename
-                success  = $false
-                error    = "Upload exception: $_"
+            finally {
+                if ($form) { $form.Dispose() }
+                if ($httpClient) { $httpClient.Dispose() }
             }
-            $failed++
-        }
-        finally {
-            if ($form) { $form.Dispose() }
-            if ($httpClient) { $httpClient.Dispose() }
+
+            if ($uploadSuccess) { break }
         }
     }
 

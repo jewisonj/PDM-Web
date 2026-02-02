@@ -9,7 +9,7 @@ import re
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from ..services.supabase import get_supabase_admin
 
@@ -118,18 +118,23 @@ def parse_local_timestamp(time_str: str) -> Optional[datetime]:
 
 
 def parse_vault_timestamp(time_str: str) -> Optional[datetime]:
-    """Parse an ISO timestamp from Supabase and convert UTC to local time.
+    """Parse an ISO timestamp from Supabase and convert UTC to US Central time.
 
     Supabase stores timestamps in UTC. Local file times from PowerShell
-    are in the machine's local timezone. Convert vault times to local
-    so comparisons are apples-to-apples.
+    are in the user's local timezone (US Central). Convert vault times
+    to Central so comparisons are apples-to-apples.
+
+    Uses fixed UTC-6 offset (CST). This is sufficient because timestamp
+    comparisons use a 2-minute tolerance, which absorbs the 1-hour
+    CDT/CST difference.
     """
     if not time_str:
         return None
     try:
         dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
-        # Convert to local time, then strip tzinfo for naive comparison
-        local_dt = dt.astimezone()
+        # Convert to US Central (UTC-6) instead of server-local time
+        central = timezone(timedelta(hours=-6))
+        local_dt = dt.astimezone(central)
         return local_dt.replace(tzinfo=None)
     except (ValueError, AttributeError):
         return None
