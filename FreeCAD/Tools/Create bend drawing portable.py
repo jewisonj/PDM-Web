@@ -986,10 +986,7 @@ def create_bend_drawing(step_file, output_svg=None, k_factor=0.35):
     unfold_obj = doc.addObject("Part::Feature", "Unfold")
     unfold_obj.Shape = unfold_shape
     doc.recompute()
-    
-    flat_faces = sorted(unfold_obj.Shape.Faces, key=lambda f: f.Area, reverse=True)
-    flat_face = flat_faces[0]
-    
+
     # Detect part thickness from the FLATTENED shape
     thickness = None
     try:
@@ -1001,7 +998,62 @@ def create_bend_drawing(step_file, output_svg=None, k_factor=0.35):
         print(f"Detected thickness from flat pattern: {thickness:.3f} mm")
     except Exception as e:
         print(f"Could not detect thickness: {e}")
-    
+
+    # ===========================================
+    # Use Draft.makeShape2DView for correct 2D projection
+    # (same approach as working fix DXF script — the old
+    #  "take largest face + manual axis selection" was producing
+    #  incorrect dimensions on some parts)
+    # ===========================================
+    flat_faces = sorted(unfold_obj.Shape.Faces, key=lambda f: f.Area, reverse=True)
+    face_normal = flat_faces[0].normalAt(0, 0)
+
+    print(f"\nCreating 2D projection (Draft.makeShape2DView)...")
+    import Draft
+
+    projection = Draft.makeShape2DView(unfold_obj, face_normal)
+    doc.recompute()
+
+    # Build a face from the projection for create_svg_drawing
+    proj_shape = projection.Shape
+    flat_face = None
+
+    if proj_shape.Wires:
+        # Sort wires by bounding box diagonal (largest = outer boundary)
+        wires = sorted(proj_shape.Wires, key=lambda w: w.BoundBox.DiagonalLength, reverse=True)
+        try:
+            if len(wires) > 1:
+                # Outer wire + inner wires (holes)
+                flat_face = Part.Face(wires)
+            else:
+                flat_face = Part.Face(wires[0])
+            print(f"  2D face created from projection ({len(wires)} wire(s))")
+            proj_bbox = flat_face.BoundBox
+            print(f"  Dimensions: {proj_bbox.XLength:.3f} x {proj_bbox.YLength:.3f} mm")
+            print(f"             ({proj_bbox.XLength/25.4:.3f}\" x {proj_bbox.YLength/25.4:.3f}\")")
+        except Exception as e:
+            print(f"  Warning: Could not create face from projection wires: {e}")
+            flat_face = None
+
+    if flat_face is None:
+        print("  Falling back to largest face from unfold")
+        flat_face = flat_faces[0]
+
+    # Project fold lines to 2D as well (must be in same coordinate space)
+    fold_lines_2d = None
+    if fold_lines:
+        try:
+            fold_obj = doc.addObject("Part::Feature", "FoldLines")
+            fold_obj.Shape = fold_lines
+            doc.recompute()
+            fold_projection = Draft.makeShape2DView(fold_obj, face_normal)
+            doc.recompute()
+            fold_lines_2d = fold_projection.Shape
+            print(f"  Fold lines projected: {len(fold_lines_2d.Edges)} edges")
+        except Exception as e:
+            print(f"  Warning: Could not project fold lines, using original: {e}")
+            fold_lines_2d = fold_lines
+
     # Generate bent state preview
     print("\nGenerating bent state preview...")
     bent_preview_svg = create_bent_part_preview(imported_obj)
@@ -1009,9 +1061,9 @@ def create_bend_drawing(step_file, output_svg=None, k_factor=0.35):
         print("  SUCCESS Bent state preview created")
     else:
         print("  Note: Bent state preview not available")
-    
+
     print("\nCreating SVG drawing...")
-    create_svg_drawing(flat_face, fold_lines, output_svg, f"Flat Pattern - {os.path.basename(step_file)}", k_factor, thickness, bent_preview_svg)
+    create_svg_drawing(flat_face, fold_lines_2d, output_svg, f"Flat Pattern - {os.path.basename(step_file)}", k_factor, thickness, bent_preview_svg)
     
     FreeCAD.closeDocument(doc.Name)
     return output_svg

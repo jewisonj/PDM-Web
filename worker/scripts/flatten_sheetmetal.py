@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 FreeCAD Sheet Metal Flattening Script - Docker CLI Compatible
-Exports flat pattern OuterWire directly to DXF (no 2D projection needed)
+Uses Shape.transformGeometry() + Draft.makeShape2DView() for reliable output.
+(Restored from WORKING FIX version - manual edge extraction was producing
+ incorrect dimensions on some parts.)
 """
 
 import sys
@@ -32,7 +34,7 @@ except:
     pass
 
 print("=" * 60)
-print("FreeCAD Sheet Metal Flattening Tool - Docker CLI v2")
+print("FreeCAD Sheet Metal Flattening Tool - Docker CLI (Working Fix)")
 print("=" * 60)
 
 import FreeCAD
@@ -93,171 +95,59 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     flat_faces = sorted(unfold_obj.Shape.Faces, key=lambda f: f.Area, reverse=True)
     flat_face = flat_faces[0]
 
-    # Determine face orientation to get correct 2D coordinates
-    face_normal = flat_face.normalAt(0, 0)
-    print(f"Face normal: ({face_normal.x:.3f}, {face_normal.y:.3f}, {face_normal.z:.3f})")
+    bbox = flat_face.BoundBox
+    print(f"\nOriginal dimensions:")
+    print(f"  {bbox.XLength:.3f} mm x {bbox.YLength:.3f} mm")
+    print(f"  ({bbox.XLength/25.4:.3f}\" x {bbox.YLength/25.4:.3f}\")")
 
-    # Determine which axes to use based on face orientation
-    if abs(face_normal.z) > 0.9:
-        use_axes = ('x', 'y')
-        print("Face orientation: XY plane")
-    elif abs(face_normal.y) > 0.9:
-        use_axes = ('x', 'z')
-        print("Face orientation: XZ plane")
-    else:
-        use_axes = ('y', 'z')
-        print("Face orientation: YZ plane")
-
-    # Scale factor: mm to inches (applied during edge creation to avoid
-    # transformGeometry() which converts all curves to BSpline)
-    scale_factor = 1.0 / 25.4
-
-    def get_2d_coords(point):
-        """Extract 2D coordinates based on face orientation, scaled to inches."""
-        sf = scale_factor
-        if use_axes == ('x', 'y'):
-            return FreeCAD.Vector(point.x * sf, point.y * sf, 0)
-        elif use_axes == ('x', 'z'):
-            return FreeCAD.Vector(point.x * sf, point.z * sf, 0)
-        else:  # ('y', 'z')
-            return FreeCAD.Vector(point.y * sf, point.z * sf, 0)
-
-    # Get all points for bounding box calculation
-    all_points = []
-    for edge in flat_face.OuterWire.Edges:
-        for vertex in edge.Vertexes:
-            all_points.append(get_2d_coords(vertex.Point))
-
-    min_x = min(p.x for p in all_points)
-    max_x = max(p.x for p in all_points)
-    min_y = min(p.y for p in all_points)
-    max_y = max(p.y for p in all_points)
-
-    part_width = max_x - min_x
-    part_height = max_y - min_y
-
-    print(f"\nFlat pattern dimensions:")
-    print(f"  {part_width * 25.4:.3f} mm x {part_height * 25.4:.3f} mm")
-    print(f"  ({part_width:.3f}\" x {part_height:.3f}\")")
-
-    # Create 2D edges from the flat face outline
-    print("\nCreating 2D geometry for DXF export...")
-
-    edges_2d = []
-    edge_stats = {"Line": 0, "Arc": 0, "Circle": 0, "BSpline": 0, "Other": 0, "Fallback": 0}
-
-    def process_edge(edge, label=""):
-        """Convert a 3D edge to 2D. Always produces output — falls back to
-        a straight line between vertices if curved-edge processing fails."""
-        if not hasattr(edge, 'Curve'):
-            # No curve attribute — fall back to vertex-to-vertex line
-            if len(edge.Vertexes) >= 2:
-                p1 = get_2d_coords(edge.Vertexes[0].Point)
-                p2 = get_2d_coords(edge.Vertexes[-1].Point)
-                print(f"  {label}Edge has no Curve attr, fallback to line")
-                edge_stats["Fallback"] += 1
-                edges_2d.append(Part.makeLine(p1, p2))
-            return
-
-        curve_type = edge.Curve.TypeId
-
-        if 'Line' in curve_type:
-            p1 = get_2d_coords(edge.Vertexes[0].Point)
-            p2 = get_2d_coords(edge.Vertexes[1].Point)
-            edges_2d.append(Part.makeLine(p1, p2))
-            edge_stats["Line"] += 1
-
-        elif 'Circle' in curve_type:
-            if len(edge.Vertexes) == 2:
-                # Arc
-                p1 = get_2d_coords(edge.Vertexes[0].Point)
-                p2 = get_2d_coords(edge.Vertexes[1].Point)
-                mid_param = (edge.FirstParameter + edge.LastParameter) / 2
-                mid_point = edge.valueAt(mid_param)
-                mid_2d = get_2d_coords(mid_point)
-
-                try:
-                    arc = Part.Arc(p1, mid_2d, p2)
-                    edges_2d.append(arc.toShape())
-                    edge_stats["Arc"] += 1
-                except Exception:
-                    edges_2d.append(Part.makeLine(p1, p2))
-                    edge_stats["Fallback"] += 1
-            elif len(edge.Vertexes) == 0:
-                # Full circle
-                radius = edge.Curve.Radius * scale_factor
-                center_2d = get_2d_coords(edge.Curve.Center)
-                circle = Part.makeCircle(radius, center_2d)
-                edges_2d.append(circle)
-                edge_stats["Circle"] += 1
-            else:
-                # Unexpected vertex count — discretize
-                _discretize_edge(edge, label)
-
-        elif 'BSpline' in curve_type:
-            _discretize_edge(edge, label)
-            edge_stats["BSpline"] += 1
-
-        else:
-            print(f"  {label}Unknown curve type '{curve_type}', discretizing")
-            _discretize_edge(edge, label)
-            edge_stats["Other"] += 1
-
-    def _discretize_edge(edge, label=""):
-        """Discretize an edge to polyline points. Falls back to a straight
-        line between start/end vertices if discretization fails."""
-        try:
-            points = edge.discretize(Number=20)
-            scaled_pts = [get_2d_coords(p) for p in points]
-            if len(scaled_pts) >= 2:
-                wire = Part.makePolygon(scaled_pts)
-                for e in wire.Edges:
-                    edges_2d.append(e)
-                return
-        except Exception as ex:
-            print(f"  {label}WARNING: discretize() failed: {ex}")
-
-        # Fallback: straight line between start and end vertices
-        if len(edge.Vertexes) >= 2:
-            p1 = get_2d_coords(edge.Vertexes[0].Point)
-            p2 = get_2d_coords(edge.Vertexes[-1].Point)
-            edges_2d.append(Part.makeLine(p1, p2))
-            edge_stats["Fallback"] += 1
-            print(f"  {label}Fallback: line from vertex to vertex")
-
-    # Process outer wire
-    for i, edge in enumerate(flat_face.OuterWire.Edges):
-        process_edge(edge, f"Outer[{i}] ")
-
-    # Process inner wires (holes)
-    inner_wires = [w for w in flat_face.Wires if w.hashCode() != flat_face.OuterWire.hashCode()]
-    for wi, wire in enumerate(inner_wires):
-        for ei, edge in enumerate(wire.Edges):
-            process_edge(edge, f"Hole[{wi}][{ei}] ")
-
-    print(f"Created {len(edges_2d)} 2D edges")
-    print(f"  Edge types: {', '.join(f'{k}={v}' for k, v in edge_stats.items() if v > 0)}")
-
-    if not edges_2d:
-        raise RuntimeError("No edges created for DXF export")
-
-    # Create compound from edges (already scaled to inches during creation)
-    compound = Part.makeCompound(edges_2d)
-
-    # Create object for export
-    export_obj = doc.addObject("Part::Feature", "FlatPattern2D")
-    export_obj.Shape = compound
+    # Create flat face object
+    flat_obj = doc.addObject("Part::Feature", "FlatFace")
+    flat_obj.Shape = flat_face
     doc.recompute()
 
-    # Export to DXF
+    # ===========================================
+    # Use Matrix transformation to scale mm -> inches
+    # (transformGeometry converts arcs to BSplines but preserves
+    #  correct dimensions, which is the priority)
+    # ===========================================
+    print("\nApplying 1/25.4 scale compensation...")
+
+    scale_factor = 1.0 / 25.4
+
+    # Create scaling matrix
+    matrix = FreeCAD.Matrix()
+    matrix.scale(scale_factor, scale_factor, scale_factor)
+
+    # Apply transformation to a COPY of the shape
+    scaled_shape = flat_obj.Shape.transformGeometry(matrix)
+
+    scaled_obj = doc.addObject("Part::Feature", "ScaledFlat")
+    scaled_obj.Shape = scaled_shape
+    doc.recompute()
+
+    scaled_bbox = scaled_obj.Shape.BoundBox
+    print(f"Scaled to: {scaled_bbox.XLength:.3f} x {scaled_bbox.YLength:.3f}")
+    print(f"After DXF export (x25.4): {scaled_bbox.XLength*25.4:.3f} x {scaled_bbox.YLength*25.4:.3f} mm")
+
+    # Create 2D projection from scaled geometry
+    print("\nCreating 2D projection...")
+    import Draft
+
+    face_normal = scaled_shape.Faces[0].normalAt(0, 0)
+    projection = Draft.makeShape2DView(scaled_obj, face_normal)
+    doc.recompute()
+
+    print(f"Projection created with {len(projection.Shape.Edges)} edges")
+
+    # Export
     print(f"\nExporting to: {output_dxf}")
-    importDXF.export([export_obj], output_dxf)
+    importDXF.export([projection], output_dxf)
 
     if os.path.exists(output_dxf):
         size = os.path.getsize(output_dxf)
         print(f"SUCCESS: Created {output_dxf} ({size} bytes)")
         print(f"\nDXF dimensions (inches):")
-        print(f"  {part_width:.3f}\" x {part_height:.3f}\"")
+        print(f"  {bbox.XLength/25.4:.3f}\" x {bbox.YLength/25.4:.3f}\"")
     else:
         raise RuntimeError("DXF file was not created")
 
