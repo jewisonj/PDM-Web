@@ -177,6 +177,7 @@ Routes are organized into three groups:
 | `/mrp/parts` | mrp-parts | MrpPartLookupView | Yes |
 | `/mrp/tracking` | mrp-tracking | MrpProjectTrackingView | Yes |
 | `/mrp/materials` | mrp-materials | MrpRawMaterialsView | Yes |
+| `/mrp/cost-report` | mrp-cost-report | MrpCostReportView | Yes |
 
 ### Lazy Loading
 
@@ -347,13 +348,14 @@ App.vue
     ├── TasksView.vue
     │   └── Task queue table with status badges
     │
-    └── MRP Views (6 views)
+    └── MRP Views (7 views)
         ├── MrpDashboardView.vue
         ├── MrpRoutingView.vue
         ├── MrpShopView.vue
         ├── MrpPartLookupView.vue
         ├── MrpProjectTrackingView.vue
-        └── MrpRawMaterialsView.vue
+        ├── MrpRawMaterialsView.vue
+        └── MrpCostReportView.vue
 ```
 
 ---

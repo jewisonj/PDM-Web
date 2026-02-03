@@ -247,6 +247,7 @@ Standard CRUD operations for project management.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| GET | `/api/mrp/projects/{project_id}/cost-report` | Generate comprehensive cost breakdown for a project (labor, materials, outsourced, purchased). |
 | POST | `/api/mrp/projects/{project_id}/print-packet` | Generate a combined PDF print packet for a project. |
 
 ### Health -- `/health`
@@ -276,6 +277,7 @@ The Vue 3 frontend is a single-page application with the following views, all re
 | `/mrp/parts` | MrpPartLookupView | MRP part search and lookup |
 | `/mrp/tracking` | MrpProjectTrackingView | Project progress tracking |
 | `/mrp/materials` | MrpRawMaterialsView | Raw materials inventory management |
+| `/mrp/cost-report` | MrpCostReportView | Comprehensive project cost breakdown with chart |
 
 ### Navigation Guards
 

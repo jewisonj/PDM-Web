@@ -609,6 +609,113 @@ curl "http://localhost:8000/api/nesting/jobs/<job-uuid>/sheets/1/download"
 
 ---
 
+## 14. Generating a Project Cost Report
+
+**Where:** MRP Cost Report (`/mrp/cost-report`)
+
+Generate a comprehensive cost breakdown for a manufacturing project.
+
+### Steps
+
+1. Navigate to the MRP Dashboard (`/mrp/dashboard`)
+2. Select a project from the project dropdown
+3. Click the **Cost Report** button in the navigation bar (pink dot badge)
+4. The Cost Report view loads with complete project cost analysis
+
+### Cost Report Contents
+
+**Project Info Bar:**
+- Project code, customer name, description
+- Total project cost (all labor, materials, outsourced ops, and purchased parts)
+
+**Cost Distribution Pie Chart:**
+- Visual breakdown showing:
+  - Labor operations (individual slices per workstation in blue/cyan shades)
+  - Raw materials (amber slice, aggregated by alloy)
+  - Purchased parts (purple slice)
+  - Outsourced operations (orange slice, aggregated)
+- Hover over slices to see exact dollar amounts
+- Legend shows percentage of total for each category
+
+**Summary Cards:**
+- Labor: Total labor cost across all operations
+- Material: Total raw material cost (SM, tube, bar stock)
+- Outsourced: Total cost for outsourced operations (powder coating, anodizing, etc.)
+- Purchased: Total cost for purchased components (McMaster, supplier parts)
+- Overhead: Overhead multiplier (markup percentage)
+- Total: Grand total project cost
+
+**Manufactured Items Table:**
+- Each manufactured item (non-purchased) with:
+  - Item number and name
+  - Material cost (raw material for this part)
+  - Labor cost (sum of all operations for this part)
+  - Outsourced cost (sum of outsourced operations for this part)
+  - Unit cost (material + labor + outsourced for one unit)
+  - Extended cost (unit cost × BOM quantity)
+- Click the expand arrow to show detailed operations breakdown:
+  - Operation name, workstation, time (minutes), cost per operation
+
+**Operations Summary Table:**
+- Per-workstation totals across entire project:
+  - Workstation name (Laser, Press Brake, Weld, etc.)
+  - Total time (minutes across all parts using this workstation)
+  - Total cost (labor cost for this workstation across all parts)
+  - Item count (number of unique parts using this workstation)
+
+**Purchased Parts Table:**
+- All purchased components (`mmc`, `spn` prefixed items):
+  - Item number and name
+  - Supplier name (e.g., "McMaster-Carr")
+  - Supplier part number
+  - Quantity (from BOM)
+  - Unit price
+  - Extended cost (unit price × quantity)
+
+### Printing the Cost Report
+
+1. Click the browser **Print** button (or Ctrl+P / Cmd+P)
+2. The print stylesheet automatically:
+   - Switches to white background for ink savings
+   - Hides navigation bar and unnecessary UI elements
+   - Optimizes table layouts for paper
+   - Preserves all cost data and formatting
+3. Save as PDF or print to paper for customer quotes or internal review
+
+### Via API Directly
+
+```bash
+# Get cost report data for a project
+curl "http://localhost:8001/api/mrp/projects/<project-uuid>/cost-report"
+```
+
+Response includes:
+- `project_info`: Project metadata and totals
+- `summary`: Labor, material, outsourced, purchased, overhead, total
+- `manufactured_items`: Array of items with operations and costs
+- `operations_summary`: Per-workstation aggregates
+- `purchased_parts`: Purchased items with supplier info
+- `chart_data`: Pre-formatted data for pie chart (labels, values, colors)
+
+### Use Cases
+
+- **Estimating:** Calculate total project cost before committing to a customer order
+- **Quoting:** Generate professional cost breakdown for customer proposals
+- **Budgeting:** Track estimated vs. actual costs (when integrated with time tracking)
+- **Analysis:** Identify high-cost operations or workstations for optimization opportunities
+- **Planning:** Determine material and labor resource requirements
+
+### Notes
+
+- Cost report uses current pricing from `mrp_cost_settings` (labor rates, material prices, overhead)
+- Labor costs are based on routing operation times and workstation rates
+- Material costs use per-alloy defaults unless custom prices are set
+- Purchased part prices come from `unit_price` field on items
+- Report reflects BOM quantities (extended costs = unit cost × quantity)
+- Outsourced operations are aggregated into a single category for chart simplicity
+
+---
+
 ## Quick Reference: API Endpoints for Common Tasks
 
 | Task | Method | Endpoint |
@@ -629,5 +736,6 @@ curl "http://localhost:8000/api/nesting/jobs/<job-uuid>/sheets/1/download"
 | Create nest job | POST | `/api/nesting/projects/{id}/nest` |
 | Get nest job | GET | `/api/nesting/jobs/{id}` |
 | Download nested sheet | GET | `/api/nesting/jobs/{id}/sheets/{n}/download` |
+| Get project cost report | GET | `/api/mrp/projects/{id}/cost-report` |
 | API docs | GET | `/docs` |
 | Health check | GET | `/health` |

@@ -7,9 +7,60 @@
 
 ## Current Version
 
-### v3.2 (2026-01-31) -- Per-Material Pricing and Purchased Parts Enhancement
+### v3.3 (2026-02-03) -- Project Cost Report and FreeCAD Script Improvements
 
 **Status:** Current Production Release
+
+#### New Features
+
+- **Project Cost Report** (`/mrp/cost-report`) -- Comprehensive project cost breakdown view with:
+  - Project info bar (code, customer, description, total cost)
+  - Interactive pie chart (chart.js) showing cost distribution by labor workstation, raw materials, purchased parts, and outsourced operations
+  - Summary cards for labor, materials, outsourced, purchased, overhead multiplier, and total
+  - Manufactured items table with expandable operations detail
+  - Operations summary table (per-workstation totals across all items)
+  - Purchased parts table with supplier info and pricing
+  - Print support with `@media print` CSS for browser-based printing
+  - Accessible from MRP Dashboard via "Cost Report" button (pink dot badge)
+- **DXF Flattening Simplification** -- Updated `flatten_sheetmetal.py` to use FreeCAD's built-in `unfold()` method instead of manual bend manipulation, improving robustness and maintainability.
+- **SVG Bend Drawing Improvements** -- Enhanced `bend_drawing.py` with better dimension placement, clearer bend line annotations, and improved layout.
+
+#### Backend Changes
+
+- **Migration:** None (uses existing database schema)
+- **New Endpoint:** `GET /api/mrp/projects/{project_id}/cost-report` (~255 lines) -- Aggregates cost data from items, routing operations, purchased parts, and MRP cost settings. Returns comprehensive cost breakdown with labor grouped by workstation, material costs by alloy, outsourced operations aggregated, and purchased parts list.
+
+#### Frontend Changes
+
+- **New View:** `frontend/src/views/MrpCostReportView.vue` -- Full-page cost report with chart.js pie chart, summary cards, three data tables (manufactured items, operations summary, purchased parts), and print support.
+- **Router:** Added `/mrp/cost-report` route to `frontend/src/router/index.ts`.
+- **Navigation:** Added "Cost Report" button with pink dot badge to MRP Dashboard (`MrpDashboardView.vue`). Button passes selected project as query parameter.
+- **Dependencies:** Added `chart.js` and `vue-chartjs` to `frontend/package.json`.
+
+#### Files Changed
+
+- `backend/app/routes/mrp.py` -- Added cost-report endpoint with labor, material, outsourced, and purchased parts aggregation
+- `frontend/src/views/MrpCostReportView.vue` (NEW) -- Full-page cost report view
+- `frontend/src/router/index.ts` -- Added cost-report route
+- `frontend/src/views/MrpDashboardView.vue` -- Added Cost Report nav button
+- `frontend/package.json` -- Added chart.js and vue-chartjs
+- `FreeCAD/Tools/Flatten_sheetmetal_portable.py` -- Simplified to use built-in unfold()
+- `FreeCAD/Tools/Create_bend_drawing_portable.py` -- Improved dimension placement
+
+#### Use Cases
+
+- **Project Estimating:** Review total project cost broken down by labor, materials, outsourced operations, and purchased components.
+- **Cost Analysis:** Identify which operations or workstations contribute most to project cost via visual pie chart.
+- **Quote Preparation:** Print cost report for customer quotes or internal reviews.
+- **Budget Tracking:** Compare estimated costs against actual labor/material expenditures (when integrated with time tracking).
+
+---
+
+## Previous Versions
+
+### v3.2 (2026-01-31) -- Per-Material Pricing and Purchased Parts Enhancement
+
+**Status:** Previous (superseded by v3.3)
 
 #### New Features
 
@@ -258,11 +309,24 @@ This is a complete platform rewrite. There is no in-place upgrade path from v2.0
 | v1.0 | ~2024 | Archived | No longer maintained |
 | v2.0 | 2025-01-03 | Legacy | Superseded by v3.0, documentation preserved for reference |
 | v3.0 | 2025 | Previous | Core web migration, superseded by v3.1 |
-| v3.1 | 2026-01-30 | Current | Workspace comparison, PDM-Local-Service, auto-create items |
+| v3.1 | 2026-01-30 | Previous | Workspace comparison, PDM-Local-Service, auto-create items |
+| v3.2 | 2026-01-31 | Previous | Per-material pricing, purchased parts enhancement |
+| v3.3 | 2026-02-03 | Current | Project cost report, FreeCAD script improvements |
 
 ---
 
 ## Checking Your Version
+
+**v3.3 indicators:**
+- `frontend/src/views/MrpCostReportView.vue` exists
+- `frontend/package.json` includes `chart.js` and `vue-chartjs` dependencies
+- `backend/app/routes/mrp.py` has `/projects/{project_id}/cost-report` endpoint
+- MRP Dashboard has "Cost Report" button with pink dot badge
+
+**v3.2 indicators:**
+- `mrp_cost_settings` table has `default_cs_price_per_lb`, `default_al_price_per_lb`, `default_ss_price_per_lb` columns
+- Routing view shows purchased part info section for `mmc`/`spn` items
+- Material assignment badge `[Mat]` appears in MRP part list
 
 **v3.1 indicators:**
 - `backend/app/routes/workspace.py` exists
@@ -315,6 +379,6 @@ All future releases follow this format:
 
 ---
 
-**Last Updated:** 2026-01-30
-**Current Version:** v3.1
+**Last Updated:** 2026-02-03
+**Current Version:** v3.3
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md)
