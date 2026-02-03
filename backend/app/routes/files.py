@@ -232,12 +232,18 @@ async def get_download_url(file_id: UUID):
     if not file_path:
         raise HTTPException(status_code=404, detail="File not in storage")
 
-    # Strip bucket prefix if stored in file_path (e.g. "pdm-files/hbl2310/file.prt" -> "hbl2310/file.prt")
-    storage_path = file_path.removeprefix("pdm-files/")
+    # Parse bucket name from file_path (e.g. "pdm-cad/stp01900/A/1/file.prt" -> bucket="pdm-cad", path="stp01900/A/1/file.prt")
+    parts = file_path.split("/", 1)
+    if len(parts) == 2:
+        bucket = parts[0]
+        storage_path = parts[1]
+    else:
+        bucket = "pdm-files"
+        storage_path = file_path
 
     # Create signed URL (valid for 1 hour)
     try:
-        url_result = supabase.storage.from_("pdm-files").create_signed_url(storage_path, 3600)
+        url_result = supabase.storage.from_(bucket).create_signed_url(storage_path, 3600)
         return {
             "url": url_result["signedURL"],
             "filename": file_result.data["file_name"],
@@ -265,7 +271,14 @@ async def delete_file(file_id: UUID):
     # Delete from storage if path exists
     if file_path:
         try:
-            supabase.storage.from_("pdm-files").remove([file_path])
+            parts = file_path.split("/", 1)
+            if len(parts) == 2:
+                bucket = parts[0]
+                storage_path = parts[1]
+            else:
+                bucket = "pdm-files"
+                storage_path = file_path
+            supabase.storage.from_(bucket).remove([storage_path])
         except Exception:
             pass  # Continue even if storage delete fails
 
