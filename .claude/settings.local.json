@@ -72,7 +72,8 @@
       "Bash(fc:*)",
       "mcp__pdm-supabase__get_logs",
       "Bash(pushd \"J:\\\\PDM-Web\\\\frontend\")",
-      "Bash(fly deploy:*)"
+      "Bash(fly deploy:*)",
+      "Bash(if not exist \"J:\\\\PDM-Web\\\\files\\\\temp\" mkdir \"J:\\\\PDM-Web\\\\files\\\\temp\")"
     ],
     "deny": []
   },
