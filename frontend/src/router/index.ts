@@ -88,6 +88,12 @@ const router = createRouter({
       component: () => import('../views/MrpCostSettingsView.vue'),
       meta: { requiresAuth: true }
     },
+    {
+      path: '/mrp/cost-report',
+      name: 'mrp-cost-report',
+      component: () => import('../views/MrpCostReportView.vue'),
+      meta: { requiresAuth: true }
+    },
   ]
 })
 

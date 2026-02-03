@@ -742,6 +742,11 @@ function goToCostSettings() {
   router.push('/mrp/settings')
 }
 
+function goToCostReport() {
+  const projectQuery = selectedProject.value ? `?project=${selectedProject.value.id}` : ''
+  router.push(`/mrp/cost-report${projectQuery}`)
+}
+
 // === Nesting Functions ===
 
 async function openNestModal() {
@@ -951,6 +956,10 @@ onUnmounted(() => {
         <button class="nav-btn tracking" @click="goToProjectTracking">
           <span class="nav-dot tracking"></span>
           Project Tracking
+        </button>
+        <button class="nav-btn cost-report" @click="goToCostReport">
+          <span class="nav-dot cost-report"></span>
+          Cost Report
         </button>
         <button class="refresh-btn" @click="refreshDashboard" :disabled="loading">
           <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"></i>
@@ -1550,6 +1559,7 @@ onUnmounted(() => {
 .nav-dot.lookup { background: #22d3ee; }
 .nav-dot.tracking { background: #a855f7; }
 .nav-dot.settings { background: #10b981; }
+.nav-dot.cost-report { background: #f472b6; }
 
 .refresh-btn {
   display: flex;
