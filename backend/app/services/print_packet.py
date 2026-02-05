@@ -15,7 +15,7 @@ import tempfile
 import httpx
 
 from pypdf import PdfReader, PdfWriter
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.pdfgen import canvas
 
 from .supabase import get_supabase_admin
@@ -34,6 +34,364 @@ def categorize_part(item_number: str) -> str:
         return 'reference'
     else:
         return 'manufactured'
+
+
+# ============================================================================
+# Assembly Tracking Sheet Constants and Functions
+# ============================================================================
+
+PRE_FAB_CUTOFF = 13  # sort_order <= 13 is pre-fab (through Press Brake)
+
+# Stations to group into single "FAB" column (welding operations)
+FAB_STATIONS = {"Weld Jigging", "Tig Welding", "Dual Shield Weld", "Weld Cleanup"}
+
+# Post-fab individual stations (after FAB group)
+POST_FAB_STATIONS = {"Paint and Paint Prep", "Mechanical Assembly"}
+
+# Abbreviations for workstation column headers
+STATION_ABBREV = {
+    "Receiving": "RCV",
+    "Saw": "SAW",
+    "Deburr": "DBR",
+    "Waterjet": "WJ",
+    "Press Brake": "PB",
+    "Weld Jigging": "JIG",
+    "Tig Welding": "TIG",
+    "Dual Shield Weld": "DS",
+    "Weld Cleanup": "WCU",
+    "Pipe Bending": "PIP",
+    "Hole Punch - Iron Worker": "HP",
+    "Part Staging": "STG",
+    "Mechanical Assembly": "ASM",
+    "Plumbing": "PLM",
+    "Wiring": "WIR",
+    "Inspection": "INS",
+    "Galvanizing": "GAL",
+    "Paint and Paint Prep": "PNT",
+}
+
+
+def _get_dynamic_workstation_columns(
+    children: list[dict],
+    routing_stations_by_item: dict[str, set[str]],
+    routing_sequences_by_item: dict[str, dict[str, int]],
+    all_workstations: list[dict],
+    station_id_to_name: dict[str, str],
+) -> tuple[list[dict], bool, list[dict]]:
+    """
+    Get workstation columns for tracking sheet.
+
+    Returns: (pre_fab_columns, has_fab_work, post_fab_columns)
+    - pre_fab_columns: Individual stations before TO FAB gate
+    - has_fab_work: True if any child has FAB stations (Weld Jigging, Tig, etc.)
+    - post_fab_columns: Paint and Assembly columns (if used)
+
+    Columns are sorted by the minimum routing sequence across all children.
+    """
+    # Collect all station_ids used by children AND calculate minimum sequence per station
+    used_station_ids = set()
+    station_min_sequence = {}  # station_id -> min sequence across all children
+
+    for child in children:
+        child_id = child.get("child_item_id") or child.get("item_id")
+        child_stations = routing_stations_by_item.get(child_id, set())
+        child_sequences = routing_sequences_by_item.get(child_id, {})
+        logger.info(f"    Child {child_id}: {len(child_stations)} stations")
+        used_station_ids.update(child_stations)
+
+        # Track minimum sequence for each station
+        for station_id, sequence in child_sequences.items():
+            if station_id not in station_min_sequence:
+                station_min_sequence[station_id] = sequence
+            else:
+                station_min_sequence[station_id] = min(station_min_sequence[station_id], sequence)
+
+    logger.info(f"    Total used_station_ids: {len(used_station_ids)}")
+    logger.info(f"    Station min sequences: {station_min_sequence}")
+
+    pre_fab = []
+    has_fab_work = False
+    post_fab = []
+
+    for ws in all_workstations:
+        if ws["id"] not in used_station_ids:
+            continue
+        name = ws["station_name"]
+
+        if ws["sort_order"] <= PRE_FAB_CUTOFF:
+            pre_fab.append(ws)
+        elif name in FAB_STATIONS:
+            has_fab_work = True  # Group into single FAB column
+        elif name in POST_FAB_STATIONS:
+            post_fab.append(ws)
+
+    # Sort columns by minimum routing sequence (not sort_order)
+    # Use a high default for stations without sequence data
+    pre_fab.sort(key=lambda x: station_min_sequence.get(x["id"], 9999))
+    post_fab.sort(key=lambda x: station_min_sequence.get(x["id"], 9999))
+
+    return pre_fab, has_fab_work, post_fab
+
+
+def _create_tracking_sheet(
+    assembly_item_number: str,
+    assembly_name: str,
+    children: list[dict],
+    pre_fab_columns: list[dict],
+    has_fab_work: bool,
+    post_fab_columns: list[dict],
+    routing_stations_by_item: dict[str, set[str]],
+    fab_station_ids: set[str],
+    project_code: str,
+) -> BytesIO:
+    """Create tracking sheet PDF for one assembly (landscape orientation)."""
+
+    packet = BytesIO()
+    c = canvas.Canvas(packet, pagesize=landscape(letter))
+    width, height = landscape(letter)  # 792 x 612 points
+
+    # Header
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(36, height - 50, f"Assembly Tracking: {assembly_item_number}")
+    c.setFont("Helvetica", 12)
+    c.drawString(36, height - 70, f"Project: {project_code}")
+    if assembly_name:
+        # Truncate long names
+        display_name = assembly_name[:60] + "..." if len(assembly_name) > 60 else assembly_name
+        c.drawString(36, height - 88, display_name)
+
+    # Draw table
+    _draw_tracking_table(
+        c, height - 110, children, pre_fab_columns,
+        has_fab_work, post_fab_columns, routing_stations_by_item,
+        fab_station_ids, width, height
+    )
+
+    c.save()
+    packet.seek(0)
+    return packet
+
+
+def _draw_tracking_table(
+    c: canvas.Canvas,
+    y_start: float,
+    children: list[dict],
+    pre_fab_cols: list[dict],
+    has_fab_work: bool,
+    post_fab_cols: list[dict],
+    routing_stations_by_item: dict[str, set[str]],
+    fab_station_ids: set[str],
+    page_width: float,
+    page_height: float,
+) -> None:
+    """Draw tracking table with TO FAB gate (landscape layout with full station names)."""
+
+    # Calculate dynamic column widths to fit page
+    x_start = 36
+    x_end = page_width - 36  # Right margin
+    available_width = x_end - x_start
+
+    # Fixed columns
+    col_part = 80
+    col_desc = 140
+    col_qty = 30
+    col_gate = 28  # TO FAB gate column
+    col_fab = 45   # FAB column (if present)
+
+    fixed_width = col_part + col_desc + col_qty + col_gate
+    if has_fab_work:
+        fixed_width += col_fab
+
+    # Calculate station column width based on remaining space
+    num_station_cols = len(pre_fab_cols) + len(post_fab_cols)
+    if num_station_cols > 0:
+        remaining_width = available_width - fixed_width
+        col_station = max(50, min(70, remaining_width // num_station_cols))
+    else:
+        col_station = 60
+
+    x_start = 36
+    row_height = 20
+    header_height = 28
+
+    y = y_start
+
+    # Draw header row
+    c.setFont("Helvetica-Bold", 9)
+    x = x_start
+
+    # Part # header
+    c.setFillColorRGB(0.95, 0.95, 0.95)
+    c.rect(x, y - header_height, col_part, header_height, fill=1, stroke=1)
+    c.setFillColorRGB(0, 0, 0)
+    c.drawString(x + 4, y - 18, "Part #")
+    x += col_part
+
+    # Description header
+    c.setFillColorRGB(0.95, 0.95, 0.95)
+    c.rect(x, y - header_height, col_desc, header_height, fill=1, stroke=1)
+    c.setFillColorRGB(0, 0, 0)
+    c.drawString(x + 4, y - 18, "Description")
+    x += col_desc
+
+    # Qty header
+    c.setFillColorRGB(0.95, 0.95, 0.95)
+    c.rect(x, y - header_height, col_qty, header_height, fill=1, stroke=1)
+    c.setFillColorRGB(0, 0, 0)
+    c.drawCentredString(x + col_qty / 2, y - 18, "Qty")
+    x += col_qty
+
+    # Pre-fab station headers - full names
+    for ws in pre_fab_cols:
+        c.setFillColorRGB(0.95, 0.95, 0.95)
+        c.rect(x, y - header_height, col_station, header_height, fill=1, stroke=1)
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont("Helvetica-Bold", 8)
+        # Truncate long names if needed
+        name = ws["station_name"]
+        if len(name) > 12:
+            name = name[:11] + "."
+        c.drawCentredString(x + col_station / 2, y - 18, name)
+        x += col_station
+
+    # TO FAB gate header
+    gate_x = x
+    c.setFillColorRGB(0.85, 0.85, 0.85)
+    c.rect(x, y - header_height, col_gate, header_height, fill=1, stroke=1)
+    x += col_gate
+
+    # FAB column header (if has fab work)
+    if has_fab_work:
+        c.setFillColorRGB(0.95, 0.95, 0.95)
+        c.rect(x, y - header_height, col_fab, header_height, fill=1, stroke=1)
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawCentredString(x + col_fab / 2, y - 18, "FAB")
+        x += col_fab
+
+    # Post-fab station headers - full names
+    for ws in post_fab_cols:
+        c.setFillColorRGB(0.95, 0.95, 0.95)
+        c.rect(x, y - header_height, col_station, header_height, fill=1, stroke=1)
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont("Helvetica-Bold", 8)
+        name = ws["station_name"]
+        if len(name) > 12:
+            name = name[:11] + "."
+        c.drawCentredString(x + col_station / 2, y - 18, name)
+        x += col_station
+
+    # Draw data rows
+    y = y_start - header_height
+    table_top = y
+    table_bottom = y
+
+    for child in children:
+        if y < 72:  # Pagination check
+            break
+
+        child_item = child.get("items") or child
+        child_id = child.get("child_item_id") or child_item.get("id")
+        item_number = child_item.get("item_number", "")
+        name = child_item.get("name") or child_item.get("description") or ""
+        quantity = child.get("quantity", 1)
+        child_stations = routing_stations_by_item.get(child_id, set())
+
+        x = x_start
+
+        # Part number cell
+        c.setFillColorRGB(1, 1, 1)
+        c.rect(x, y - row_height, col_part, row_height, fill=1, stroke=1)
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont("Helvetica", 9)
+        c.drawString(x + 4, y - 14, item_number[:12])
+        x += col_part
+
+        # Description cell
+        c.setFillColorRGB(1, 1, 1)
+        c.rect(x, y - row_height, col_desc, row_height, fill=1, stroke=1)
+        c.setFillColorRGB(0, 0, 0)
+        c.drawString(x + 4, y - 14, name[:22])
+        x += col_desc
+
+        # Qty cell
+        c.setFillColorRGB(1, 1, 1)
+        c.rect(x, y - row_height, col_qty, row_height, fill=1, stroke=1)
+        c.setFillColorRGB(0, 0, 0)
+        c.drawCentredString(x + col_qty / 2, y - 14, str(quantity))
+        x += col_qty
+
+        # Pre-fab station cells
+        for ws in pre_fab_cols:
+            applicable = ws["id"] in child_stations
+            if applicable:
+                c.setFillColorRGB(1, 1, 0.7)  # Yellow
+            else:
+                c.setFillColorRGB(0.85, 0.85, 0.85)  # Gray
+            c.rect(x, y - row_height, col_station, row_height, fill=1, stroke=1)
+            if applicable:
+                c.setFillColorRGB(0, 0, 0)
+                c.setFont("Helvetica", 9)
+                c.drawCentredString(x + col_station / 2, y - 14, "(  )")
+            x += col_station
+
+        # Gate column cell (gray background, line drawn later)
+        c.setFillColorRGB(0.9, 0.9, 0.9)
+        c.rect(x, y - row_height, col_gate, row_height, fill=1, stroke=1)
+        x += col_gate
+
+        # FAB column cell
+        if has_fab_work:
+            has_fab_for_child = bool(child_stations & fab_station_ids)
+            if has_fab_for_child:
+                c.setFillColorRGB(1, 1, 0.7)  # Yellow
+            else:
+                c.setFillColorRGB(0.85, 0.85, 0.85)  # Gray
+            c.rect(x, y - row_height, col_fab, row_height, fill=1, stroke=1)
+            if has_fab_for_child:
+                c.setFillColorRGB(0, 0, 0)
+                c.setFont("Helvetica", 9)
+                c.drawCentredString(x + col_fab / 2, y - 14, "(  )")
+            x += col_fab
+
+        # Post-fab station cells
+        for ws in post_fab_cols:
+            applicable = ws["id"] in child_stations
+            if applicable:
+                c.setFillColorRGB(1, 1, 0.7)  # Yellow
+            else:
+                c.setFillColorRGB(0.85, 0.85, 0.85)  # Gray
+            c.rect(x, y - row_height, col_station, row_height, fill=1, stroke=1)
+            if applicable:
+                c.setFillColorRGB(0, 0, 0)
+                c.setFont("Helvetica", 9)
+                c.drawCentredString(x + col_station / 2, y - 14, "(  )")
+            x += col_station
+
+        y -= row_height
+        table_bottom = y
+
+    # Draw TO FAB gate - vertical lines on BOTH sides of the text
+    c.saveState()
+    c.setStrokeColorRGB(0, 0, 0)
+    c.setLineWidth(2)
+
+    line_x = gate_x + col_gate / 2
+    text_y = (table_top + table_bottom) / 2
+    text_height = 35  # Approximate height of rotated text
+
+    # Draw line ABOVE the text
+    c.line(line_x, table_top + 4, line_x, text_y + text_height / 2 + 4)
+    # Draw line BELOW the text
+    c.line(line_x, text_y - text_height / 2 - 4, line_x, table_bottom)
+
+    # Rotated "TO FAB" text (centered in the gap)
+    c.translate(line_x, text_y)
+    c.rotate(90)
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColorRGB(0, 0, 0)
+    c.drawCentredString(0, -4, "TO FAB")
+    c.restoreState()
 
 
 async def generate_print_packet(project_id: str) -> dict:
@@ -254,7 +612,9 @@ async def _create_print_packet_pdf(
     parts: list,
     supabase,
 ) -> bytes:
-    """Create the combined PDF with cover sheet and stamped part PDFs."""
+    """Create the combined PDF with cover sheet, tracking sheets, and stamped part PDFs."""
+
+    print(f"=== _create_print_packet_pdf called for {project_code} with {len(parts)} parts ===")
 
     writer = PdfWriter()
 
@@ -266,15 +626,241 @@ async def _create_print_packet_pdf(
     for page in cover_reader.pages:
         writer.add_page(page)
 
-    # Process each part's PDF
+    # =========================================================================
+    # Fetch data for tracking sheets
+    # =========================================================================
+
+    item_ids = [p["item_id"] for p in parts]
+
+    # Fetch BOM children for all project items (to identify assemblies)
+    bom_result = supabase.table("bom").select(
+        "parent_item_id, child_item_id, quantity"
+    ).in_("parent_item_id", item_ids).execute()
+
+    # Get all child item IDs to fetch their details
+    child_item_ids = set()
+    for entry in bom_result.data or []:
+        child_item_ids.add(entry["child_item_id"])
+
+    # Fetch child item details
+    child_items_map = {}
+    if child_item_ids:
+        child_items_result = supabase.table("items").select(
+            "id, item_number, name, description"
+        ).in_("id", list(child_item_ids)).execute()
+        for item in child_items_result.data or []:
+            child_items_map[item["id"]] = item
+
+    # Build raw children_by_assembly lookup (includes all levels)
+    raw_children_by_assembly = {}
+    for entry in bom_result.data or []:
+        parent_id = entry["parent_item_id"]
+        child_id = entry["child_item_id"]
+        child_info = child_items_map.get(child_id, {})
+
+        child_entry = {
+            "child_item_id": child_id,
+            "quantity": entry["quantity"],
+            "items": child_info,
+        }
+
+        if parent_id not in raw_children_by_assembly:
+            raw_children_by_assembly[parent_id] = []
+        raw_children_by_assembly[parent_id].append(child_entry)
+
+    # Filter to FIRST-LEVEL children only
+    # For each assembly, remove any children that are also children of its sub-assemblies
+    children_by_assembly = {}
+    for parent_id, children in raw_children_by_assembly.items():
+        # Find which children are sub-assemblies (have their own children)
+        sub_assembly_ids = set()
+        for child in children:
+            child_id = child["child_item_id"]
+            if child_id in raw_children_by_assembly:
+                sub_assembly_ids.add(child_id)
+
+        # Collect all grandchildren (children of sub-assemblies)
+        grandchildren_ids = set()
+        for sub_asm_id in sub_assembly_ids:
+            for grandchild in raw_children_by_assembly.get(sub_asm_id, []):
+                grandchildren_ids.add(grandchild["child_item_id"])
+
+        # Filter out grandchildren - keep only first-level children
+        first_level_children = []
+        for child in children:
+            if child["child_item_id"] not in grandchildren_ids:
+                first_level_children.append(child)
+
+        children_by_assembly[parent_id] = first_level_children
+
+    print(f"=== Found {len(children_by_assembly)} assemblies with first-level BOM children ===")
+    logger.info(f"Found {len(children_by_assembly)} assemblies with first-level BOM children")
+
+    # =========================================================================
+    # Reorder parts hierarchically: top assembly -> sub-assemblies -> their parts
+    # =========================================================================
+    def get_hierarchical_order(parts_list, children_by_asm):
+        """Reorder parts to follow BOM hierarchy (depth-first)."""
+        # Build lookup by item_id
+        parts_by_id = {p["item_id"]: p for p in parts_list}
+
+        # Find which items are children of other items in the project
+        child_ids = set()
+        for parent_id, children in children_by_asm.items():
+            for child in children:
+                child_ids.add(child["child_item_id"])
+
+        # Top-level assemblies are those that have children but aren't children themselves
+        top_level_ids = []
+        for part in parts_list:
+            pid = part["item_id"]
+            if pid in children_by_asm and pid not in child_ids:
+                top_level_ids.append(pid)
+
+        # If no clear top-level, fall back to assemblies first
+        if not top_level_ids:
+            top_level_ids = [p["item_id"] for p in parts_list if p["item_id"] in children_by_asm]
+
+        # Build ordered list using depth-first traversal
+        ordered = []
+        visited = set()
+
+        def visit(item_id):
+            if item_id in visited:
+                return
+            visited.add(item_id)
+
+            if item_id in parts_by_id:
+                ordered.append(parts_by_id[item_id])
+
+            # Visit children (sub-assemblies first, then parts)
+            if item_id in children_by_asm:
+                children = children_by_asm[item_id]
+                # Sort: sub-assemblies first, then by item_number
+                sub_asms = [c for c in children if c["child_item_id"] in children_by_asm]
+                parts = [c for c in children if c["child_item_id"] not in children_by_asm]
+
+                for child in sub_asms:
+                    visit(child["child_item_id"])
+                for child in parts:
+                    visit(child["child_item_id"])
+
+        # Start with top-level assemblies
+        for top_id in top_level_ids:
+            visit(top_id)
+
+        # Add any remaining parts not in the hierarchy
+        for part in parts_list:
+            if part["item_id"] not in visited:
+                ordered.append(part)
+                visited.add(part["item_id"])
+
+        return ordered
+
+    parts = get_hierarchical_order(parts, children_by_assembly)
+    print(f"=== Reordered {len(parts)} parts hierarchically ===")
+
+    # Fetch all workstations with sort_order (explicitly sort to ensure order)
+    ws_all_result = supabase.table("workstations").select(
+        "id, station_code, station_name, sort_order"
+    ).order("sort_order").execute()
+    all_workstations = sorted(ws_all_result.data or [], key=lambda x: x.get("sort_order", 0))
+
+    # Build station_id to station_name lookup
+    station_id_to_name = {ws["id"]: ws["station_name"] for ws in all_workstations}
+
+    # Build set of FAB station IDs (for grouped FAB column)
+    fab_station_ids = set()
+    for ws in all_workstations:
+        if ws["station_name"] in FAB_STATIONS:
+            fab_station_ids.add(ws["id"])
+
+    # Fetch routing with station_id AND sequence for all items (including BOM children)
+    all_item_ids = list(set(item_ids) | child_item_ids)
+    routing_result = supabase.table("routing").select(
+        "item_id, station_id, sequence"
+    ).in_("item_id", all_item_ids).execute()
+
+    # Build routing_stations_by_item lookup (item_id -> set of station_ids)
+    # Build routing_sequences_by_item lookup (item_id -> {station_id: sequence})
+    routing_stations_by_item = {}
+    routing_sequences_by_item = {}
+    for row in routing_result.data or []:
+        item_id = row["item_id"]
+        station_id = row["station_id"]
+        sequence = row.get("sequence", 0)
+
+        if item_id not in routing_stations_by_item:
+            routing_stations_by_item[item_id] = set()
+        routing_stations_by_item[item_id].add(station_id)
+
+        if item_id not in routing_sequences_by_item:
+            routing_sequences_by_item[item_id] = {}
+        routing_sequences_by_item[item_id][station_id] = sequence
+
+    logger.info(f"Built routing lookup for {len(routing_stations_by_item)} items")
+
+    # =========================================================================
+    # Process parts and insert tracking sheets
+    # =========================================================================
+
     parts_processed = 0
     parts_skipped = 0
+    tracking_sheets_added = 0
 
     for part in parts:
         if part["category"] in ("mcmaster", "supplier"):
             logger.debug(f"Skipping {part['item_number']} - {part['category']} part")
             continue  # Skip supplier parts - no drawings
 
+        item_id = part["item_id"]
+
+        # =====================================================================
+        # Insert tracking sheet if this is an assembly with BOM children
+        # =====================================================================
+        logger.info(f"Checking if {part['item_number']} (id={item_id}) is an assembly...")
+        logger.info(f"children_by_assembly has {len(children_by_assembly)} assemblies")
+
+        if item_id in children_by_assembly:
+            children = children_by_assembly[item_id]
+            child_numbers = [c.get("items", {}).get("item_number", "?") for c in children]
+            print(f"=== Assembly {part['item_number']} has {len(children)} BOM children: {child_numbers[:10]} ===")
+            logger.info(f"Assembly {part['item_number']} has {len(children)} BOM children")
+
+            # Get dynamic workstation columns for this assembly's children
+            pre_fab_cols, has_fab_work, post_fab_cols = _get_dynamic_workstation_columns(
+                children, routing_stations_by_item, routing_sequences_by_item,
+                all_workstations, station_id_to_name
+            )
+            logger.info(f"  -> pre_fab: {len(pre_fab_cols)}, has_fab_work: {has_fab_work}, post_fab: {len(post_fab_cols)}")
+
+            # Only create tracking sheet if there are workstation columns to show
+            print(f"=== Checking columns: pre_fab={len(pre_fab_cols)}, has_fab={has_fab_work}, post_fab={len(post_fab_cols)} ===")
+            if pre_fab_cols or has_fab_work or post_fab_cols:
+                print(f"=== CREATING tracking sheet for {part['item_number']} ===")
+                logger.info(f"Creating tracking sheet for assembly {part['item_number']} with {len(children)} children")
+
+                tracking_pdf = _create_tracking_sheet(
+                    assembly_item_number=part["item_number"],
+                    assembly_name=part.get("name") or part.get("description") or "",
+                    children=children,
+                    pre_fab_columns=pre_fab_cols,
+                    has_fab_work=has_fab_work,
+                    post_fab_columns=post_fab_cols,
+                    routing_stations_by_item=routing_stations_by_item,
+                    fab_station_ids=fab_station_ids,
+                    project_code=project_code,
+                )
+                tracking_reader = PdfReader(tracking_pdf)
+                for page in tracking_reader.pages:
+                    writer.add_page(page)
+                tracking_sheets_added += 1
+            else:
+                logger.debug(f"Skipping tracking sheet for {part['item_number']} - no workstation columns")
+
+        # =====================================================================
+        # Add part's PDF with stamp overlay
+        # =====================================================================
         pdf_path = part.get("pdf_path")
         if not pdf_path:
             logger.warning(f"No PDF path for {part['item_number']}")
@@ -344,7 +930,7 @@ async def _create_print_packet_pdf(
             parts_skipped += 1
             continue
 
-    logger.info(f"Print packet: processed {parts_processed} parts, skipped {parts_skipped}")
+    logger.info(f"Print packet: processed {parts_processed} parts, skipped {parts_skipped}, added {tracking_sheets_added} tracking sheets")
 
     # Write to bytes
     output = BytesIO()

@@ -716,6 +716,209 @@ Response includes:
 
 ---
 
+## 15. Project Scheduling and Capacity Planning
+
+**Where:** MRP Project Tracking (`/mrp/tracking`)
+
+The scheduling system calculates realistic shop floor schedules by considering BOM dependencies, per-station capacity limits, and operation sequencing. This enables accurate project timeline estimates and workload planning.
+
+### How the Scheduling Algorithm Works
+
+The scheduler operates in four phases:
+
+#### Phase 1: Build Dependency Graph
+
+The system analyzes the BOM structure to understand part relationships:
+
+1. **Identify Assemblies:** Parts with children in the BOM are marked as assemblies
+2. **Calculate BOM Depth:** Leaf parts have depth 0, sub-assemblies have depth 1, top-level assemblies have depth 2+
+3. **Map All Descendants:** For each assembly, recursively collect all child parts and sub-assemblies
+
+This dependency graph ensures that assemblies cannot start until all their child parts are completed.
+
+#### Phase 2: Create Scheduled Tasks
+
+For each part, the scheduler creates individual tasks for each routing operation:
+
+1. **Load Routing:** Fetch all operations for each part (sequence, station, estimated time)
+2. **Add Predecessors:** Each task gets two types of dependencies:
+   - **Sequential:** Previous operation in the same part's routing must finish first
+   - **Assembly:** For assembly first operations, all descendant parts' LAST operations must finish first
+3. **Check Completion:** Mark tasks as complete if they exist in the `part_completion` table
+4. **Calculate Duration:** Task duration = operation time × part quantity
+
+Example: If `wma20120` (assembly) has child parts `wmp20080` and `wmp20090`, the first operation of `wma20120` cannot start until the last operations of both `wmp20080` and `wmp20090` are complete.
+
+#### Phase 3: Priority Scoring
+
+Tasks are prioritized to optimize schedule efficiency:
+
+1. **Completed tasks first** (+10,000 points): Lock completed work in place
+2. **Leaf parts before assemblies** (+100 × (10 - bom_depth)): Schedule foundational parts early
+3. **Smaller assemblies first** (+50 - descendant_count): Prioritize simpler assemblies
+4. **Earlier routing sequence** (+1000 - sequence): Respect operation order
+5. **Thickness grouping** (tie-breaker): Group similar thicknesses for efficient station setup
+
+#### Phase 4: Capacity-Constrained Scheduling
+
+The scheduler allocates tasks to days while respecting station capacity limits:
+
+1. **Check Predecessors:** Only schedule tasks whose dependencies are complete
+2. **Find Earliest Start:** Based on predecessor end times
+3. **Check Station Capacity:** Ensure the station has available time on the target day
+4. **Split Across Days:** If a task exceeds daily capacity, split it across multiple days
+5. **Track Utilization:** Update station day slots with used time
+
+### Station Capacity Configuration
+
+Station capacities are hardcoded in the `STATION_CAPACITIES` constant in `frontend/src/utils/scheduling.ts` (lines 108-119):
+
+```typescript
+const STATION_CAPACITIES: Record<string, StationCapacityConfig> = {
+  '012': { daily_minutes: 12 * 60, max_parallel: 1 },  // Waterjet - runs overnight, 1 machine
+  '013': { daily_minutes: 8 * 60, max_parallel: 1 },   // Press Brake - 1 machine
+  '010': { daily_minutes: 8 * 60, max_parallel: 1 },   // Saw - 1 machine
+  '014': { daily_minutes: 8 * 60, max_parallel: 3 },   // Weld Jigging/Pre-assembly - 3 stations
+  '025': { daily_minutes: 8 * 60, max_parallel: 3 },   // Mech Assembly - 3 stations
+}
+```
+
+**Default Capacity** (for stations not listed above):
+- Daily minutes: 1440 (24 hours)
+- Max parallel: 3 workers (shared pool)
+
+**Key Constraints:**
+
+| Station Code | Station Name | Daily Hours | Parallel Capacity | Notes |
+|--------------|--------------|-------------|-------------------|-------|
+| 012 | Waterjet | 12 | 1 machine | Can run overnight shifts |
+| 013 | Press Brake | 8 | 1 machine | Single-shift operation |
+| 010 | Saw | 8 | 1 machine | Single-shift operation |
+| 014 | Weld Jigging | 8 | 3 stations | Multiple welding bays |
+| 025 | Mech Assembly | 8 | 3 stations | Multiple assembly tables |
+| Others | (Default) | 24 | 3 workers | Shared labor pool across low-volume stations |
+
+**Parallel Capacity:** The `max_parallel` setting models multiple machines or workers operating simultaneously. For example:
+- Press Brake with `max_parallel: 1` can process 480 minutes (8 hours) per day
+- Weld Jigging with `max_parallel: 3` can process 1440 minutes (8 hours × 3 bays) per day
+
+### Modifying Station Capacities
+
+To add or update station capacities:
+
+1. Open `frontend/src/utils/scheduling.ts`
+2. Locate the `STATION_CAPACITIES` constant (line 108)
+3. Add or modify entries using this format:
+
+```typescript
+'<station_code>': { daily_minutes: <hours> * 60, max_parallel: <count> },
+```
+
+**Example:** Add a new laser cutter station (code `015`) running 10 hours/day with 2 machines:
+
+```typescript
+const STATION_CAPACITIES: Record<string, StationCapacityConfig> = {
+  '012': { daily_minutes: 12 * 60, max_parallel: 1 },
+  '013': { daily_minutes: 8 * 60, max_parallel: 1 },
+  '010': { daily_minutes: 8 * 60, max_parallel: 1 },
+  '014': { daily_minutes: 8 * 60, max_parallel: 3 },
+  '025': { daily_minutes: 8 * 60, max_parallel: 3 },
+  '015': { daily_minutes: 10 * 60, max_parallel: 2 },  // NEW: Laser - 10 hrs, 2 machines
+}
+```
+
+4. Rebuild the frontend: `npm run build` (for production) or the dev server will hot-reload
+5. Schedule recalculation happens automatically when a project is loaded
+
+**IMPORTANT:** Station codes must match the `station_code` field in the `workstations` table. Use the exact code from your routing operations.
+
+### Real-Time Updates with Live Completion Tracking
+
+The Project Tracking view subscribes to `part_completion` table changes in real-time:
+
+1. **Initial Load:** When a project is selected, the schedule is calculated using current completion data
+2. **Subscription:** The view subscribes to Supabase Realtime changes on the `part_completion` table filtered by project ID
+3. **Automatic Refresh:** When a shop worker marks an operation complete (via the MRP Part Lookup view):
+   - The `part_completion` record is inserted
+   - The Realtime subscription triggers in Project Tracking
+   - `refreshSchedule()` is called automatically
+   - The schedule is recalculated with the new completion status
+   - Gantt bars update to reflect completed work and new start dates for dependent tasks
+
+**Technical Implementation:**
+
+```typescript
+// Subscribe to completion changes (MrpProjectTrackingView.vue, line 319)
+completionChannel.value = supabase
+  .channel(`completion-${currentProject.value.id}`)
+  .on('postgres_changes', {
+    event: '*',
+    schema: 'public',
+    table: 'part_completion',
+    filter: `project_id=eq.${currentProject.value.id}`
+  }, () => {
+    refreshSchedule()  // Recalculate schedule with new completion data
+  })
+  .subscribe()
+```
+
+**Benefits:**
+- Project managers see live progress updates without manual refresh
+- Schedule automatically adjusts when bottlenecks are cleared
+- Dependent tasks update to show new available start dates
+- Accurate "days remaining" calculation based on current status
+
+### Using the Schedule in the UI
+
+**Project Info Display:**
+- **Scheduled Days:** Total project duration in working days (includes weekends in count)
+- **Start Date:** Calculated by subtracting scheduled days from due date
+- **Due Date:** User-provided project deadline
+
+**Gantt Chart:**
+- Each part displays as a horizontal bar spanning its scheduled operations
+- Bar position is based on the first task's `start_day` and last task's `end_day`
+- Bar color indicates status:
+  - Gray: Not started (no completed operations)
+  - Blue/Green gradient: In progress (partial completion shown as percentage)
+  - Green: Complete (all operations finished)
+- Hover over bars to see time details: "Qty × Total Minutes"
+
+**Overall Progress Bar:**
+- Shows part count breakdown: Complete / In Progress / Not Started
+- Automatically updates when completion data changes
+
+### Scheduling Limitations and Future Improvements
+
+**Current Limitations:**
+1. Station capacities are hardcoded (not configurable via UI)
+2. Schedule assumes operations can be split across days (no "atomic operation" constraint)
+3. No resource contention modeling (assumes infinite material availability)
+4. Weekends are shown in the Gantt but not excluded from capacity calculations
+5. No holiday calendar support
+
+**Future Enhancements:**
+1. Move station capacities to database (`workstations` table with `daily_capacity` and `parallel_capacity` columns)
+2. Add UI for editing station capacities in the MRP Settings view
+3. Implement "non-splittable" operation flag for tasks that must complete in one day
+4. Add material lead time and availability tracking
+5. Exclude weekends/holidays from capacity allocation
+6. Support shift-based scheduling (first shift, second shift, overnight)
+7. Add "what-if" scenario comparison (schedule with/without expediting)
+
+### Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| Schedule shows 0 days | No routing operations defined | Add routing to parts via MRP Dashboard |
+| Assembly starts before parts | Circular BOM reference | Check BOM structure for loops (part is its own ancestor) |
+| Bars overlap | Missing predecessor relationships | Verify routing sequence numbers are correct |
+| Waterjet shows 24 hrs/day | Station code mismatch | Ensure routing uses code `012` (not `12` or `Waterjet`) |
+| Schedule not updating | Supabase Realtime not connected | Check browser console for subscription errors |
+| Gantt bars off-screen | Due date too far in future | Adjust `days` computed property buffer (line 106) |
+
+---
+
 ## Quick Reference: API Endpoints for Common Tasks
 
 | Task | Method | Endpoint |

@@ -7,9 +7,81 @@
 
 ## Current Version
 
-### v3.3 (2026-02-03) -- Project Cost Report and FreeCAD Script Improvements
+### v3.4 (2026-02-05) -- Project Scheduling and Capacity Planning
 
 **Status:** Current Production Release
+
+#### New Features
+
+- **Capacity-Constrained Project Scheduling** -- MRP Project Tracking view now calculates realistic shop floor schedules with:
+  - BOM-based dependency analysis (assemblies wait for all child parts)
+  - Per-station capacity limits (waterjet 12 hrs/day, press brake/saw 8 hrs/day, weld/assembly 3 parallel stations)
+  - Priority scoring (leaf parts before assemblies, smaller assemblies first, thickness grouping)
+  - Task splitting across days when capacity exceeded
+  - Real-time schedule recalculation when operations marked complete
+- **Live Completion Tracking** -- Project Tracking view subscribes to `part_completion` table changes via Supabase Realtime:
+  - Automatic schedule refresh when shop workers mark operations complete
+  - Gantt bars update to reflect new start dates for dependent tasks
+  - Accurate "days remaining" calculation based on current status
+- **Enhanced Gantt Visualization** -- Gantt bars now positioned using scheduled start/end days instead of simple time estimates:
+  - In-progress bars show completion percentage as gradient (green → blue)
+  - Bar hover shows quantity × total minutes for each part
+  - Weekend highlighting for visual reference
+
+#### Architecture
+
+- **New Module:** `frontend/src/utils/scheduling.ts` (~565 lines) -- Complete scheduling algorithm with four phases:
+  1. **Build Dependency Graph:** Analyze BOM structure, identify assemblies, calculate BOM depth, map all descendants
+  2. **Create Scheduled Tasks:** Convert routing operations to tasks with predecessor relationships (sequential + assembly dependencies)
+  3. **Priority Scoring:** Score tasks based on completion status, BOM depth, assembly size, routing sequence, and thickness
+  4. **Capacity-Constrained Scheduling:** Allocate tasks to days respecting station capacity, split large tasks across days, track utilization per station per day
+- **Station Capacity Configuration:** Hardcoded in `STATION_CAPACITIES` constant (lines 108-119) with per-station daily minutes and parallel capacity
+- **Interfaces:** `ScheduledTask`, `PartSchedule`, `StationDaySlot`, `ScheduleResult` for type-safe scheduling data
+
+#### Frontend Changes
+
+- **Modified View:** `frontend/src/views/MrpProjectTrackingView.vue` -- Integrated scheduling into project load:
+  - Store raw parts/BOM/routing data for re-scheduling
+  - Call `calculateSchedule()` on project load with completion data
+  - Subscribe to `part_completion` changes via Supabase Realtime channel
+  - Trigger `refreshSchedule()` on completion events
+  - Update Gantt bar positioning to use scheduled start/end days
+  - Show "Scheduled Days" in project info display
+- **Station Capacity Limits:** Configurable per-station (waterjet, press brake, saw, weld jigging, mech assembly) with fallback to shared worker pool (24 hrs/day, 3 workers) for low-volume stations
+
+#### Documentation
+
+- **New Section:** `Documentation/20-COMMON-WORKFLOWS.md` -- Section 15: "Project Scheduling and Capacity Planning" (~210 lines) with:
+  - Algorithm overview (four phases explained in detail)
+  - Station capacity configuration table and modification guide
+  - Real-time updates technical implementation
+  - UI usage guide (project info, Gantt bars, progress bar)
+  - Limitations and future improvements
+  - Troubleshooting table
+
+#### Use Cases
+
+- **Project Timeline Estimation:** Calculate realistic completion dates based on shop floor capacity constraints
+- **Workload Planning:** Visualize per-station utilization to identify bottlenecks
+- **Progress Tracking:** See live updates as shop workers complete operations
+- **Dependency Management:** Ensure assemblies don't start until all child parts are ready
+- **Resource Allocation:** Understand how many parallel stations or shifts are needed to meet deadlines
+
+#### Technical Notes
+
+- Schedule recalculates entirely on each update (no incremental patching) to ensure correctness
+- Circular BOM references are protected via parent chain tracking in descendant recursion
+- Tasks can split across multiple days if operation time exceeds daily capacity
+- Completed tasks receive highest priority (+10,000 points) to lock their positions early
+- Weekend days are included in day count but not excluded from capacity allocation (limitation to address in future)
+
+---
+
+## Previous Versions
+
+### v3.3 (2026-02-03) -- Project Cost Report and FreeCAD Script Improvements
+
+**Status:** Previous (superseded by v3.4)
 
 #### New Features
 

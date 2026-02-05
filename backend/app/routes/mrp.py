@@ -478,8 +478,11 @@ async def create_print_packet(project_id: UUID):
 
     Returns the download URL, storage path, and generation timestamp.
     """
+    print(f"=== create_print_packet endpoint called for project_id={project_id} ===")
     try:
         result = await generate_print_packet(str(project_id))
+        print(f"=== print packet generated successfully ===")
+        print(f"=== result: {result} ===")
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

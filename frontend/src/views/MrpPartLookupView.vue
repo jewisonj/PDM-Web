@@ -362,6 +362,14 @@ function goToDashboard() {
   router.push('/mrp/dashboard')
 }
 
+function goToShop() {
+  router.push('/mrp/shop')
+}
+
+function goToPrintLookup() {
+  router.push('/mrp/print-lookup')
+}
+
 // Watch for project changes
 watch(selectedProjectCode, () => {
   currentPart.value = null
@@ -404,8 +412,30 @@ onMounted(async () => {
 
     <!-- Landing View -->
     <div v-if="!currentPart" class="landing">
-      <a class="back-link" @click="goToDashboard">&larr; Back to Dashboard</a>
-      <h1>Part Lookup</h1>
+      <header class="terminal-header">
+        <button class="back-btn" @click="goToDashboard">
+          <i class="pi pi-arrow-left"></i>
+          Dashboard
+        </button>
+        <div class="header-info">
+          <h1>Part Lookup</h1>
+          <p>Search parts and log time</p>
+        </div>
+        <div class="header-actions">
+          <button class="nav-btn shop" @click="goToShop">
+            <span class="nav-dot shop"></span>
+            Shop Terminal
+          </button>
+          <button class="nav-btn lookup active">
+            <span class="nav-dot lookup"></span>
+            Part Lookup
+          </button>
+          <button class="nav-btn print" @click="goToPrintLookup">
+            <span class="nav-dot print"></span>
+            Print Lookup
+          </button>
+        </div>
+      </header>
 
       <select v-model="selectedProjectCode" class="project-select-large">
         <option value="">-- Select Project --</option>
@@ -531,30 +561,114 @@ onMounted(async () => {
   color: #e5e7eb;
 }
 
+/* Terminal Header */
+.terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  width: 100%;
+}
+
+.terminal-header h1 {
+  font-size: 1.5rem;
+  margin: 0;
+  color: #fff;
+}
+
+.header-info {
+  flex: 1;
+}
+
+.header-info h1 {
+  margin: 0;
+}
+
+.header-info p {
+  margin: 0.25rem 0 0 0;
+  color: #9ca3af;
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #374151;
+  border: none;
+  color: #e5e7eb;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.back-btn:hover {
+  background: #4b5563;
+}
+
+/* Navigation Buttons */
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #374151;
+  border: none;
+  color: white;
+  padding: 0.6rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.nav-btn:hover {
+  background: #4b5563;
+}
+
+.nav-btn.active {
+  background: #1e3a5f;
+  border: 1px solid #38bdf8;
+}
+
+.nav-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nav-dot.shop { background: #eab308; }
+.nav-dot.lookup { background: #22d3ee; }
+.nav-dot.print { background: #f472b6; }
+
 /* Landing Page */
 .landing {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 20px;
 }
 
-.landing h1 {
-  font-size: 28px;
-  margin-bottom: 24px;
+.landing > select,
+.landing > input,
+.landing > .parts-grid,
+.landing > .loading-state,
+.landing > .empty-state {
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
-.back-link {
-  color: #9ca3af;
-  text-decoration: none;
-  margin-bottom: 20px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.back-link:hover {
-  color: #e5e7eb;
+.landing > select:first-of-type {
+  margin-top: 40px;
 }
 
 .project-select-large {

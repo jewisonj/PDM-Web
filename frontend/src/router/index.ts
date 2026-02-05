@@ -94,6 +94,12 @@ const router = createRouter({
       component: () => import('../views/MrpCostReportView.vue'),
       meta: { requiresAuth: true }
     },
+    {
+      path: '/mrp/print-lookup',
+      name: 'mrp-print-lookup',
+      component: () => import('../views/MrpPrintLookupView.vue'),
+      meta: { requiresAuth: true }
+    },
   ]
 })
 

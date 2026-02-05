@@ -293,6 +293,14 @@ function goHome() {
   router.push('/')
 }
 
+function goToPartLookup() {
+  router.push('/mrp/parts')
+}
+
+function goToPrintLookup() {
+  router.push('/mrp/print-lookup')
+}
+
 // PDF Panel functions
 const pdfDisplayUrl = ref<string | null>(null)
 const loadingPdf = ref(false)
@@ -378,8 +386,24 @@ onMounted(() => {
           <i class="pi pi-arrow-left"></i>
           Home
         </button>
-        <h1>Shop Terminal</h1>
-        <p>Select your workstation</p>
+        <div class="header-info">
+          <h1>Shop Terminal</h1>
+          <p>Select your workstation</p>
+        </div>
+        <div class="header-actions">
+          <button class="nav-btn shop active">
+            <span class="nav-dot shop"></span>
+            Shop Terminal
+          </button>
+          <button class="nav-btn lookup" @click="goToPartLookup">
+            <span class="nav-dot lookup"></span>
+            Part Lookup
+          </button>
+          <button class="nav-btn print" @click="goToPrintLookup">
+            <span class="nav-dot print"></span>
+            Print Lookup
+          </button>
+        </div>
       </header>
 
       <div v-if="loading" class="loading">
@@ -771,6 +795,49 @@ onMounted(() => {
 .back-btn:hover {
   background: #4b5563;
 }
+
+.header-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* Navigation Buttons */
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #374151;
+  border: none;
+  color: white;
+  padding: 0.6rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.nav-btn:hover {
+  background: #4b5563;
+}
+
+.nav-btn.active {
+  background: #1e3a5f;
+  border: 1px solid #38bdf8;
+}
+
+.nav-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nav-dot.shop { background: #eab308; }
+.nav-dot.lookup { background: #22d3ee; }
+.nav-dot.print { background: #f472b6; }
 
 .loading {
   display: flex;

@@ -17,6 +17,7 @@ interface ProjectPart {
   has_routing: boolean
   is_manual: boolean
   est_time_min: number
+  routing_count: number
 }
 
 interface ProjectAssembly {
@@ -58,6 +59,7 @@ const addingPart = ref(false)
 const generatingPacket = ref(false)
 const packetSuccess = ref('')
 const packetUrl = ref<string | null>(null)
+const completionData = ref<{item_id: string, station_id: string}[]>([])
 
 // Nesting state
 const showNestModal = ref(false)
@@ -110,6 +112,42 @@ const totalParts = computed(() => projectParts.value.length)
 const totalHours = computed(() => {
   const totalMinutes = projectParts.value.reduce((sum, p) => sum + (p.quantity * p.est_time_min), 0)
   return Math.round(totalMinutes / 60 * 10) / 10
+})
+
+const remainingHours = computed(() => {
+  // Build a map of completed stations per item
+  const completedByItem = new Map<string, Set<string>>()
+  for (const c of completionData.value) {
+    if (!completedByItem.has(c.item_id)) {
+      completedByItem.set(c.item_id, new Set())
+    }
+    completedByItem.get(c.item_id)!.add(c.station_id)
+  }
+
+  // Debug logging
+  console.log('Completion data count:', completionData.value.length)
+  console.log('Items with completion:', completedByItem.size)
+  if (completionData.value.length > 0) {
+    console.log('Sample completion records:', completionData.value.slice(0, 3))
+  }
+
+  // Sum time for parts that are NOT complete
+  let remainingMinutes = 0
+  let completeParts = 0
+  for (const part of projectParts.value) {
+    const completedStations = completedByItem.get(part.item_id)?.size || 0
+    // A part is complete if it has routing and all stations are done
+    const isComplete = part.has_routing && completedStations >= (part.routing_count || 1)
+    if (isComplete) {
+      completeParts++
+      console.log(`Part ${part.item_number} is COMPLETE (${completedStations}/${part.routing_count} stations)`)
+    } else if (completedStations > 0) {
+      // Part has some completion but not all stations
+      console.log(`Part ${part.item_number}: ${completedStations}/${part.routing_count} stations done (not complete)`)
+    }
+  }
+  console.log(`Complete parts: ${completeParts}/${projectParts.value.length}, Remaining minutes: ${remainingMinutes}`)
+  return Math.round(remainingMinutes / 60 * 10) / 10
 })
 
 async function loadProjects() {
@@ -178,6 +216,14 @@ async function loadProjectParts(projectId: string) {
 
     if (queryError) throw queryError
 
+    // Load completion data for this project
+    const { data: compData } = await supabase
+      .from('part_completion')
+      .select('item_id, station_id')
+      .eq('project_id', projectId)
+
+    completionData.value = compData || []
+
     // Get routing info for each part
     const partsWithRouting = await Promise.all((data || []).map(async (pp: any) => {
       // Fetch routing steps for this item (to check existence + sum est_time_min)
@@ -204,7 +250,8 @@ async function loadProjectParts(projectId: string) {
         is_assembly: (bomCount || 0) > 0,
         has_routing: routingSteps.length > 0,
         is_manual: pp.is_manual || false,
-        est_time_min: estTimeMin
+        est_time_min: estTimeMin,
+        routing_count: routingSteps.length
       }
     }))
 
@@ -224,6 +271,7 @@ async function selectProject(project: MrpProject) {
   packetUrl.value = null  // Clear packet URL when switching projects
   packetSuccess.value = ''
   projectCost.value = null
+  completionData.value = []  // Clear completion data when switching projects
 
   // Load parts, assemblies, cost estimate, and check for existing print packet in parallel
   await Promise.all([
@@ -1076,6 +1124,10 @@ onUnmounted(() => {
                 <div class="stat-value">{{ totalHours }}h</div>
                 <div class="stat-label">Est. Hours</div>
               </div>
+              <div class="stat-box remaining-stat">
+                <div class="stat-value">{{ remainingHours }}h</div>
+                <div class="stat-label">Remaining</div>
+              </div>
               <div class="stat-box cost-stat" v-if="projectCost">
                 <div class="stat-value">${{ Math.round(projectCost.total).toLocaleString() }}</div>
                 <div class="stat-label">Est. Cost</div>
@@ -1926,6 +1978,10 @@ onUnmounted(() => {
 
 .cost-stat .stat-value {
   color: #10b981;
+}
+
+.remaining-stat .stat-value {
+  color: #f59e0b;
 }
 
 /* Cost Breakdown */

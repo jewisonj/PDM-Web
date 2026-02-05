@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../services/supabase'
+import {
+  calculateSchedule,
+  type ScheduleResult,
+  type PartData,
+  type BomData,
+  type RoutingData,
+  type CompletionData
+} from '../utils/scheduling'
 
 interface Project {
   id: string
@@ -44,6 +52,47 @@ const currentProject = ref<Project | null>(null)
 const parts = ref<Part[]>([])
 const completion = ref<any[]>([])
 
+// Scheduling state
+const schedule = ref<ScheduleResult | null>(null)
+const completionChannel = ref<any>(null)
+
+// Raw data for re-scheduling
+const rawPartsData = ref<PartData[]>([])
+const rawBomData = ref<BomData[]>([])
+const rawRoutingData = ref<RoutingData[]>([])
+
+// Helper: Check if a date is a weekend (Saturday=6, Sunday=0)
+function isWeekend(date: Date): boolean {
+  const day = date.getDay()
+  return day === 0 || day === 6
+}
+
+// Helper: Add working days to a date (skipping weekends)
+function addWorkingDays(date: Date, numDays: number): Date {
+  const result = new Date(date)
+  let remaining = numDays
+  while (remaining > 0) {
+    result.setDate(result.getDate() + 1)
+    if (!isWeekend(result)) {
+      remaining--
+    }
+  }
+  return result
+}
+
+// Helper: Subtract working days from a date (skipping weekends)
+function subtractWorkingDays(date: Date, numDays: number): Date {
+  const result = new Date(date)
+  let remaining = numDays
+  while (remaining > 0) {
+    result.setDate(result.getDate() - 1)
+    if (!isWeekend(result)) {
+      remaining--
+    }
+  }
+  return result
+}
+
 // Computed
 const hierarchy = computed(() => buildHierarchy())
 
@@ -55,12 +104,14 @@ const projectInfo = computed(() => {
     return sum + (routingTime * p.quantity)
   }, 0)
 
-  const workDays = Math.ceil(totalMinutes / 480)
+  // Use schedule-based days if available, otherwise fall back to simple calculation
+  const scheduledDays = schedule.value?.total_days || Math.ceil(totalMinutes / 480)
   let startDate = '-'
   if (currentProject.value.due_date) {
     const due = new Date(currentProject.value.due_date)
-    due.setDate(due.getDate() - workDays)
-    startDate = due.toISOString().split('T')[0]
+    // Subtract working days (skip weekends)
+    const start = subtractWorkingDays(due, scheduledDays)
+    startDate = start.toISOString().split('T')[0]
   }
 
   return {
@@ -68,37 +119,38 @@ const projectInfo = computed(() => {
     dueDate: currentProject.value.due_date || '-',
     startDate,
     partCount: parts.value.length,
-    hours: (totalMinutes / 60).toFixed(1) + 'h'
+    hours: (totalMinutes / 60).toFixed(1) + 'h',
+    scheduledDays
   }
 })
 
 const days = computed(() => {
   if (!currentProject.value) return []
 
-  const today = new Date()
   let startDate = new Date()
   let endDate = new Date()
 
+  // Use schedule-based days if available
+  const scheduledDays = schedule.value?.total_days || 14
+
   if (currentProject.value.due_date) {
     endDate = new Date(currentProject.value.due_date)
-    endDate.setDate(endDate.getDate() + 7)
+    endDate = addWorkingDays(endDate, 5) // Buffer after due date (working days)
 
-    const totalMinutes = parts.value.reduce((sum, p) => {
-      const routingTime = p.routing.reduce((t, r) => t + (r.est_time_min || 0), 0)
-      return sum + (routingTime * p.quantity)
-    }, 0)
-    const workDays = Math.ceil(totalMinutes / 480)
-    startDate = new Date(currentProject.value.due_date)
-    startDate.setDate(startDate.getDate() - workDays - 7)
+    startDate = subtractWorkingDays(new Date(currentProject.value.due_date), scheduledDays + 2) // Buffer before start
   } else {
-    startDate.setDate(startDate.getDate() - 7)
-    endDate.setDate(endDate.getDate() + 30)
+    // No due date - show from today
+    startDate = subtractWorkingDays(startDate, 2)
+    endDate = addWorkingDays(endDate, scheduledDays + 5)
   }
 
+  // Generate only working days (skip weekends)
   const result: Date[] = []
   const d = new Date(startDate)
   while (d <= endDate) {
-    result.push(new Date(d))
+    if (!isWeekend(d)) {
+      result.push(new Date(d))
+    }
     d.setDate(d.getDate() + 1)
   }
   return result
@@ -135,9 +187,16 @@ async function loadProjects() {
 }
 
 async function loadProject() {
+  // Unsubscribe from previous project's completion channel
+  if (completionChannel.value) {
+    supabase.removeChannel(completionChannel.value)
+    completionChannel.value = null
+  }
+
   if (!selectedProjectCode.value) {
     currentProject.value = null
     parts.value = []
+    schedule.value = null
     return
   }
 
@@ -148,7 +207,7 @@ async function loadProject() {
     return
   }
 
-  // Load parts for this project
+  // Load parts for this project (with thickness for scheduling)
   const { data: partsData, error: partsError } = await supabase
     .from('mrp_project_parts')
     .select(`
@@ -158,7 +217,8 @@ async function loadProject() {
       items (
         id,
         item_number,
-        description
+        description,
+        thickness
       )
     `)
     .eq('project_id', currentProject.value.id)
@@ -172,40 +232,110 @@ async function loadProject() {
   // Load completion data
   const { data: completionData } = await supabase
     .from('part_completion')
-    .select('*')
+    .select('item_id, station_id')
     .eq('project_id', currentProject.value.id)
 
   completion.value = completionData || []
 
-  // Load BOM for hierarchy
+  // Load BOM for hierarchy and scheduling
   const itemIds = (partsData || []).map(p => (p as any).items?.id).filter(Boolean)
-  const { data: bomData } = await supabase
+
+  // Get all BOM relationships where items in this project are involved
+  const { data: bomData, error: bomError } = await supabase
     .from('bom')
     .select('parent_item_id, child_item_id')
-    .in('parent_item_id', itemIds)
+    .or(`parent_item_id.in.(${itemIds.join(',')}),child_item_id.in.(${itemIds.join(',')})`)
+
+  console.log('BOM query result:', { count: bomData?.length, error: bomError })
 
   const bomMap = new Map<string, string>()
   for (const b of bomData || []) {
     bomMap.set(b.child_item_id, b.parent_item_id)
   }
 
-  // Process parts
+  // Load ALL routing at once (with workstation info for scheduling)
+  const { data: routingData, error: routingError } = await supabase
+    .from('routing')
+    .select(`
+      id,
+      item_id,
+      station_id,
+      sequence,
+      est_time_min,
+      workstations (
+        station_code,
+        station_name
+      )
+    `)
+    .in('item_id', itemIds)
+    .order('sequence')
+
+  console.log('Routing query result:', {
+    count: routingData?.length,
+    error: routingError,
+    sampleWithWorkstation: routingData?.slice(0, 3).map(r => ({
+      item_id: r.item_id,
+      station_code: (r as any).workstations?.station_code
+    }))
+  })
+
+  // Group routing by item for quick lookup
+  const routingByItem = new Map<string, any[]>()
+  for (const r of routingData || []) {
+    if (!routingByItem.has(r.item_id)) {
+      routingByItem.set(r.item_id, [])
+    }
+    routingByItem.get(r.item_id)!.push(r)
+  }
+
+  // Store raw data for re-scheduling
+  rawPartsData.value = (partsData || []).map(p => ({
+    item_id: p.item_id,
+    quantity: p.quantity,
+    items: (p as any).items
+  }))
+  rawBomData.value = (bomData || []).map(b => ({
+    parent_item_id: b.parent_item_id,
+    child_item_id: b.child_item_id
+  }))
+  rawRoutingData.value = (routingData || []).map(r => ({
+    id: r.id,
+    item_id: r.item_id,
+    station_id: r.station_id,
+    sequence: r.sequence,
+    est_time_min: r.est_time_min,
+    workstations: (r as any).workstations
+  }))
+
+  // Calculate schedule
+  schedule.value = calculateSchedule(
+    rawPartsData.value,
+    rawBomData.value,
+    rawRoutingData.value,
+    completionData || []
+  )
+
+  console.log('Schedule calculated:', {
+    totalDays: schedule.value.total_days,
+    partsCount: schedule.value.parts.size,
+    tasksCount: schedule.value.tasks.length
+  })
+
+  // Process parts for display (using schedule data for status)
   const processedParts: Part[] = []
   for (const p of partsData || []) {
     const item = (p as any).items
     if (!item) continue
 
-    // Load routing for this item
-    const { data: routingData } = await supabase
-      .from('routing')
-      .select('id, est_time_min')
-      .eq('item_id', item.id)
+    const routing = routingByItem.get(item.id) || []
+    const partSchedule = schedule.value.parts.get(p.item_id)
 
-    const routing = routingData || []
-    const completedStations = completion.value.filter(c => c.item_id === item.id).length
+    const completedStations = partSchedule?.completed_stations.size || 0
     const totalStations = routing.length
-    const status = completedStations === 0 ? 'not-started' :
+    const status = partSchedule?.status || (
+      completedStations === 0 ? 'not-started' :
       completedStations >= totalStations ? 'complete' : 'in-progress'
+    )
     const progress = totalStations > 0 ? (completedStations / totalStations * 100) : 0
 
     // Find parent assembly from BOM
@@ -221,7 +351,7 @@ async function loadProject() {
       quantity: p.quantity,
       parent_assembly: parentAssembly,
       part_type: null,
-      routing,
+      routing: routing.map((r: any) => ({ id: r.id, est_time_min: r.est_time_min })),
       completedStations,
       totalStations,
       status,
@@ -230,7 +360,58 @@ async function loadProject() {
   }
 
   parts.value = processedParts
+
+  // Subscribe to completion changes for real-time updates
+  completionChannel.value = supabase
+    .channel(`completion-${currentProject.value.id}`)
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'part_completion',
+      filter: `project_id=eq.${currentProject.value.id}`
+    }, () => {
+      refreshSchedule()
+    })
+    .subscribe()
+
   loading.value = false
+}
+
+async function refreshSchedule() {
+  if (!currentProject.value) return
+
+  // Reload completion data
+  const { data: completionData } = await supabase
+    .from('part_completion')
+    .select('item_id, station_id')
+    .eq('project_id', currentProject.value.id)
+
+  completion.value = completionData || []
+
+  // Recalculate schedule with fresh completion data
+  schedule.value = calculateSchedule(
+    rawPartsData.value,
+    rawBomData.value,
+    rawRoutingData.value,
+    completionData || []
+  )
+
+  // Update parts status from new schedule
+  for (const part of parts.value) {
+    const partSchedule = schedule.value.parts.get(part.item_id)
+    if (partSchedule) {
+      part.completedStations = partSchedule.completed_stations.size
+      part.status = partSchedule.status
+      part.progress = part.totalStations > 0
+        ? (part.completedStations / part.totalStations * 100)
+        : 0
+    }
+  }
+
+  console.log('Schedule refreshed:', {
+    totalDays: schedule.value.total_days,
+    completedParts: [...schedule.value.parts.values()].filter(p => p.status === 'complete').length
+  })
 }
 
 function buildHierarchy(): (Part & { level: number })[] {
@@ -264,11 +445,6 @@ function getLevelClass(level: number): string {
   return 'part'
 }
 
-function isWeekend(date: Date): boolean {
-  const day = date.getDay()
-  return day === 0 || day === 6
-}
-
 function isToday(date: Date): boolean {
   const today = new Date()
   return date.toDateString() === today.toDateString()
@@ -281,10 +457,32 @@ function formatDay(date: Date): string {
 function getBarStyle(part: Part): { left: string; width: string; progress?: string } | null {
   if (!part.routing || part.routing.length === 0) return null
 
+  const partSchedule = schedule.value?.parts.get(part.item_id)
+  const dayWidth = 100 / days.value.length
+
+  if (partSchedule && partSchedule.tasks.length > 0) {
+    // Use scheduled start/end days
+    const firstTask = partSchedule.tasks[0]!
+    const lastTask = partSchedule.tasks[partSchedule.tasks.length - 1]!
+
+    const startDay = firstTask.start_day
+    const endDay = lastTask.end_day + (lastTask.end_hour / 24)
+    const durationDays = Math.max(endDay - startDay, 0.5)
+
+    const left = (startDay * dayWidth) + '%'
+    const width = Math.max(durationDays * dayWidth, dayWidth * 0.5) + '%'
+
+    return {
+      left,
+      width,
+      progress: part.status === 'in-progress' ? `${part.progress}%` : undefined
+    }
+  }
+
+  // Fallback to simple calculation if no schedule
   const totalTime = part.routing.reduce((t, r) => t + (r.est_time_min || 0), 0) * part.quantity
   const barDays = Math.max(1, Math.ceil(totalTime / 480))
 
-  const dayWidth = 100 / days.value.length
   const startOffset = 2
   const left = (startOffset * dayWidth) + '%'
   const width = (barDays * dayWidth) + '%'
@@ -303,6 +501,14 @@ function goToDashboard() {
 onMounted(async () => {
   await loadProjects()
   loading.value = false
+})
+
+onUnmounted(() => {
+  // Clean up subscription
+  if (completionChannel.value) {
+    supabase.removeChannel(completionChannel.value)
+    completionChannel.value = null
+  }
 })
 </script>
 
@@ -345,6 +551,10 @@ onMounted(async () => {
       <div class="info-item">
         <div class="info-label">Est. Hours</div>
         <div class="info-value">{{ projectInfo.hours }}</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Scheduled Days</div>
+        <div class="info-value">{{ projectInfo.scheduledDays }} days</div>
       </div>
     </div>
 
