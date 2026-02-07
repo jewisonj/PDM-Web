@@ -7,9 +7,133 @@
 
 ## Current Version
 
-### v3.4 (2026-02-05) -- Project Scheduling and Capacity Planning
+### v3.5 (2026-02-07) -- Waterjet Cut Time Calculation and Shop Floor Enhancements
 
 **Status:** Current Production Release
+
+#### New Features
+
+- **MRP-Based Waterjet Cut Time Calculation** -- Automatic cut time estimation using physics-based power-law formula:
+  - New `cutting_parameters` table with material-specific reference speeds, machinability indices, and thickness exponents
+  - Formula: `speed = ref_speed × (0.25/thickness)^exponent × machinability`
+  - Auto-calculates `cut_time` on BOM upload (replaces Creo estimates which lack machinability data)
+  - Material mapping: `STEEL/STEEL_HSLA → CS`, `AL/ALUMINUM → AL`, `SS/STAINLESS → SS`
+  - Default parameters (Q3 quality, 60,000 PSI, 0.014" nozzle):
+    - Carbon Steel (CS): 12 IPM @ 0.25", machinability 1.0, exponent 0.55
+    - Aluminum (AL): 35 IPM @ 0.25", machinability 2.9, exponent 0.55
+    - Stainless Steel (SS): 10.8 IPM @ 0.25", machinability 0.9, exponent 0.55
+  - Handling time added from `cost_settings.handling_time_min` (default 0.5 min)
+- **Batch Recalculate Cut Times** -- New endpoint `POST /api/items/recalculate-cut-times` to recalculate all existing items:
+  - Filters for sheet metal parts with valid material, thickness, and cut_length
+  - Updates `routing_operations.est_time_min` for waterjet operations
+  - Returns count of updated items
+- **Cost Settings UI for Cutting Parameters** -- New section in MRP Cost Settings view:
+  - View/edit reference speeds, machinability indices, and exponents for CS/AL/SS
+  - Live preview calculation at 0.25" thickness
+  - Save changes with optimistic UI updates
+- **File Upload Normalization** -- Upload endpoint now normalizes all filenames before storage:
+  - Removes redundant suffixes: `xxp123_dxf.dxf → xxp123.dxf`, `abc0001_prt.prt → abc0001.prt`
+  - Converts file extensions: `.stp → .step` (canonical extension)
+  - Strips type suffixes from filenames: `_prt`, `_asm`, `_drw` (legacy Creo naming)
+  - Lowercases all filenames for consistency
+  - PDM-Upload script also strips suffixes from item numbers extracted from filenames
+- **MRP Shop View Material Filter** -- New material/thickness filter for shop floor queue:
+  - Dropdown shows all unique material sizes in project (e.g., `0.25" STEEL`, `0.125" 304SS`)
+  - Counts displayed for each filter option and "All Sizes"
+  - Filters queue table to show only matching material sizes
+  - "Select All" checkbox works on filtered items only (not entire queue)
+  - Filter resets when switching projects or stations
+  - Supports both sheet metal (thickness + material) and tube (size × material from name)
+
+#### Database Changes
+
+- **New Table:** `cutting_parameters` -- Stores material-specific cutting parameters:
+  - Columns: `id`, `material_code` (CS/AL/SS), `material_name`, `ref_speed_ipm` (speed at 0.25"), `machinability` (relative to steel), `exponent` (thickness scaling), `created_at`, `updated_at`
+  - Seeded with defaults for CS (1.0), AL (2.9), SS (0.9) machinability
+- **Migration:** `create_cutting_parameters_table` -- Creates table and inserts default values
+
+#### Backend Changes
+
+- **New Service:** `backend/app/services/cutting.py` (~127 lines) -- Cutting time calculation logic:
+  - `calculate_cutting_speed()`: Power-law formula for speed in IPM
+  - `calculate_cut_time()`: Cut time = (length / speed) + handling_time
+  - `map_material_to_code()`: Maps item material strings to cutting parameter codes
+- **Modified Endpoint:** `POST /api/bom/upload` -- Integrated cut time calculation:
+  - Calls `calculate_cut_time()` for each part with valid material/thickness/cut_length
+  - Updates `est_time_min` in routing_operations if cut_time > 0
+  - Logs calculated cut times for debugging
+- **New Endpoint:** `POST /api/items/recalculate-cut-times` -- Batch recalculate existing items:
+  - Query items with material, thickness, and cut_length
+  - Recalculate cut times using current cutting parameters
+  - Update routing_operations for waterjet station
+  - Return count of updated items
+- **Modified Endpoint:** `POST /api/files/upload` -- Added filename normalization:
+  - Strip `_dxf`, `_prt`, `_asm`, `_drw` suffixes
+  - Convert `.stp → .step`
+  - Lowercase all filenames
+  - Preserve original extension
+
+#### Frontend Changes
+
+- **Modified View:** `frontend/src/views/MrpCostSettingsView.vue` (~200 lines added) -- New "Cutting Parameters" section:
+  - Table showing CS/AL/SS parameters with editable inputs
+  - Real-time preview of cutting speed at 0.25" thickness
+  - Save button with loading state and optimistic updates
+  - Fetches from `/api/cutting-parameters`, updates via PUT
+- **Modified View:** `frontend/src/views/MrpShopView.vue` (~150 lines modified) -- Material filter:
+  - Added `material`, `thickness`, `material_size` fields to `QueueItem` interface
+  - Fetch material/thickness from items table in queue query
+  - Build `material_size` display string (handles sheet metal and tube formats)
+  - Computed `availableMaterialSizes` with numeric thickness sorting
+  - Computed `filteredQueueItems` filtered by selected material size
+  - Material filter dropdown in queue header with counts
+  - New "Material" column in parts table
+  - Modified "Select All" to work on filtered items only
+
+#### PowerShell Changes
+
+- **Modified Script:** `scripts/pdm-upload/PDM-Upload-Functions.ps1` -- Item number extraction:
+  - Added suffix stripping: `_prt`, `_asm`, `_drw` removed before item number detection
+  - Example: `abc0001_prt.prt → abc0001` (not `abc0001_prt`)
+  - Ensures item numbers match database records after upload normalization
+
+#### Documentation
+
+- **New Reference Doc:** `Documentation/waterjet-cutting-speeds.md` -- Comprehensive cutting speed reference:
+  - Machinability index table (mild steel 1.0, stainless 0.9, aluminum 2.9, rubber 15-25+)
+  - Cutting speed tables for 8 thickness values across 6 materials
+  - Quality vs speed multipliers (Q1-Q5)
+  - Equipment variables (nozzle size, pressure, abrasive flow, pump type)
+  - Material variables (hardness, thickness, brittleness)
+  - Pure waterjet vs abrasive waterjet comparison
+  - Rubber cutting notes (pure waterjet preferred, stackable, lower pressure)
+  - Links to online calculators (Hypertherm, KMT, OMAX IntelliMAX)
+  - Sources with citations
+
+#### Use Cases
+
+- **Accurate Time Estimates:** Physics-based cut time calculation replaces Creo's generic estimates (which lack material/thickness awareness)
+- **Material Grouping:** Shop workers can filter queue by material size to batch similar cuts (reduces setup time)
+- **Batch Updates:** After tweaking cutting parameters, recalculate all existing items with one API call
+- **Filename Consistency:** All uploaded files follow consistent naming (lowercase, no redundant suffixes, canonical extensions)
+- **Waterjet Optimization:** Adjust machinability indices and exponents per material as shop floor data is collected
+
+#### Technical Notes
+
+- Cut time formula uses inches throughout (Creo exports thickness and cut_length in inches)
+- Handling time added to account for setup, loading, unloading (default 0.5 min)
+- Material code mapping is case-insensitive and checks for prefixes/substrings
+- Filename normalization happens before storage (all database paths already normalized)
+- Material filter sorts by thickness numerically, then by material name alphabetically
+- Cutting parameters stored separately from cost_settings to allow future expansion (e.g., per-alloy tube pricing)
+
+---
+
+## Previous Versions
+
+### v3.4 (2026-02-05) -- Project Scheduling and Capacity Planning
+
+**Status:** Previous (superseded by v3.5)
 
 #### New Features
 
@@ -383,11 +507,27 @@ This is a complete platform rewrite. There is no in-place upgrade path from v2.0
 | v3.0 | 2025 | Previous | Core web migration, superseded by v3.1 |
 | v3.1 | 2026-01-30 | Previous | Workspace comparison, PDM-Local-Service, auto-create items |
 | v3.2 | 2026-01-31 | Previous | Per-material pricing, purchased parts enhancement |
-| v3.3 | 2026-02-03 | Current | Project cost report, FreeCAD script improvements |
+| v3.3 | 2026-02-03 | Previous | Project cost report, FreeCAD script improvements |
+| v3.4 | 2026-02-05 | Previous | Project scheduling, capacity planning |
+| v3.5 | 2026-02-07 | Current | Waterjet cut time calculation, shop floor enhancements |
 
 ---
 
 ## Checking Your Version
+
+**v3.5 indicators:**
+- `backend/app/services/cutting.py` exists
+- `cutting_parameters` table exists in database
+- MRP Cost Settings view has "Cutting Parameters" section
+- MRP Shop view has material/thickness filter dropdown
+- `Documentation/waterjet-cutting-speeds.md` reference doc exists
+- File upload normalizes filenames (strips `_prt`, `_asm`, `_drw`, lowercases)
+
+**v3.4 indicators:**
+- `frontend/src/utils/scheduling.ts` exists
+- MRP Project Tracking view has Gantt chart with scheduled start/end days
+- Project info shows "Scheduled Days" calculation
+- Gantt bars positioned by capacity-constrained schedule
 
 **v3.3 indicators:**
 - `frontend/src/views/MrpCostReportView.vue` exists
@@ -451,6 +591,6 @@ All future releases follow this format:
 
 ---
 
-**Last Updated:** 2026-02-03
-**Current Version:** v3.3
+**Last Updated:** 2026-02-07
+**Current Version:** v3.5
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md)

@@ -203,6 +203,7 @@ The FastAPI backend exposes a REST API at the `/api` prefix. Interactive documen
 | PATCH | `/api/items/{item_number}` | Update item fields. Supports `upsert=true` query parameter to create if not found. |
 | DELETE | `/api/items/{item_number}` | Delete an item. |
 | GET | `/api/items/{item_number}/history` | Get lifecycle history for an item. |
+| POST | `/api/items/recalculate-cut-times` | Batch recalculate waterjet cut times for all items with valid material/thickness/cut_length. Returns count of updated items. |
 
 ### Files -- `/api/files`
 

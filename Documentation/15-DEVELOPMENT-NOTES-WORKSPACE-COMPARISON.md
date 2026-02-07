@@ -457,6 +457,71 @@ These are managed in the MRP UI and should not be overridden by static Creo para
 
 ---
 
+### 19. Filename and Item Number Normalization (Suffix Stripping)
+
+**Symptom:** Uploaded files had redundant suffixes like `abc0001_dxf.dxf` or `xxp123_prt.prt`. Item numbers extracted from filenames included Creo type suffixes like `abc0001_prt`, causing database mismatches.
+
+**Root Cause:** Creo exports often append type indicators to filenames:
+- `partname_prt.prt` (part file)
+- `assemblyname_asm.asm` (assembly file)
+- `drawingname_drw.drw` (drawing file)
+- `partname_dxf.dxf` (DXF export)
+
+When these files were uploaded without normalization:
+1. Database stored paths like `pdm-files/abc0001_prt/abc0001_prt.prt`
+2. Item numbers were extracted as `abc0001_prt` instead of `abc0001`
+3. Queries for `abc0001` failed to find files stored under `abc0001_prt`
+4. File list showed ugly redundant names
+
+**Diagnosis:** Reviewed uploaded file paths in Supabase Storage and saw the pattern. Checked the `PDM-Upload-Functions.ps1` item number extraction and confirmed it did not strip suffixes before regex matching.
+
+**Fix (Part 1 - Backend):** Added filename normalization in `POST /api/files/upload`:
+```python
+# backend/app/routes/files.py
+
+# Normalize filename
+filename = file.filename.lower()
+
+# Strip redundant suffixes: abc0001_dxf.dxf → abc0001.dxf
+filename = re.sub(r'_(dxf|prt|asm|drw)\.(dxf|prt|asm|drw|step|stp)$', r'.\2', filename)
+
+# Convert .stp → .step (canonical extension)
+filename = re.sub(r'\.stp$', '.step', filename)
+
+# Strip type suffixes: abc0001_prt.prt → abc0001.prt
+filename = re.sub(r'_(prt|asm|drw)\.', '.', filename)
+```
+
+**Fix (Part 2 - Upload Script):** Added suffix stripping in `PDM-Upload-Functions.ps1`:
+```powershell
+# Strip Creo type suffixes before item number detection
+$baseName = $file.BaseName -replace '_prt$|_asm$|_drw$', ''
+
+# Now extract item number from cleaned basename
+$itemNumber = Extract-ItemNumber -BaseName $baseName
+```
+
+**Examples:**
+- `abc0001_prt.prt` → `abc0001.prt` (filename), `abc0001` (item number)
+- `xxp123_dxf.dxf` → `xxp123.dxf` (filename), `xxp123` (item number)
+- `part.stp` → `part.step` (filename)
+- `CSP0030_PRT.PRT` → `csp0030.prt` (filename), `csp0030` (item number)
+
+**Why This Matters:**
+- Cleaner file paths in Supabase Storage
+- Item numbers match database records
+- File queries don't fail due to suffix mismatches
+- Consistent lowercase naming for case-sensitive systems
+- Users see clean filenames in the UI
+
+**Files Changed:**
+- `backend/app/routes/files.py` -- filename normalization before storage
+- `scripts/pdm-upload/PDM-Upload-Functions.ps1` -- suffix stripping before item number extraction
+
+**Prevention:** Always normalize user-provided filenames at the entry point (upload handler). Don't trust client-side naming conventions. Apply transformations server-side before storage.
+
+---
+
 ## Coding Patterns
 
 ### Pydantic Schema Pattern

@@ -1,9 +1,9 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-02-05
+**Last Updated:** 2026-02-07
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.4
+**Current Version:** v3.5
 
 ---
 
@@ -45,6 +45,7 @@ New to PDM-Web? Read these in order:
 |---|------|-------------|
 | 06 | `06-BOM-COST-ROLLUP-GUIDE.md` | BOM cost calculation and rollup procedures. |
 | 07 | `07-PDM-DATABASE-CLEANUP-GUIDE.md` | Database maintenance and orphaned record cleanup. |
+| 30 | `waterjet-cutting-speeds.md` | Waterjet cutting speed reference tables, machinability indices, material-specific speeds, quality multipliers. |
 
 ### Section 5: Frontend Application
 
@@ -156,7 +157,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 30+
+**Total Documentation Files:** 31
 **Status:** Current
 
 ---

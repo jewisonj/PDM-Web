@@ -452,6 +452,39 @@ CREATE TABLE part_completion (
 
 ---
 
+### cutting_parameters
+
+Stores material-specific waterjet cutting parameters for cut time calculations.
+
+```sql
+CREATE TABLE cutting_parameters (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    material_code  TEXT NOT NULL UNIQUE,         -- CS, AL, SS
+    material_name  TEXT NOT NULL,                -- Carbon Steel, Aluminum, Stainless Steel
+    ref_speed_ipm  NUMERIC NOT NULL,             -- Cutting speed at 0.25" thickness (IPM)
+    machinability  NUMERIC NOT NULL DEFAULT 1.0, -- Machinability index (relative to steel)
+    exponent       NUMERIC NOT NULL DEFAULT 0.55,-- Thickness scaling exponent
+    created_at     TIMESTAMPTZ DEFAULT now(),
+    updated_at     TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Key Points:**
+- Used to calculate waterjet cut times based on material type and thickness.
+- Formula: `speed = ref_speed_ipm × (0.25/thickness)^exponent × machinability`
+- `material_code` maps to item material strings: `CS` (carbon/mild steel), `AL` (aluminum), `SS` (stainless steel).
+- `ref_speed_ipm` is the reference cutting speed at 0.25" thickness (Q3 quality, 60,000 PSI, 0.014" nozzle).
+- `machinability` is a multiplier relative to mild steel (1.0). Aluminum is ~2.9, stainless is ~0.9.
+- `exponent` controls thickness scaling (typically 0.55 for most metals - doubling thickness reduces speed by ~68%).
+- Default values seeded: CS (12 IPM, 1.0), AL (35 IPM, 2.9), SS (10.8 IPM, 0.9).
+
+**Related:**
+- Cut time calculation: `backend/app/services/cutting.py`
+- Reference speeds: `Documentation/waterjet-cutting-speeds.md`
+- UI editor: MRP Cost Settings view → Cutting Parameters section
+
+---
+
 ### nest_jobs
 
 DXF nesting job records linked to MRP projects.
