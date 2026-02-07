@@ -75,7 +75,16 @@
       "Bash(fly deploy:*)",
       "Bash(if not exist \"J:\\\\PDM-Web\\\\files\\\\temp\" mkdir \"J:\\\\PDM-Web\\\\files\\\\temp\")",
       "mcp__MCP_DOCKER__browser_navigate",
-      "mcp__MCP_DOCKER__browser_fill_form"
+      "mcp__MCP_DOCKER__browser_fill_form",
+      "WebFetch(domain:www.techniwaterjet.com)",
+      "WebFetch(domain:ivycnc.com)",
+      "WebFetch(domain:www.practicalmachinist.com)",
+      "WebFetch(domain:wazer.com)",
+      "WebFetch(domain:www.wardjet.com)",
+      "WebFetch(domain:www.engineersedge.com)",
+      "WebFetch(domain:www.wjta.org)",
+      "WebFetch(domain:me.berkeley.edu)",
+      "WebFetch(domain:pdm-web.fly.dev)"
     ],
     "deny": []
   },

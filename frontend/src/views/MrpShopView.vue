@@ -31,6 +31,9 @@ interface QueueItem {
   qty_total: number
   has_pdf: boolean
   pdf_url: string | null
+  material: string | null
+  thickness: number | null
+  material_size: string  // Combined display string for filtering
 }
 
 // Station icon mapping based on station name keywords
@@ -77,6 +80,39 @@ const workerName = ref('')
 // Time logging
 const selectedItems = ref<Set<string>>(new Set())
 const timeToLog = ref(0)
+
+// Material size filter
+const selectedMaterialSize = ref<string>('')
+
+// Computed: unique material sizes for filter dropdown
+const availableMaterialSizes = computed(() => {
+  const sizes = new Set<string>()
+  queueItems.value.forEach(item => {
+    if (item.material_size) {
+      sizes.add(item.material_size)
+    }
+  })
+  return Array.from(sizes).sort((a, b) => {
+    // Sort by thickness (numeric) first, then by material name
+    const aMatch = a.match(/^([\d.]+)"?\s*(.*)$/)
+    const bMatch = b.match(/^([\d.]+)"?\s*(.*)$/)
+    if (aMatch && bMatch) {
+      const aThick = parseFloat(aMatch[1])
+      const bThick = parseFloat(bMatch[1])
+      if (aThick !== bThick) return aThick - bThick
+      return aMatch[2].localeCompare(bMatch[2])
+    }
+    return a.localeCompare(b)
+  })
+})
+
+// Computed: filtered queue items
+const filteredQueueItems = computed(() => {
+  if (!selectedMaterialSize.value) {
+    return queueItems.value
+  }
+  return queueItems.value.filter(item => item.material_size === selectedMaterialSize.value)
+})
 
 // PDF Panel
 const showPdfPanel = ref(false)
@@ -128,6 +164,7 @@ async function selectProject(project: MrpProject) {
   selectedProject.value = project
   loadingQueue.value = true
   selectedItems.value = new Set()
+  selectedMaterialSize.value = ''  // Reset filter when changing projects
   closePdfPanel()
 
   try {
@@ -137,7 +174,7 @@ async function selectProject(project: MrpProject) {
       .select(`
         item_id,
         est_time_min,
-        items(item_number, name, description)
+        items(item_number, name, description, material, thickness)
       `)
       .eq('station_id', selectedStation.value!.id)
 
@@ -182,17 +219,44 @@ async function selectProject(project: MrpProject) {
     // Build queue items
     queueItems.value = (routingData || [])
       .filter(r => partsMap.has(r.item_id))
-      .map(r => ({
-        item_id: r.item_id,
-        item_number: (r.items as any)?.item_number || '',
-        item_name: (r.items as any)?.name || '',
-        description: (r.items as any)?.description || '',
-        est_time_min: r.est_time_min,
-        qty_complete: completionMap.get(r.item_id) || 0,
-        qty_total: partsMap.get(r.item_id) || 1,
-        has_pdf: filesMap.has(r.item_id),
-        pdf_url: filesMap.get(r.item_id) || null
-      }))
+      .map(r => {
+        const item = r.items as any
+        const material = item?.material || null
+        const thickness = item?.thickness ? parseFloat(item.thickness) : null
+        const itemName = item?.name || ''
+
+        // Build material_size string for filtering
+        let materialSize = ''
+        if (thickness !== null && material) {
+          // Sheet metal: "0.25" STEEL" or "0.125" 304SS"
+          materialSize = `${thickness}" ${material}`
+        } else if (thickness !== null) {
+          materialSize = `${thickness}"`
+        } else if (material && material !== 'PTC_SYSTEM_MTRL_PROPS') {
+          // Check if name contains tube size pattern (e.g., "2x2x0.125")
+          const tubeMatch = itemName.match(/(\d+x\d+x[\d.]+)/i)
+          if (tubeMatch) {
+            materialSize = `${tubeMatch[1]} ${material}`
+          } else {
+            materialSize = material
+          }
+        }
+
+        return {
+          item_id: r.item_id,
+          item_number: item?.item_number || '',
+          item_name: itemName,
+          description: item?.description || '',
+          est_time_min: r.est_time_min,
+          qty_complete: completionMap.get(r.item_id) || 0,
+          qty_total: partsMap.get(r.item_id) || 1,
+          has_pdf: filesMap.has(r.item_id),
+          pdf_url: filesMap.get(r.item_id) || null,
+          material,
+          thickness,
+          material_size: materialSize
+        }
+      })
 
   } catch (e: any) {
     error.value = e.message || 'Failed to load queue'
@@ -212,11 +276,19 @@ function toggleItemSelection(itemId: string) {
 }
 
 function selectAllItems() {
-  if (selectedItems.value.size === queueItems.value.length) {
-    selectedItems.value = new Set()
+  // Toggle selection for filtered items only
+  const filteredIds = filteredQueueItems.value.map(i => i.item_id)
+  const allFilteredSelected = filteredIds.every(id => selectedItems.value.has(id))
+
+  if (allFilteredSelected) {
+    // Deselect all filtered items
+    filteredIds.forEach(id => selectedItems.value.delete(id))
   } else {
-    selectedItems.value = new Set(queueItems.value.map(i => i.item_id))
+    // Select all filtered items
+    filteredIds.forEach(id => selectedItems.value.add(id))
   }
+  // Trigger reactivity
+  selectedItems.value = new Set(selectedItems.value)
 }
 
 async function logTime() {
@@ -585,15 +657,30 @@ onMounted(() => {
         <div v-else class="queue-container">
           <div class="queue-header">
             <h2>Parts Queue</h2>
+            <!-- Material Size Filter -->
+            <div class="material-filter" v-if="availableMaterialSizes.length > 0">
+              <label>Material:</label>
+              <select v-model="selectedMaterialSize" class="material-select">
+                <option value="">All Sizes ({{ queueItems.length }})</option>
+                <option
+                  v-for="size in availableMaterialSizes"
+                  :key="size"
+                  :value="size"
+                >
+                  {{ size }} ({{ queueItems.filter(i => i.material_size === size).length }})
+                </option>
+              </select>
+            </div>
             <div class="selection-info">
               <span>{{ selectedItems.size }} selected</span> |
-              <strong>{{ queueItems.filter(i => selectedItems.has(i.item_id)).reduce((sum, i) => sum + i.qty_total, 0) }} total qty</strong>
+              <strong>{{ filteredQueueItems.filter(i => selectedItems.has(i.item_id)).reduce((sum, i) => sum + i.qty_total, 0) }} total qty</strong>
             </div>
           </div>
 
-          <div v-if="queueItems.length === 0" class="empty-state">
+          <div v-if="filteredQueueItems.length === 0" class="empty-state">
             <i class="pi pi-check-circle"></i>
-            <p>No items in queue for this station</p>
+            <p v-if="queueItems.length > 0">No items match the selected filter</p>
+            <p v-else>No items in queue for this station</p>
           </div>
 
           <table v-else class="parts-table">
@@ -603,12 +690,13 @@ onMounted(() => {
                   <input
                     type="checkbox"
                     class="select-check"
-                    :checked="selectedItems.size === queueItems.length && queueItems.length > 0"
+                    :checked="selectedItems.size === filteredQueueItems.length && filteredQueueItems.length > 0"
                     @change="selectAllItems"
                   />
                 </th>
                 <th>Part Number</th>
                 <th>Description</th>
+                <th style="width: 100px">Material</th>
                 <th style="width: 80px">Qty</th>
                 <th style="width: 90px">Est Time</th>
                 <th style="width: 100px">Status</th>
@@ -616,7 +704,7 @@ onMounted(() => {
             </thead>
             <tbody>
               <tr
-                v-for="item in queueItems"
+                v-for="item in filteredQueueItems"
                 :key="item.item_id"
                 :class="{
                   selected: selectedItems.has(item.item_id),
@@ -650,6 +738,7 @@ onMounted(() => {
                   <div class="part-type">{{ item.item_name }}</div>
                 </td>
                 <td>{{ item.description || '-' }}</td>
+                <td class="material-cell">{{ item.material_size || '-' }}</td>
                 <td><span class="qty-badge">{{ item.qty_total }}</span></td>
                 <td class="est-time">{{ item.est_time_min * item.qty_total }} min</td>
                 <td :class="item.qty_complete >= item.qty_total ? 'status-complete' : 'status-pending'">
@@ -1057,6 +1146,40 @@ onMounted(() => {
 .queue-header h2 {
   margin: 0;
   font-size: 1.125rem;
+}
+
+/* Material Size Filter */
+.material-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.material-filter label {
+  font-size: 0.875rem;
+  color: #9ca3af;
+}
+
+.material-select {
+  padding: 0.5rem 0.75rem;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 0.375rem;
+  color: #e5e7eb;
+  font-size: 0.875rem;
+  cursor: pointer;
+  min-width: 180px;
+}
+
+.material-select:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+
+.material-cell {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-family: monospace;
 }
 
 .selection-info {
