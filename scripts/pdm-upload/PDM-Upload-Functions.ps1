@@ -23,10 +23,32 @@ function Get-ItemNumber {
         - csp0030_flat.dxf -> csp0030
         - CSP0030_REV_A.pdf -> csp0030
         - mmc4464k478.prt -> mmc4464k478
+        - xxp519969_dxf.dxf -> xxp519969
+
+        Strips common suffixes like _dxf, _flat, _bend, _rev_a, etc.
     #>
     param([string]$FileName)
 
     $baseName = [IO.Path]::GetFileNameWithoutExtension($FileName)
+
+    # Strip common suffixes (case-insensitive)
+    # Order matters: check longer patterns first
+    $suffixPatterns = @(
+        '_rev_[a-z0-9]+$',     # _rev_a, _rev_b, _rev_01, etc.
+        '_flat$',              # _flat (DXF flat patterns)
+        '_bend$',              # _bend (bend drawings)
+        '_dxf$',               # _dxf (DXF export)
+        '_svg$',               # _svg (SVG export)
+        '_step$',              # _step (STEP export)
+        '_stp$',               # _stp (STEP export)
+        '_pdf$'                # _pdf (PDF export)
+    )
+
+    foreach ($pattern in $suffixPatterns) {
+        if ($baseName -match $pattern) {
+            $baseName = $baseName -replace $pattern, ''
+        }
+    }
 
     # McMaster pattern: mmc followed by alphanumeric (check BEFORE standard pattern)
     if ($baseName -match '^(mmc[a-zA-Z0-9]+)') {
@@ -34,7 +56,8 @@ function Get-ItemNumber {
     }
 
     # Supplier pattern: spn followed by alphanumeric+hyphens (check BEFORE standard pattern)
-    if ($baseName -match '^(spn[a-zA-Z0-9_-]+)') {
+    # Note: Stop at underscore to avoid capturing suffixes
+    if ($baseName -match '^(spn[a-zA-Z0-9-]+)') {
         return $Matches[1].ToLower()
     }
 
@@ -140,9 +163,9 @@ function Upload-File {
     $ext = [IO.Path]::GetExtension($FilePath).ToLower()
     $mimeType = switch ($ext) {
         '.pdf'  { 'application/pdf' }
-        '.step' { 'application/step' }
-        '.stp'  { 'application/step' }
-        '.dxf'  { 'application/dxf' }
+        '.step' { 'application/octet-stream' }
+        '.stp'  { 'application/octet-stream' }
+        '.dxf'  { 'application/octet-stream' }
         '.svg'  { 'image/svg+xml' }
         '.prt'  { 'application/octet-stream' }
         '.asm'  { 'application/octet-stream' }

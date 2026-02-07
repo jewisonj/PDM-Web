@@ -36,20 +36,32 @@ interface RawMaterial {
   price_per_unit: number | null
 }
 
+interface CuttingParameter {
+  id: string
+  material_code: string
+  ref_speed_ipm: number
+  machinability: number
+  exponent: number
+  notes: string | null
+}
+
 const router = useRouter()
 
 // State
 const costSettings = ref<CostSetting[]>([])
 const workstations = ref<Workstation[]>([])
 const rawMaterials = ref<RawMaterial[]>([])
+const cuttingParams = ref<CuttingParameter[]>([])
 const loading = ref(true)
 const settingChanges = ref<Map<string, Partial<CostSetting>>>(new Map())
 const stationChanges = ref<Map<string, Partial<Workstation>>>(new Map())
 const materialChanges = ref<Map<string, Partial<RawMaterial>>>(new Map())
+const cuttingChanges = ref<Map<string, Partial<CuttingParameter>>>(new Map())
 const statusMessage = ref('')
 const statusType = ref<'success' | 'error' | ''>('')
 const materialSearch = ref('')
 const materialTypeFilter = ref('')
+const recalculating = ref(false)
 
 // Display labels for setting keys
 const settingLabels: Record<string, string> = {
@@ -57,7 +69,8 @@ const settingLabels: Record<string, string> = {
   default_cs_price_per_lb: 'Carbon Steel Price',
   default_al_price_per_lb: 'Aluminum Price',
   default_ss_price_per_lb: 'Stainless Steel Price',
-  overhead_multiplier: 'Overhead Multiplier'
+  overhead_multiplier: 'Overhead Multiplier',
+  handling_time_min: 'Part Handling Time'
 }
 
 const settingUnits: Record<string, string> = {
@@ -65,12 +78,20 @@ const settingUnits: Record<string, string> = {
   default_cs_price_per_lb: '$/lb',
   default_al_price_per_lb: '$/lb',
   default_ss_price_per_lb: '$/lb',
-  overhead_multiplier: 'x'
+  overhead_multiplier: 'x',
+  handling_time_min: 'min'
+}
+
+// Material code labels for cutting parameters
+const materialCodeLabels: Record<string, string> = {
+  CS: 'Carbon Steel',
+  AL: 'Aluminum',
+  SS: 'Stainless Steel'
 }
 
 // Computed
 const totalChanges = computed(() =>
-  settingChanges.value.size + stationChanges.value.size + materialChanges.value.size
+  settingChanges.value.size + stationChanges.value.size + materialChanges.value.size + cuttingChanges.value.size
 )
 
 const filteredMaterials = computed(() => {
@@ -89,19 +110,22 @@ const filteredMaterials = computed(() => {
 async function loadAll() {
   loading.value = true
   try {
-    const [settingsRes, stationsRes, materialsRes] = await Promise.all([
+    const [settingsRes, stationsRes, materialsRes, cuttingRes] = await Promise.all([
       supabase.from('cost_settings').select('*').order('setting_key'),
       supabase.from('workstations').select('*').order('sort_order'),
-      supabase.from('raw_materials').select('*').order('part_number')
+      supabase.from('raw_materials').select('*').order('part_number'),
+      supabase.from('cutting_parameters').select('*').order('material_code')
     ])
 
     if (settingsRes.error) throw settingsRes.error
     if (stationsRes.error) throw stationsRes.error
     if (materialsRes.error) throw materialsRes.error
+    if (cuttingRes.error) throw cuttingRes.error
 
     costSettings.value = settingsRes.data || []
     workstations.value = stationsRes.data || []
     rawMaterials.value = materialsRes.data || []
+    cuttingParams.value = cuttingRes.data || []
   } catch (err) {
     console.error('Failed to load settings:', err)
     showStatus('Failed to load settings', 'error')
@@ -145,6 +169,17 @@ function trackMaterialChange(id: string, value: string) {
 
   const material = rawMaterials.value.find(m => m.id === id)
   if (material) material.price_per_unit = numVal
+}
+
+function trackCuttingChange(id: string, field: keyof CuttingParameter, value: string) {
+  const current = cuttingChanges.value.get(id) || {}
+  const newChanges = new Map(cuttingChanges.value)
+  const numVal = parseFloat(value) || 0
+  newChanges.set(id, { ...current, [field]: numVal })
+  cuttingChanges.value = newChanges
+
+  const param = cuttingParams.value.find(p => p.id === id)
+  if (param) (param as any)[field] = numVal
 }
 
 function getMaterialDimensions(m: RawMaterial): string {
@@ -224,10 +259,46 @@ async function saveAll() {
     }
   }
 
+  // Save cutting parameter changes
+  for (const [id, updates] of cuttingChanges.value.entries()) {
+    try {
+      const { error } = await supabase
+        .from('cutting_parameters')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+      saved++
+    } catch (err) {
+      console.error(`Failed to save cutting param ${id}:`, err)
+    }
+  }
+
   settingChanges.value = new Map()
   stationChanges.value = new Map()
   materialChanges.value = new Map()
+  cuttingChanges.value = new Map()
   showStatus(`Saved ${saved} change${saved !== 1 ? 's' : ''}`, 'success')
+}
+
+async function recalculateCutTimes() {
+  recalculating.value = true
+  try {
+    const response = await fetch('/api/items/recalculate-cut-times', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    const result = await response.json()
+    if (response.ok) {
+      showStatus(`Recalculated ${result.items_updated} items (${result.items_skipped} skipped)`, 'success')
+    } else {
+      throw new Error(result.detail || 'Recalculation failed')
+    }
+  } catch (err) {
+    console.error('Failed to recalculate cut times:', err)
+    showStatus('Failed to recalculate cut times', 'error')
+  } finally {
+    recalculating.value = false
+  }
 }
 
 function showStatus(msg: string, type: 'success' | 'error') {
@@ -385,7 +456,81 @@ onMounted(() => {
         </table>
       </div>
 
-      <!-- Section 3: Material Pricing -->
+      <!-- Section 3: Waterjet Cutting Parameters -->
+      <div class="section">
+        <h2>Waterjet Cutting Parameters</h2>
+        <p class="section-desc">
+          Formula: <code>speed = ref_speed × (0.25 / thickness)^exponent × machinability</code>
+          <br/>Cut time is calculated from material, thickness, and cut length when BOMs are uploaded.
+        </p>
+        <table class="settings-table compact">
+          <thead>
+            <tr>
+              <th>Material</th>
+              <th>Ref Speed @ 0.25"</th>
+              <th>Machinability</th>
+              <th>Exponent</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="p in cuttingParams"
+              :key="p.id"
+              :class="{ 'has-changes': cuttingChanges.has(p.id) }"
+            >
+              <td>
+                <span :class="['badge', `badge-${p.material_code.toLowerCase()}`]">{{ p.material_code }}</span>
+                {{ materialCodeLabels[p.material_code] || p.material_code }}
+              </td>
+              <td>
+                <input
+                  type="number"
+                  :value="p.ref_speed_ipm"
+                  step="0.5"
+                  min="0"
+                  class="value-input"
+                  @change="trackCuttingChange(p.id, 'ref_speed_ipm', ($event.target as HTMLInputElement).value)"
+                />
+                <span class="unit-label">IPM</span>
+              </td>
+              <td>
+                <input
+                  type="number"
+                  :value="p.machinability"
+                  step="0.1"
+                  min="0"
+                  class="value-input small"
+                  @change="trackCuttingChange(p.id, 'machinability', ($event.target as HTMLInputElement).value)"
+                />
+              </td>
+              <td>
+                <input
+                  type="number"
+                  :value="p.exponent"
+                  step="0.05"
+                  min="0"
+                  class="value-input small"
+                  @change="trackCuttingChange(p.id, 'exponent', ($event.target as HTMLInputElement).value)"
+                />
+              </td>
+              <td class="notes-col">{{ p.notes }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="cutting-actions">
+          <button
+            class="btn btn-secondary"
+            @click="recalculateCutTimes"
+            :disabled="recalculating"
+          >
+            {{ recalculating ? 'Recalculating...' : 'Recalculate All Cut Times' }}
+          </button>
+          <span class="action-hint">Updates cut_time for all items with material, thickness, and cut_length</span>
+        </div>
+      </div>
+
+      <!-- Section 4: Material Pricing -->
       <div class="section">
         <h2>Material Pricing</h2>
         <p class="section-desc">Set specific prices per raw material. Materials without a price use the global default.</p>
@@ -522,6 +667,15 @@ h1 {
   background: #1e40af;
 }
 
+.btn-secondary {
+  background: #374151;
+  color: #e5e7eb;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #4b5563;
+}
+
 .btn-back {
   background: #065f46;
   color: #6ee7b7;
@@ -629,6 +783,10 @@ h2 {
   outline: none;
 }
 
+.value-input.small {
+  width: 70px;
+}
+
 .input-disabled {
   opacity: 0.3;
   background: #0f172a;
@@ -695,9 +853,39 @@ h2 {
 .badge-sm { background: #713f12; color: #fde68a; }
 .badge-ss { background: #4c1d95; color: #ddd6fe; }
 .badge-cs { background: #7f1d1d; color: #fca5a5; }
+.badge-al { background: #065f46; color: #6ee7b7; }
 
 .has-changes {
   background: #1e3a5c !important;
+}
+
+/* Cutting Parameters */
+.cutting-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.action-hint {
+  color: #9ca3af;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.notes-col {
+  color: #9ca3af;
+  font-size: 12px;
+  max-width: 200px;
+}
+
+code {
+  background: #1e293b;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  color: #38bdf8;
 }
 
 /* Material Filters */

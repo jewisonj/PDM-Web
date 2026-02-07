@@ -31,6 +31,50 @@ def get_file_type(filename: str) -> str:
     return type_map.get(ext, "OTHER")
 
 
+def normalize_filename(filename: str, item_number: str) -> str:
+    """
+    Normalize filename for consistent storage.
+
+    Normalizations:
+        - Lowercase everything
+        - Strip redundant suffixes (_dxf, _prt, _asm, etc.)
+        - Normalize .stp to .step
+
+    Examples:
+        xxp516691_dxf.dxf -> xxp516691.dxf
+        XXP516691.STP -> xxp516691.step
+        jbp00010_prt.stp -> jbp00010.step
+        rxa00100_asm.stp -> rxa00100.step
+        xxp516691.dxf -> xxp516691.dxf
+
+    Args:
+        filename: Original filename
+        item_number: The item number (used as base for normalized name)
+
+    Returns:
+        Normalized filename as [item_number].[extension] (lowercase)
+    """
+    # Get extension (lowercase)
+    if "." not in filename:
+        return filename.lower()
+
+    ext = filename.lower().split(".")[-1]
+
+    # Normalize .stp to .step
+    if ext == 'stp':
+        ext = 'step'
+
+    # For these file types, always normalize to [item_number].[ext]
+    # This strips any suffixes like _dxf, _prt, _asm, _stp, etc.
+    normalize_extensions = {'dxf', 'step', 'svg', 'pdf'}
+
+    if ext in normalize_extensions:
+        return f"{item_number.lower()}.{ext}"
+
+    # For other files, just lowercase the original name
+    return filename.lower()
+
+
 # Valid item_number patterns for auto-creation
 ITEM_NUMBER_PATTERNS = [
     re.compile(r"^mmc[a-z0-9_-]+$"),   # McMaster (e.g., mmc12555k88)
@@ -143,10 +187,15 @@ async def upload_file(
     # Determine file type
     file_type = get_file_type(file.filename)
 
+    # Normalize filename (strip redundant suffixes like _dxf.dxf -> .dxf)
+    normalized_filename = normalize_filename(file.filename, clean_item_number)
+    if normalized_filename != file.filename:
+        print(f"Normalized filename: {file.filename} -> {normalized_filename}")
+
     # Upload to Supabase Storage
     # Use pdm-files bucket for all uploads via this service
     bucket = "pdm-files"
-    path_in_bucket = f"{item_number.lower()}/{file.filename}"
+    path_in_bucket = f"{clean_item_number}/{normalized_filename}"
     storage_path = f"{bucket}/{path_in_bucket}"  # Full path including bucket for file_path column
 
     try:
@@ -166,8 +215,8 @@ async def upload_file(
         else:
             raise HTTPException(status_code=500, detail=f"Storage error: {str(e)}")
 
-    # Check if file record exists
-    existing = supabase.table("files").select("id, iteration").eq("item_id", item_id).eq("file_name", file.filename).execute()
+    # Check if file record exists (use normalized filename)
+    existing = supabase.table("files").select("id, iteration").eq("item_id", item_id).eq("file_name", normalized_filename).execute()
 
     if existing.data:
         # Update existing file record
@@ -183,7 +232,7 @@ async def upload_file(
         file_data = {
             "item_id": item_id,
             "file_type": file_type,
-            "file_name": file.filename,
+            "file_name": normalized_filename,
             "file_path": storage_path,
             "file_size": file_size,
             "revision": file_revision,

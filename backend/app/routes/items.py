@@ -5,6 +5,7 @@ from typing import Optional
 from uuid import UUID
 
 from ..services.supabase import get_supabase_admin
+from ..services.cutting import calculate_cut_time
 from ..models.schemas import Item, ItemCreate, ItemUpdate, ItemWithFiles, ItemSearchParams
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -202,3 +203,60 @@ async def get_item_history(item_number: str):
     history = supabase.table("lifecycle_history").select("*").eq("item_id", item_result.data["id"]).order("changed_at", desc=True).execute()
 
     return history.data
+
+
+@router.post("/recalculate-cut-times")
+async def recalculate_all_cut_times():
+    """
+    Batch recalculate cut_time for all items that have material, thickness, and cut_length.
+
+    This is useful after:
+    - Updating cutting_parameters (speeds, machinability, exponent)
+    - Changing handling_time_min in cost_settings
+    - Initial migration to calculated cut times
+
+    Returns count of items updated.
+    """
+    supabase = get_supabase_admin()
+
+    # Fetch all items with required fields for cut time calculation
+    result = supabase.table("items") \
+        .select("id, item_number, material, thickness, cut_length") \
+        .not_.is_("material", "null") \
+        .not_.is_("thickness", "null") \
+        .not_.is_("cut_length", "null") \
+        .execute()
+
+    if not result.data:
+        return {"message": "No items found with material, thickness, and cut_length", "items_updated": 0}
+
+    updated_count = 0
+    skipped_count = 0
+
+    for item in result.data:
+        try:
+            new_cut_time = calculate_cut_time(
+                item["material"],
+                float(item["thickness"]),
+                float(item["cut_length"]),
+                supabase
+            )
+
+            if new_cut_time:
+                supabase.table("items") \
+                    .update({"cut_time": new_cut_time}) \
+                    .eq("id", item["id"]) \
+                    .execute()
+                updated_count += 1
+            else:
+                skipped_count += 1
+        except Exception:
+            skipped_count += 1
+            continue
+
+    return {
+        "message": f"Recalculated cut times for {updated_count} items",
+        "items_updated": updated_count,
+        "items_skipped": skipped_count,
+        "total_processed": len(result.data)
+    }

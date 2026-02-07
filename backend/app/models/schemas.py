@@ -261,6 +261,35 @@ class ItemSearchParams(BaseModel):
     offset: int = 0
 
 
+# === Cutting Parameters ===
+class CuttingParameterBase(BaseModel):
+    material_code: str = Field(..., description="Material code: 'CS', 'AL', 'SS'")
+    ref_speed_ipm: float = Field(..., description="Reference cutting speed at 0.25\" thickness (IPM)")
+    machinability: float = Field(default=1.0, description="Machinability index relative to mild steel")
+    exponent: float = Field(default=0.85, description="Power law exponent for speed calculation")
+    notes: Optional[str] = None
+
+
+class CuttingParameterCreate(CuttingParameterBase):
+    pass
+
+
+class CuttingParameterUpdate(BaseModel):
+    ref_speed_ipm: Optional[float] = None
+    machinability: Optional[float] = None
+    exponent: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class CuttingParameter(CuttingParameterBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # Forward reference resolution
 BOMTreeNode.model_rebuild()
 ItemWithFiles.model_rebuild()

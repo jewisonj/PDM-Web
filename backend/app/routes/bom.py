@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from uuid import UUID
 
 from ..services.supabase import get_supabase_client, get_supabase_admin
+from ..services.cutting import calculate_cut_time
 from ..models.schemas import BOMEntry, BOMCreate, BOMTreeNode, Item, BOMBulkCreate, BOMBulkResponse
 
 router = APIRouter(prefix="/bom", tags=["bom"])
@@ -148,13 +149,14 @@ async def bulk_upload_bom(bom: BOMBulkCreate):
     items_updated = 0
 
     # 1. Get or create parent item and update its properties
+    # Note: cut_time is IGNORED from upload - calculated by MRP based on material/thickness/cut_length
     parent_props = {
         "name": bom.parent_name,
         "material": bom.parent_material,
         "mass": bom.parent_mass,
         "thickness": bom.parent_thickness,
         "cut_length": bom.parent_cut_length,
-        "cut_time": bom.parent_cut_time,
+        # "cut_time": bom.parent_cut_time,  # IGNORED - calculated by MRP
         "price_est": bom.parent_price_est,
     }
     parent_props = {k: v for k, v in parent_props.items() if v is not None}
@@ -180,6 +182,17 @@ async def bulk_upload_bom(bom: BOMBulkCreate):
         parent_id = create_result.data[0]["id"]
         items_created += 1
 
+    # Calculate cut_time for parent if we have required data
+    if bom.parent_material and bom.parent_thickness and bom.parent_cut_length:
+        parent_cut_time = calculate_cut_time(
+            bom.parent_material,
+            bom.parent_thickness,
+            bom.parent_cut_length,
+            supabase
+        )
+        if parent_cut_time:
+            supabase.table("items").update({"cut_time": parent_cut_time}).eq("id", parent_id).execute()
+
     # 2. Delete existing BOM entries for this parent
     supabase.table("bom").delete().eq("parent_item_id", parent_id).execute()
 
@@ -199,13 +212,14 @@ async def bulk_upload_bom(bom: BOMBulkCreate):
         child_result = supabase.table("items").select("id").eq("item_number", child_number).execute()
 
         # Prepare item properties
+        # Note: cut_time is IGNORED from upload - calculated by MRP
         item_props = {
             "name": child.name,
             "material": child.material,
             "mass": child.mass,
             "thickness": child.thickness,
             "cut_length": child.cut_length,
-            "cut_time": child.cut_time,
+            # "cut_time": child.cut_time,  # IGNORED - calculated by MRP
             "price_est": child.price_est,
         }
         # Filter out None values
@@ -232,6 +246,17 @@ async def bulk_upload_bom(bom: BOMBulkCreate):
             create_result = supabase.table("items").insert(new_item).execute()
             child_id = create_result.data[0]["id"]
             items_created += 1
+
+        # Calculate cut_time for child if we have required data
+        if child.material and child.thickness and child.cut_length:
+            child_cut_time = calculate_cut_time(
+                child.material,
+                child.thickness,
+                child.cut_length,
+                supabase
+            )
+            if child_cut_time:
+                supabase.table("items").update({"cut_time": child_cut_time}).eq("id", child_id).execute()
 
         # 4. Create BOM relationship
         bom_data = {
