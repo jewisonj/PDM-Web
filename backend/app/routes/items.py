@@ -125,8 +125,8 @@ async def update_item(item_number: str, item: ItemUpdate, upsert: bool = False):
     supabase = get_supabase_admin() if upsert else get_supabase_admin()
     normalized_number = item_number.lower()
 
-    # Filter out None values
-    update_data = {k: v for k, v in item.model_dump().items() if v is not None}
+    # Filter out None values AND cut_time (cut_time is calculated by MRP, not uploaded)
+    update_data = {k: v for k, v in item.model_dump().items() if v is not None and k != "cut_time"}
 
     if not update_data and not upsert:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -139,7 +139,17 @@ async def update_item(item_number: str, item: ItemUpdate, upsert: bool = False):
     result = supabase.table("items").update(update_data).eq("item_number", normalized_number).execute()
 
     if result.data:
-        return result.data[0]
+        updated_item = result.data[0]
+        # Recalculate cut_time if we have required data
+        material = updated_item.get("material")
+        thickness = updated_item.get("thickness")
+        cut_length = updated_item.get("cut_length")
+        if material and thickness and cut_length:
+            new_cut_time = calculate_cut_time(material, float(thickness), float(cut_length), supabase)
+            if new_cut_time:
+                supabase.table("items").update({"cut_time": new_cut_time}).eq("id", updated_item["id"]).execute()
+                updated_item["cut_time"] = new_cut_time
+        return updated_item
 
     # Item doesn't exist - create if upsert mode
     if upsert:
@@ -157,7 +167,17 @@ async def update_item(item_number: str, item: ItemUpdate, upsert: bool = False):
         }
         try:
             create_result = supabase.table("items").insert(new_item).execute()
-            return create_result.data[0]
+            created_item = create_result.data[0]
+            # Recalculate cut_time if we have required data
+            material = created_item.get("material")
+            thickness = created_item.get("thickness")
+            cut_length = created_item.get("cut_length")
+            if material and thickness and cut_length:
+                new_cut_time = calculate_cut_time(material, float(thickness), float(cut_length), supabase)
+                if new_cut_time:
+                    supabase.table("items").update({"cut_time": new_cut_time}).eq("id", created_item["id"]).execute()
+                    created_item["cut_time"] = new_cut_time
+            return created_item
         except Exception as e:
             if "duplicate key" in str(e).lower() or "23505" in str(e):
                 # Item exists but update returned no data (schema cache lag)
