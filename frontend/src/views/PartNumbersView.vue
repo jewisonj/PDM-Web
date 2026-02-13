@@ -16,9 +16,17 @@ const prefixes = ref<PrefixData[]>([])
 const loading = ref(true)
 const error = ref('')
 const copiedNumber = ref('')
+const selectedPrefix = ref<string | null>(null)
+const usedNumbers = ref<Set<string>>(new Set())
 
 // Standard prefixes in our system
 const STANDARD_PREFIXES = ['CSA', 'CSP', 'HBL', 'STA', 'STP', 'XXA', 'XXP', 'WMA', 'WMP']
+
+// Filtered prefixes based on selection
+const filteredPrefixes = computed(() => {
+  if (!selectedPrefix.value) return prefixes.value
+  return prefixes.value.filter(p => p.prefix === selectedPrefix.value)
+})
 
 async function loadPrefixes() {
   loading.value = true
@@ -94,12 +102,21 @@ async function copyToClipboard(partNumber: string) {
   try {
     await navigator.clipboard.writeText(partNumber)
     copiedNumber.value = partNumber
+    usedNumbers.value.add(partNumber)
     setTimeout(() => {
       copiedNumber.value = ''
     }, 2000)
   } catch (e) {
     console.error('Failed to copy:', e)
   }
+}
+
+function selectPrefix(prefix: string | null) {
+  selectedPrefix.value = prefix
+}
+
+function clearUsedNumbers() {
+  usedNumbers.value = new Set()
 }
 
 function goHome() {
@@ -130,12 +147,42 @@ onMounted(() => {
       </button>
     </header>
 
+    <!-- Prefix Filter Bar -->
+    <div class="prefix-filter-bar">
+      <button
+        class="prefix-filter-btn"
+        :class="{ active: selectedPrefix === null }"
+        @click="selectPrefix(null)"
+      >
+        All
+      </button>
+      <button
+        v-for="prefix in STANDARD_PREFIXES"
+        :key="prefix"
+        class="prefix-filter-btn"
+        :class="{ active: selectedPrefix === prefix }"
+        @click="selectPrefix(prefix)"
+      >
+        {{ prefix }}
+      </button>
+      <button
+        v-if="usedNumbers.size > 0"
+        class="clear-used-btn"
+        @click="clearUsedNumbers"
+        title="Clear used numbers"
+      >
+        <i class="pi pi-refresh"></i>
+        Clear Used ({{ usedNumbers.size }})
+      </button>
+    </div>
+
     <div class="instructions-card">
       <h3><i class="pi pi-info-circle"></i> How to Use</h3>
       <p>
         These are the next 50 available part numbers for each prefix.
         Numbers increment by 10 from the highest existing number.
         Click any number to copy it to your clipboard for use in CAD.
+        <strong>Used numbers turn red</strong> so you can track what you've copied.
       </p>
     </div>
 
@@ -150,7 +197,7 @@ onMounted(() => {
     </div>
 
     <div v-else class="prefixes-grid">
-      <div v-for="prefixData in prefixes" :key="prefixData.prefix" class="prefix-card">
+      <div v-for="prefixData in filteredPrefixes" :key="prefixData.prefix" class="prefix-card">
         <div class="prefix-header">
           <div class="prefix-name">{{ prefixData.prefix }}#####</div>
           <div class="prefix-info">
@@ -163,7 +210,7 @@ onMounted(() => {
             v-for="num in generateNextNumbers(prefixData)"
             :key="num"
             class="number-chip"
-            :class="{ copied: copiedNumber === num }"
+            :class="{ copied: copiedNumber === num, used: usedNumbers.has(num) }"
             @click="copyToClipboard(num)"
           >
             {{ num.toUpperCase() }}
@@ -257,6 +304,63 @@ onMounted(() => {
 .refresh-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.prefix-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #fff;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  align-items: center;
+}
+
+.prefix-filter-btn {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: monospace;
+  transition: all 0.15s;
+}
+
+.prefix-filter-btn:hover {
+  background: #e2e8f0;
+  border-color: #cbd5e1;
+}
+
+.prefix-filter-btn.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
+
+.clear-used-btn {
+  margin-left: auto;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #dc2626;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.15s;
+}
+
+.clear-used-btn:hover {
+  background: #fee2e2;
+  border-color: #f87171;
 }
 
 .instructions-card {
@@ -375,6 +479,18 @@ onMounted(() => {
   background: #dcfce7;
   border-color: #22c55e;
   color: #166534;
+}
+
+.number-chip.used {
+  background: #fef2f2;
+  border-color: #f87171;
+  color: #dc2626;
+  opacity: 0.7;
+}
+
+.number-chip.used:hover {
+  background: #fee2e2;
+  opacity: 1;
 }
 
 .copied-badge {
