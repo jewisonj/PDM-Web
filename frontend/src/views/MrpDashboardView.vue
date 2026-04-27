@@ -59,6 +59,7 @@ const addingPart = ref(false)
 const generatingPacket = ref(false)
 const packetSuccess = ref('')
 const packetUrl = ref<string | null>(null)
+const downloadingDXFs = ref(false)
 const completionData = ref<{item_id: string, station_id: string}[]>([])
 
 // Nesting state
@@ -736,6 +737,38 @@ async function generatePrintPacket() {
 function downloadPacket() {
   if (packetUrl.value) {
     window.open(packetUrl.value, '_blank')
+  }
+}
+
+async function downloadProjectDXFs() {
+  if (!selectedProject.value) return
+
+  downloadingDXFs.value = true
+  error.value = ''
+
+  try {
+    // Call backend endpoint to get ZIP of all DXFs
+    const response = await fetch(`${API_BASE_URL}/mrp/projects/${selectedProject.value.id}/download-dxfs`)
+
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.detail || 'Failed to download DXF files')
+    }
+
+    // Get the blob and trigger download
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${selectedProject.value.project_code}_dxfs.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } catch (e: any) {
+    error.value = e.message || 'Failed to download DXF files'
+  } finally {
+    downloadingDXFs.value = false
   }
 }
 
@@ -1446,6 +1479,14 @@ onUnmounted(() => {
               >
                 <i class="pi pi-th-large"></i>
                 Nest DXF
+              </button>
+              <button
+                class="primary-btn"
+                @click="downloadProjectDXFs"
+                :disabled="downloadingDXFs || loadingParts"
+              >
+                <i :class="downloadingDXFs ? 'pi pi-spin pi-spinner' : 'pi pi-download'"></i>
+                {{ downloadingDXFs ? 'Downloading...' : 'Download DXFs' }}
               </button>
             </div>
             <button class="danger-btn" @click="deleteProject">

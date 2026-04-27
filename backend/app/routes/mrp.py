@@ -1,8 +1,11 @@
 """MRP (Manufacturing Resource Planning) API routes."""
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from uuid import UUID
+import io
+import zipfile
 
 from ..services.print_packet import generate_print_packet, get_existing_packet
 from ..services.supabase import get_supabase_admin
@@ -503,3 +506,74 @@ async def get_print_packet(project_id: UUID):
         raise HTTPException(status_code=404, detail="No print packet found for this project")
 
     return result
+
+
+@router.get("/projects/{project_id}/download-dxfs")
+async def download_project_dxfs(project_id: UUID):
+    """
+    Download all DXF files for a project as a ZIP archive.
+
+    Returns a streaming ZIP file containing all DXF files for parts in the project.
+    """
+    supabase = get_supabase_admin()
+
+    # Get all project parts
+    parts_result = supabase.table("mrp_project_parts") \
+        .select("item_id, items(item_number)") \
+        .eq("project_id", str(project_id)) \
+        .execute()
+
+    if not parts_result.data:
+        raise HTTPException(status_code=404, detail="No parts found in project")
+
+    item_ids = [p["item_id"] for p in parts_result.data]
+    item_numbers = {p["item_id"]: p["items"]["item_number"] for p in parts_result.data if p.get("items")}
+
+    # Get DXF files for these items
+    files_result = supabase.table("files") \
+        .select("item_id, file_name, file_path") \
+        .eq("file_type", "DXF") \
+        .in_("item_id", item_ids) \
+        .execute()
+
+    if not files_result.data:
+        raise HTTPException(status_code=404, detail="No DXF files found for project parts")
+
+    # Get project code for ZIP filename
+    project_result = supabase.table("mrp_projects") \
+        .select("project_code") \
+        .eq("id", str(project_id)) \
+        .single() \
+        .execute()
+
+    project_code = project_result.data.get("project_code", "project") if project_result.data else "project"
+
+    # Create ZIP file in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for file_info in files_result.data:
+            try:
+                # Extract bucket and path from file_path (format: bucket-name/path/to/file)
+                path_parts = file_info["file_path"].split("/")
+                bucket = path_parts[0]
+                file_path = "/".join(path_parts[1:])
+
+                # Download file from storage
+                file_data = supabase.storage.from_(bucket).download(file_path)
+
+                # Use item_number as filename if available
+                item_num = item_numbers.get(file_info["item_id"], "")
+                filename = f"{item_num}.dxf" if item_num else file_info["file_name"]
+
+                zip_file.writestr(filename, file_data)
+            except Exception as e:
+                print(f"Failed to add {file_info['file_name']} to ZIP: {e}")
+                continue
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{project_code}_dxfs.zip"'}
+    )
