@@ -242,23 +242,36 @@ async def upload_file(
 
     file_record = result.data[0]
 
-    # Auto-queue DXF/SVG generation for STEP files (only parts, 3rd char == 'p')
+    # Auto-queue DXF/SVG generation for STEP files (only flat sheet metal parts)
     if file_type == "STEP":
         is_part = len(clean_item_number) >= 3 and clean_item_number[2] == 'p'
         if is_part:
-            file_id_for_task = file_record["id"]
-            for task_type in ["GENERATE_DXF", "GENERATE_SVG"]:
-                try:
-                    supabase.table("work_queue").insert({
-                        "item_id": item_id,
-                        "file_id": file_id_for_task,
-                        "task_type": task_type,
-                        "payload": {"file_path": storage_path, "item_number": clean_item_number},
-                        "status": "pending"
-                    }).execute()
-                    print(f"Queued {task_type} for {clean_item_number}")
-                except Exception as e:
-                    print(f"Warning: Failed to queue {task_type} for {clean_item_number}: {e}")
+            # Check if item has thickness and is not a tube
+            item_result = supabase.table("items").select("thickness, description").eq("id", item_id).single().execute()
+            has_thickness = item_result.data and item_result.data.get("thickness") is not None
+            description = (item_result.data.get("description") or "").lower() if item_result.data else ""
+            # Skip non-flat parts (tubes, posts, rods, etc.)
+            skip_keywords = ["tube", "post", "rod"]
+            is_non_flat = any(kw in description for kw in skip_keywords)
+
+            if has_thickness and not is_non_flat:
+                file_id_for_task = file_record["id"]
+                for task_type in ["GENERATE_DXF", "GENERATE_SVG"]:
+                    try:
+                        supabase.table("work_queue").insert({
+                            "item_id": item_id,
+                            "file_id": file_id_for_task,
+                            "task_type": task_type,
+                            "payload": {"file_path": storage_path, "item_number": clean_item_number},
+                            "status": "pending"
+                        }).execute()
+                        print(f"Queued {task_type} for {clean_item_number}")
+                    except Exception as e:
+                        print(f"Warning: Failed to queue {task_type} for {clean_item_number}: {e}")
+            elif is_non_flat:
+                print(f"Skipping DXF/SVG for {clean_item_number} - non-flat part (tube/post/rod)")
+            else:
+                print(f"Skipping DXF/SVG for {clean_item_number} - no thickness set")
 
     return file_record
 
