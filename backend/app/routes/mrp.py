@@ -517,17 +517,21 @@ async def download_project_dxfs(project_id: UUID):
     """
     supabase = get_supabase_admin()
 
-    # Get all project parts
+    # Get all project parts (only those flagged for DXF)
     parts_result = supabase.table("mrp_project_parts") \
-        .select("item_id, items(item_number)") \
+        .select("item_id, items(item_number, needs_dxf)") \
         .eq("project_id", str(project_id)) \
         .execute()
 
     if not parts_result.data:
         raise HTTPException(status_code=404, detail="No parts found in project")
 
-    item_ids = [p["item_id"] for p in parts_result.data]
-    item_numbers = {p["item_id"]: p["items"]["item_number"] for p in parts_result.data if p.get("items")}
+    # Filter to only parts with needs_dxf=true
+    item_ids = [p["item_id"] for p in parts_result.data if p.get("items") and p["items"].get("needs_dxf")]
+    item_numbers = {p["item_id"]: p["items"]["item_number"] for p in parts_result.data if p.get("items") and p["items"].get("needs_dxf")}
+
+    if not item_ids:
+        raise HTTPException(status_code=404, detail="No sheet metal parts (needs_dxf) found in project")
 
     # Get DXF files for these items
     files_result = supabase.table("files") \
