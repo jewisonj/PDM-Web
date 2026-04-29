@@ -280,3 +280,79 @@ async def recalculate_all_cut_times():
         "items_skipped": skipped_count,
         "total_processed": len(result.data)
     }
+
+
+@router.post("/{item_id}/generate-dxf")
+async def generate_dxf(item_id: UUID):
+    """
+    Request DXF/SVG generation for an item.
+
+    Sets needs_dxf=true and queues generation tasks if a STEP file exists.
+    """
+    supabase = get_supabase_admin()
+
+    # Get item info
+    item_result = supabase.table("items").select("id, item_number").eq("id", str(item_id)).single().execute()
+    if not item_result.data:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    item = item_result.data
+    item_number = item["item_number"]
+
+    # Set needs_dxf flag
+    supabase.table("items").update({"needs_dxf": True}).eq("id", str(item_id)).execute()
+
+    # Find most recent STEP file
+    step_result = supabase.table("files") \
+        .select("id, file_path") \
+        .eq("item_id", str(item_id)) \
+        .eq("file_type", "STEP") \
+        .order("created_at", desc=True) \
+        .limit(1) \
+        .execute()
+
+    if not step_result.data:
+        return {
+            "message": f"needs_dxf set for {item_number}, but no STEP file found",
+            "needs_dxf": True,
+            "queued": False
+        }
+
+    step_file = step_result.data[0]
+
+    # Check if DXF already exists
+    dxf_exists = supabase.table("files") \
+        .select("id") \
+        .eq("item_id", str(item_id)) \
+        .eq("file_type", "DXF") \
+        .execute()
+
+    if dxf_exists.data:
+        return {
+            "message": f"DXF already exists for {item_number}",
+            "needs_dxf": True,
+            "queued": False,
+            "dxf_exists": True
+        }
+
+    # Queue DXF and SVG generation
+    queued_tasks = []
+    for task_type in ["GENERATE_DXF", "GENERATE_SVG"]:
+        try:
+            supabase.table("work_queue").insert({
+                "item_id": str(item_id),
+                "file_id": step_file["id"],
+                "task_type": task_type,
+                "payload": {"file_path": step_file["file_path"], "item_number": item_number},
+                "status": "pending"
+            }).execute()
+            queued_tasks.append(task_type)
+        except Exception as e:
+            print(f"Warning: Failed to queue {task_type} for {item_number}: {e}")
+
+    return {
+        "message": f"Queued DXF/SVG generation for {item_number}",
+        "needs_dxf": True,
+        "queued": True,
+        "tasks": queued_tasks
+    }

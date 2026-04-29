@@ -112,6 +112,11 @@ const loadingPdf = ref(false)
 
 // Files state
 const itemFiles = ref<FileInfo[]>([])
+const generatingDxf = ref(false)
+
+// Computed: check if DXF exists
+const hasDxf = computed(() => itemFiles.value.some(f => f.file_type === 'DXF'))
+const hasStep = computed(() => itemFiles.value.some(f => f.file_type === 'STEP'))
 
 // Raw materials state
 const rawMaterials = ref<RawMaterial[]>([])
@@ -1102,6 +1107,40 @@ async function openFile(file: FileInfo) {
   }
 }
 
+async function generateDxf() {
+  if (!selectedItem.value) return
+
+  generatingDxf.value = true
+  error.value = ''
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/items/${selectedItem.value.id}/generate-dxf`, {
+      method: 'POST'
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.detail || 'Failed to generate DXF')
+    }
+
+    if (data.queued) {
+      // Refresh files list after a short delay to show pending state
+      setTimeout(async () => {
+        await selectItem(selectedItem.value!)
+      }, 1000)
+    }
+
+    if (data.dxf_exists) {
+      error.value = 'DXF already exists for this item'
+    }
+  } catch (e: any) {
+    error.value = e.message || 'Failed to generate DXF'
+  } finally {
+    generatingDxf.value = false
+  }
+}
+
 function goHome() {
   router.push('/')
 }
@@ -1235,6 +1274,16 @@ onMounted(() => {
                 :title="`Open ${file.file_name}`"
               >
                 {{ file.file_type }}
+              </button>
+              <button
+                v-if="!hasDxf && hasStep"
+                class="file-tile generate-dxf"
+                @click="generateDxf"
+                :disabled="generatingDxf"
+                title="Generate DXF flat pattern"
+              >
+                <i :class="generatingDxf ? 'pi pi-spin pi-spinner' : 'pi pi-plus'"></i>
+                DXF
               </button>
             </div>
           </div>
@@ -1887,6 +1936,19 @@ onMounted(() => {
 }
 
 .file-tile.step:hover, .file-tile.cad:hover { background: #1e40af; }
+
+.file-tile.generate-dxf {
+  background: #065f46;
+  color: #6ee7b7;
+  border: 1px dashed #6ee7b7;
+}
+
+.file-tile.generate-dxf:hover { background: #047857; }
+
+.file-tile.generate-dxf:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* Part Info */
 .part-info-bar {
