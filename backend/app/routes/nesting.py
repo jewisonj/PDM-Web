@@ -94,6 +94,7 @@ async def get_nest_groups(project_id: UUID):
             }
 
         has_dxf = item["id"] in dxf_lookup
+        item_number = item.get("item_number", "")
         groups[group_key]["parts"].append({
             "item_id": item["id"],
             "item_number": item_number,
