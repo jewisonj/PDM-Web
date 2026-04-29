@@ -1,10 +1,16 @@
 """Files API routes."""
 
 import re
+from io import BytesIO
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import Optional
 from uuid import UUID
+
+from pypdf import PdfReader, PdfWriter
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 from ..services.supabase import get_supabase_admin
 from ..models.schemas import FileInfo, FileCreate
@@ -29,6 +35,73 @@ def get_file_type(filename: str) -> str:
         "jpeg": "IMAGE",
     }
     return type_map.get(ext, "OTHER")
+
+
+def stamp_pdf_upload_date(content: bytes) -> bytes:
+    """
+    Stamp a PDF with upload date in the lower right corner.
+
+    Adds "Upload - MM/DD/YYYY" text to each page of the PDF.
+
+    Args:
+        content: Original PDF file content as bytes
+
+    Returns:
+        Modified PDF content as bytes with date stamp on each page
+    """
+    try:
+        reader = PdfReader(BytesIO(content))
+        writer = PdfWriter()
+
+        # Get current date formatted as MM/DD/YYYY
+        upload_date = datetime.now().strftime("%m/%d/%Y")
+        stamp_text = f"Upload - {upload_date}"
+
+        for page in reader.pages:
+            # Get page dimensions
+            page_width = float(page.mediabox.width)
+            page_height = float(page.mediabox.height)
+
+            # Create stamp overlay
+            stamp_buffer = BytesIO()
+            c = canvas.Canvas(stamp_buffer, pagesize=(page_width, page_height))
+
+            # Position: lower right corner with margin
+            margin = 36  # 0.5 inch margin
+            text_width = c.stringWidth(stamp_text, "Helvetica", 8)
+
+            x = page_width - text_width - margin
+            y = margin
+
+            # Draw white background rectangle for readability
+            c.setFillColorRGB(1, 1, 1)
+            c.setStrokeColorRGB(0.5, 0.5, 0.5)
+            padding = 4
+            c.rect(x - padding, y - padding, text_width + padding * 2, 12 + padding, fill=1, stroke=1)
+
+            # Draw text
+            c.setFillColorRGB(0, 0, 0)
+            c.setFont("Helvetica", 8)
+            c.drawString(x, y, stamp_text)
+
+            c.save()
+            stamp_buffer.seek(0)
+
+            # Merge stamp onto page
+            stamp_reader = PdfReader(stamp_buffer)
+            page.merge_page(stamp_reader.pages[0])
+            writer.add_page(page)
+
+        # Write to bytes
+        output = BytesIO()
+        writer.write(output)
+        output.seek(0)
+        return output.read()
+
+    except Exception as e:
+        # If stamping fails, return original content
+        print(f"Warning: PDF stamping failed: {e}")
+        return content
 
 
 def normalize_filename(filename: str, item_number: str) -> str:
@@ -182,10 +255,16 @@ async def upload_file(
 
     # Read file content
     content = await file.read()
-    file_size = len(content)
 
     # Determine file type
     file_type = get_file_type(file.filename)
+
+    # Stamp PDFs with upload date
+    if file_type == "PDF":
+        print(f"Stamping PDF with upload date: {file.filename}")
+        content = stamp_pdf_upload_date(content)
+
+    file_size = len(content)
 
     # Normalize filename (strip redundant suffixes like _dxf.dxf -> .dxf)
     normalized_filename = normalize_filename(file.filename, clean_item_number)
