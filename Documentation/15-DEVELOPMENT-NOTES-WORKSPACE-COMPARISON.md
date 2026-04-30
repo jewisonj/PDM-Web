@@ -457,7 +457,138 @@ These are managed in the MRP UI and should not be overridden by static Creo para
 
 ---
 
-### 19. Filename and Item Number Normalization (Suffix Stripping)
+### 19. PDF Upload Date Stamping Position
+
+**Symptom:** PDF upload date stamps were overlapping with drawing title blocks in the lower-right corner, obscuring critical information like revision letters and approval signatures.
+
+**Root Cause:** The initial PDF stamping implementation placed the date stamp in the lower-right corner with a 0.5" margin. Many engineering drawing templates have title blocks in this exact location, causing the stamp to cover drawing metadata.
+
+**Diagnosis:** Reviewed uploaded PDFs and found the white background box of the date stamp was blocking revision numbers, engineer names, and approval dates in the title block. The stamp was also too small (8pt font) to be easily visible without zooming.
+
+**Fix:** Repositioned the stamp to the lower-left corner and increased font size:
+
+**Before:**
+```python
+# Position: lower right corner with margin
+margin = 36  # 0.5 inch margin
+text_width = c.stringWidth(stamp_text, "Helvetica", 8)
+x = page_width - text_width - margin
+y = margin
+
+# Draw white background rectangle for readability
+c.setFillColorRGB(1, 1, 1)
+c.setStrokeColorRGB(0.5, 0.5, 0.5)
+padding = 4
+c.rect(x - padding, y - padding, text_width + padding * 2, 12 + padding, fill=1, stroke=1)
+
+# Draw text
+c.setFillColorRGB(0, 0, 0)
+c.setFont("Helvetica", 8)
+c.drawString(x, y, stamp_text)
+```
+
+**After:**
+```python
+# Position: lower left, past corner mark
+x = 82  # ~1.1 inch from left edge (past corner marks)
+y = 8   # Just below the margin line
+
+# Draw text only (no box)
+c.setFillColorRGB(0, 0, 0)
+c.setFont("Helvetica", 12)  # Larger font for visibility
+c.drawString(x, y, stamp_text)
+```
+
+**Changes Made:**
+1. **Position moved from lower-right to lower-left** - Engineering drawings typically have corner marks and borders but leave the lower-left area clear
+2. **X position: 82pt (~1.1")** - Past the corner mark zone but still in the margin
+3. **Y position: 8pt** - Just above the bottom edge, below the margin line
+4. **Font size: 8pt → 12pt** - More readable without zooming
+5. **Removed white background box** - Cleaner appearance, less visual clutter, doesn't obscure underlying drawing lines
+
+**Benefits:**
+- Date stamp no longer obscures title block information
+- Larger font is easier to read when printed or viewed at normal zoom
+- Cleaner appearance without background box
+- Still visible and unambiguous as an upload stamp
+
+**Files Changed:** `backend/app/routes/files.py` (lines 65-75)
+
+**Prevention:** When adding annotations or stamps to engineering drawings, avoid the lower-right corner (title block zone) and use the lower-left or upper areas. Test with actual drawing PDFs that have full title blocks, not blank test files.
+
+---
+
+### 20. Routing Editor State Reset and Purchase Info Save Issues
+
+**Symptom 1:** When selecting a new item in the routing editor, the UI sometimes showed stale data from the previously selected item (old operations, old materials, old purchase info).
+
+**Symptom 2:** After editing purchased part information (supplier name, part number, unit price) and switching to a different tab, the save operation would hang indefinitely. The loading spinner would keep spinning and the data never saved.
+
+**Root Cause 1:** The routing editor did not fully reset state when `selectedItem` changed. Some computed properties and reactive refs retained old values across item switches.
+
+**Root Cause 2:** When the user switched tabs while a save operation was in progress, the browser aborted the fetch request (throwing an `AbortError`). The save function did not catch this error type, so it threw an unhandled exception, leaving the UI in a loading state forever.
+
+**Diagnosis:**
+1. Checked the console and saw `AbortError: The user aborted a request` when switching tabs during save
+2. Confirmed the save endpoint was working correctly when called without tab switching
+3. Reviewed the `savePurchaseInfo()` function and found no error handling for `AbortError`
+4. Traced state reset issues to missing `nextTick()` or `watch()` on `selectedItem` changes
+
+**Fix (State Reset):**
+Added explicit state reset when `selectedItem` changes:
+```javascript
+watch(() => selectedItem.value, (newItem) => {
+  if (newItem) {
+    // Reset all state
+    operations.value = []
+    assignedMaterials.value = []
+    purchaseInfo.value = { ... }
+
+    // Fetch fresh data
+    fetchOperations()
+    fetchMaterials()
+    fetchPurchaseInfo()
+  }
+})
+```
+
+**Fix (AbortError Retry):**
+Added error handling with retry logic in `savePurchaseInfo()`:
+```javascript
+async function savePurchaseInfo() {
+  try {
+    const response = await supabase.from('items').update({
+      supplier_name: purchaseInfo.value.supplier_name,
+      supplier_part_number: purchaseInfo.value.supplier_part_number,
+      unit_price: purchaseInfo.value.unit_price
+    }).eq('id', selectedItem.value.id)
+
+    if (response.error) throw response.error
+
+  } catch (err) {
+    // If tab switch aborted the request, retry once
+    if (err.name === 'AbortError') {
+      console.log('Save aborted (tab switch), retrying...')
+      await new Promise(resolve => setTimeout(resolve, 100))  // Brief delay
+      return savePurchaseInfo()  // Retry
+    }
+    throw err  // Re-throw other errors
+  }
+}
+```
+
+**Files Changed:**
+- `frontend/src/views/MrpRoutingView.vue` - Added state reset on item change, AbortError retry logic
+
+**Prevention:**
+- Always reset reactive state when the selected entity changes (use `watch()` with cleanup)
+- Handle `AbortError` in any fetch/save operations that can be interrupted by user navigation
+- Add retry logic for operations that are safe to retry (idempotent saves)
+- Use loading spinners with timeout safeguards to prevent infinite loading states
+
+---
+
+### 21. Filename and Item Number Normalization (Suffix Stripping)
 
 **Symptom:** Uploaded files had redundant suffixes like `abc0001_dxf.dxf` or `xxp123_prt.prt`. Item numbers extracted from filenames included Creo type suffixes like `abc0001_prt`, causing database mismatches.
 
@@ -741,9 +872,15 @@ A `.env` file in `backend/` provides these values for local development. In prod
 19. **Regex filename matching for duplicates** -- Use `^param(_\d+)?\.txt$` pattern to handle Windows `_1`, `_2` suffixes when files drop faster than processing.
 20. **Auto-sync scripts on service launch** -- `Start-PDMUpload.bat` copies latest .ps1 files from project source to `C:\PDM-Upload\` before starting service.
 21. **PRICE_EST removed from Creo parser** -- MRP pricing engine owns cost estimates. Parser ignores `PRICE_EST` column to prevent CAD metadata from overwriting calculated prices.
+22. **Waterjet time auto-calculation in routing editor** -- The MRP routing editor automatically calculates waterjet cut time when Waterjet station is selected or when applying routing templates. Uses `cut_length` from item data and material/thickness-specific speed formula from the `cutting_parameters` table. Formula: `speed = ref_speed × (0.25/thickness)^exponent × machinability`. Auto-fills on station dropdown change and on template application (Formed SM, Flat SM). Waterjet station code must be exactly `012` to trigger auto-calculation.
+23. **Purchased routing template** -- New "Purchased" template in routing editor with 3 stations: 005 Receiving (10min), 020 Staging (5min), 050 Inspection (5min). Used for supplier parts that don't require manufacturing operations.
+24. **Purchase info save retry on AbortError** -- Fixed issue where saving purchased part info (supplier name, part number, unit price) would hang after switching tabs. The save operation now catches `AbortError` (from tab switch) and retries the save after a brief delay.
+25. **PDF upload date stamp position** -- Changed PDF upload date stamp from lower-right to lower-left corner (x=82pt, past corner marks) to avoid overlap with drawing title blocks. Font size increased from 8pt to 12pt for better visibility. Removed white background box for cleaner appearance.
+26. **Price badge on item list** -- Items with assigned `unit_price` now show a green "$" badge in the routing editor item list, making it easy to identify purchased parts with pricing data.
+27. **Routing state reset on item change** -- Routing editor now properly resets all state (operations, materials, purchase info) when selecting a new item. Prevents stale data from previous item from appearing in the UI.
 
 ---
 
-**Last Updated:** 2026-02-01
-**Version:** 3.2.1
+**Last Updated:** 2026-04-30
+**Version:** 3.5.1
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

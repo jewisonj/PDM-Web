@@ -1,9 +1,9 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-02-07
+**Last Updated:** 2026-04-30
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.5
+**Current Version:** v3.5.1
 
 ---
 

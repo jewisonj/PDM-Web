@@ -13,6 +13,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 })
 
+
 // API base URL for FastAPI backend
 // Dynamically determine based on current host
 function getApiBaseUrl(): string {

@@ -84,6 +84,13 @@ interface CostSetting {
   setting_value: number
 }
 
+interface CuttingParameter {
+  material_code: string
+  ref_speed_ipm: number
+  machinability: number
+  exponent: number
+}
+
 interface RoutingMaterial {
   id?: string
   item_id: string
@@ -131,6 +138,7 @@ const blankHeight = ref<number | null>(null)
 
 // Cost state
 const costSettings = ref<CostSetting[]>([])
+const cuttingParameters = ref<CuttingParameter[]>([])
 const editingCostIndex = ref<number | null>(null)
 const editingCostValue = ref<string>('')
 
@@ -191,13 +199,19 @@ const routingStatusOptions = [
   { value: 'no_routing', label: 'Unrouted' }
 ]
 
-// Legacy templates using numeric station codes
+// Routing templates with optional default times per station
+// stations can be string[] or {code, time}[] for default times
 const routingTemplates = [
   { key: 'FORMED_SM', label: 'Formed SM', stations: ['012', '013', '011', '050'] },
   { key: 'FLAT_SM', label: 'Flat SM', stations: ['012', '011', '050'] },
   { key: 'TUBE', label: 'Tube', stations: ['010', '011', '018', '050'] },
   { key: 'WELD_ASM', label: 'Weld Asm', stations: ['014', '015', '017', '050'] },
-  { key: 'MECH_ASM', label: 'Mech Asm', stations: ['025', '050'] }
+  { key: 'MECH_ASM', label: 'Mech Asm', stations: ['025', '050'] },
+  { key: 'PURCHASED', label: 'Purchased', stations: [
+    { code: '005', time: 10 },
+    { code: '020', time: 5 },
+    { code: '050', time: 5 }
+  ]}
 ]
 
 // Determine part type from item characteristics
@@ -506,6 +520,17 @@ watch([blankWidth, blankHeight], () => {
   }
 })
 
+// Auto-fill waterjet time when Waterjet station is selected
+watch(addStationId, () => {
+  const station = workstations.value.find(w => w.id === addStationId.value)
+  if (station?.station_code === '012' && selectedItem.value) {
+    const cutTime = getEffectiveCutTime(selectedItem.value)
+    if (cutTime) {
+      addStationTime.value = Math.round(cutTime * 10) / 10
+    }
+  }
+})
+
 // Map item.material string to raw_materials material_code (CS/AL/SS)
 function mapMaterialCode(itemMaterial: string | undefined): string | null {
   if (!itemMaterial) return null
@@ -514,6 +539,40 @@ function mapMaterialCode(itemMaterial: string | undefined): string | null {
   if (m.includes('AL') || m.includes('ALUMINUM') || m.includes('ALUMINIUM')) return 'AL'
   if (m.includes('STEEL') || m === 'CS' || m === 'CRS' || m === 'HRS' || m === 'HSLA') return 'CS'
   return null
+}
+
+// Calculate waterjet cut time from cut_length, thickness, and material
+function calculateCutTime(item: Item): number | null {
+  if (!item.cut_length || !item.thickness || !item.material) return null
+
+  const cutLength = Number(item.cut_length)
+  const thickness = Number(item.thickness)
+  if (cutLength <= 0 || thickness <= 0) return null
+
+  const materialCode = mapMaterialCode(item.material)
+  if (!materialCode) return null
+
+  const params = cuttingParameters.value.find(p => p.material_code === materialCode)
+  if (!params) return null
+
+  // Formula: speed = ref_speed * (0.25 / thickness)^exponent * machinability
+  const refSpeed = Number(params.ref_speed_ipm)
+  const machinability = Number(params.machinability)
+  const exponent = Number(params.exponent)
+
+  const speed = refSpeed * Math.pow(0.25 / thickness, exponent) * machinability
+  if (speed <= 0) return null
+
+  // cut_time = (cut_length / speed) + handling_time (default 0.5 min)
+  const handlingTime = 0.5
+  const cutTime = (cutLength / speed) + handlingTime
+  return Math.round(cutTime * 100) / 100
+}
+
+// Get effective cut_time: use stored value or calculate from cut_length
+function getEffectiveCutTime(item: Item): number | null {
+  if (item.cut_time) return Number(item.cut_time)
+  return calculateCutTime(item)
 }
 
 // Find closest matching wall_or_thk_in from available SM raw materials
@@ -665,6 +724,14 @@ async function loadData() {
     if (materialsError) throw materialsError
     rawMaterials.value = materialsData || []
 
+    // Load cutting parameters for waterjet time calculation
+    const { data: cuttingData, error: cuttingError } = await supabase
+      .from('cutting_parameters')
+      .select('material_code, ref_speed_ipm, machinability, exponent')
+
+    if (cuttingError) throw cuttingError
+    cuttingParameters.value = cuttingData || []
+
     // Check for item parameter from URL
     const itemParam = route.query.item as string
     if (itemParam) {
@@ -682,6 +749,12 @@ async function loadData() {
 }
 
 async function selectItem(item: Item) {
+  // Reset any stuck saving states
+  savingRouting.value = false
+  savingPurchase.value = false
+  error.value = ''
+  successMessage.value = ''
+
   selectedItem.value = item
   routing.value = []
   itemFiles.value = []
@@ -806,8 +879,11 @@ function addRoutingStep() {
 
   // Auto-fill cut_time for Waterjet (012) if user left time empty
   let estTime = addStationTime.value || 0
-  if (station.station_code === '012' && selectedItem.value.cut_time && estTime === 0) {
-    estTime = Math.round(selectedItem.value.cut_time * 10) / 10
+  if (station.station_code === '012' && estTime === 0) {
+    const cutTime = getEffectiveCutTime(selectedItem.value)
+    if (cutTime) {
+      estTime = Math.round(cutTime * 10) / 10
+    }
   }
 
   routing.value.push({
@@ -851,13 +927,20 @@ function applyTemplate(templateKey: string) {
   const template = routingTemplates.find(t => t.key === templateKey)
   if (!template) return
 
-  routing.value = template.stations.map((stationCode, i) => {
+  routing.value = template.stations.map((stationEntry, i) => {
+    // Handle both string format and {code, time} object format
+    const stationCode = typeof stationEntry === 'string' ? stationEntry : stationEntry.code
+    const defaultTime = typeof stationEntry === 'object' ? stationEntry.time : 0
+
     const station = workstations.value.find(w => w.station_code === stationCode)
 
-    // Auto-fill cut_time for Waterjet (012)
-    let estTime = 0
-    if (stationCode === '012' && selectedItem.value!.cut_time) {
-      estTime = Math.round(selectedItem.value!.cut_time * 10) / 10
+    // Auto-fill cut_time for Waterjet (012), otherwise use template default
+    let estTime = defaultTime
+    if (stationCode === '012') {
+      const cutTime = getEffectiveCutTime(selectedItem.value!)
+      if (cutTime) {
+        estTime = Math.round(cutTime * 10) / 10
+      }
     }
 
     return {
@@ -879,39 +962,49 @@ function clearRouting() {
 
 async function saveRouting() {
   if (!selectedItem.value) return
+  if (savingRouting.value) return // Prevent double-click
 
   savingRouting.value = true
   error.value = ''
   successMessage.value = ''
 
+  const itemId = selectedItem.value.id
+  const routingData = routing.value.map(r => ({
+    item_id: r.item_id,
+    station_id: r.station_id,
+    sequence: r.sequence,
+    est_time_min: r.est_time_min || 0,
+    notes: r.notes || null,
+    cost_override: r.cost_override ?? null
+  }))
+
   try {
     // Delete existing routing
-    await supabase
+    const { error: deleteError } = await supabase
       .from('routing')
       .delete()
-      .eq('item_id', selectedItem.value.id)
+      .eq('item_id', itemId)
+
+    if (deleteError) throw deleteError
 
     // Insert new routing
-    if (routing.value.length > 0) {
-      const { error: insertError } = await supabase
+    if (routingData.length > 0) {
+      const { data, error: insertError } = await supabase
         .from('routing')
-        .insert(routing.value.map(r => ({
-          item_id: r.item_id,
-          station_id: r.station_id,
-          sequence: r.sequence,
-          est_time_min: r.est_time_min || 0,
-          notes: r.notes || null,
-          cost_override: r.cost_override ?? null
-        })))
+        .insert(routingData)
+        .select('id')
 
       if (insertError) throw insertError
+      if (!data || data.length === 0) {
+        throw new Error('Insert failed - check if you are logged in as engineer/admin')
+      }
     }
 
     // Update item's has_routing status in local state
-    const item = items.value.find(i => i.id === selectedItem.value!.id)
+    const item = items.value.find(i => i.id === itemId)
     if (item) {
-      item.has_routing = routing.value.length > 0
-      item.routing_count = routing.value.length
+      item.has_routing = routingData.length > 0
+      item.routing_count = routingData.length
     }
 
     successMessage.value = 'Routing saved'
@@ -997,34 +1090,61 @@ function calculateMaterial() {
   }
 }
 
-async function updatePurchaseInfo() {
+async function updatePurchaseInfo(retryCount = 0) {
   if (!selectedItem.value) return
+
   savingPurchase.value = true
+  error.value = ''
+
+  const itemId = selectedItem.value.id
+  const priceToSave = purchasePrice.value
+  const supplierToSave = purchaseSupplier.value || null
+  const pnToSave = purchasePn.value || null
+
   try {
-    const { error: updateError } = await supabase
+    const { data, error: updateError } = await supabase
       .from('items')
       .update({
-        unit_price: purchasePrice.value,
-        supplier_name: purchaseSupplier.value || null,
-        supplier_pn: purchasePn.value || null,
+        unit_price: priceToSave,
+        supplier_name: supplierToSave,
+        supplier_pn: pnToSave,
         is_supplier_part: true
       })
-      .eq('id', selectedItem.value.id)
+      .eq('id', itemId)
+      .select('id')
 
     if (updateError) throw updateError
+    if (!data || data.length === 0) {
+      throw new Error('Update failed - check if you are logged in as engineer/admin')
+    }
 
-    // Update local item data
-    selectedItem.value.unit_price = purchasePrice.value
-    selectedItem.value.supplier_name = purchaseSupplier.value || null
-    selectedItem.value.supplier_pn = purchasePn.value || null
-    selectedItem.value.is_supplier_part = true
+    // Update local item data if still on same item
+    if (selectedItem.value?.id === itemId) {
+      selectedItem.value.unit_price = priceToSave
+      selectedItem.value.supplier_name = supplierToSave
+      selectedItem.value.supplier_pn = pnToSave
+      selectedItem.value.is_supplier_part = true
+    }
 
     // Update in items list too
-    const idx = items.value.findIndex(i => i.id === selectedItem.value!.id)
+    const idx = items.value.findIndex(i => i.id === itemId)
     if (idx !== -1) {
-      items.value[idx] = { ...items.value[idx], ...selectedItem.value }
+      items.value[idx].unit_price = priceToSave
+      items.value[idx].supplier_name = supplierToSave
+      items.value[idx].supplier_pn = pnToSave
+      items.value[idx].is_supplier_part = true
     }
+
+    successMessage.value = 'Purchase info saved'
+    setTimeout(() => { successMessage.value = '' }, 3000)
   } catch (e: any) {
+    // Handle AbortError from tab switching - retry once
+    if (e.name === 'AbortError' && retryCount < 2) {
+      console.log('[updatePurchaseInfo] Request aborted, retrying...')
+      savingPurchase.value = false
+      await new Promise(r => setTimeout(r, 100))
+      return updatePurchaseInfo(retryCount + 1)
+    }
     error.value = e.message || 'Failed to update purchase info'
   } finally {
     savingPurchase.value = false
@@ -1240,6 +1360,7 @@ onMounted(() => {
               </span>
               <span class="item-number">{{ item.item_number }}</span>
               <span v-if="item.has_material" class="mat-badge" title="Material assigned">Mat</span>
+              <span v-if="item.unit_price" class="price-badge" title="Price assigned">$</span>
               <span v-if="item.has_routing" class="ops-badge" :title="`${item.routing_count} operations`">
                 {{ item.routing_count }} ops
               </span>
@@ -1294,7 +1415,9 @@ onMounted(() => {
             <span v-if="selectedItem.thickness" class="info-chip">{{ selectedItem.thickness }}"</span>
             <span v-if="selectedItem.mass" class="info-chip">{{ Number(selectedItem.mass).toFixed(1) }} lb</span>
             <span v-if="selectedItem.cut_length" class="info-chip">{{ Number(selectedItem.cut_length).toFixed(1) }}" cut</span>
-            <span v-if="selectedItem.cut_time" class="info-chip cut-time-chip">{{ Number(selectedItem.cut_time).toFixed(1) }} min cut time</span>
+            <span v-if="getEffectiveCutTime(selectedItem)" class="info-chip cut-time-chip" :title="selectedItem.cut_time ? 'Stored value' : 'Calculated from cut length'">
+              {{ getEffectiveCutTime(selectedItem)!.toFixed(1) }} min cut{{ selectedItem.cut_time ? '' : '*' }}
+            </span>
           </div>
 
           <!-- Routing Operations Table -->
@@ -1331,7 +1454,12 @@ onMounted(() => {
               </span>
               <span class="col-time">
                 <input v-model.number="step.est_time_min" type="number" min="0" step="0.1" class="time-input" :class="{ 'input-dimmed': isStepOutsourced(step) }" /> min
-                <span v-if="step.station_code === '012' && selectedItem?.cut_time" class="cut-time-hint">(from cut_time)</span>
+                <template v-if="step.station_code === '012' && getEffectiveCutTime(selectedItem!)">
+                  <span v-if="Math.abs(step.est_time_min - Math.round(getEffectiveCutTime(selectedItem!)! * 10) / 10) < 0.05" class="cut-time-hint">
+                    (from {{ selectedItem?.cut_time ? 'cut_time' : 'cut_length' }})
+                  </span>
+                  <span v-else class="cut-time-hint manual-hint">(manually entered)</span>
+                </template>
               </span>
               <span class="col-cost">
                 <!-- Outsourced: always editable flat cost -->
@@ -1817,6 +1945,15 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.price-badge {
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid #22c55e;
+  color: #4ade80;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .ops-badge {
   margin-left: auto;
   padding: 2px 6px;
@@ -2081,6 +2218,10 @@ onMounted(() => {
   font-size: 10px;
   color: #6ee7b7;
   white-space: nowrap;
+}
+
+.cut-time-hint.manual-hint {
+  color: #fbbf24;
 }
 
 .cut-time-chip {
@@ -2565,6 +2706,7 @@ onMounted(() => {
 
 .price-input {
   border-radius: 0 4px 4px 0 !important;
+  border-left: none !important;
   flex: 1;
 }
 

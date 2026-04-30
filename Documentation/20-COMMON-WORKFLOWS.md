@@ -485,6 +485,67 @@ Get-Content C:\PDM-Upload\pdm-upload.log -Tail 20
 4. Mark operations as complete
 5. View PDF drawings inline
 
+### MRP Routing Editor
+
+**Where:** Routing Editor (`/mrp/routing`)
+
+Assign manufacturing operations to parts and configure operation parameters.
+
+#### Auto-Calculate Waterjet Time
+
+When a part has `cut_length` data from Creo, the routing editor can automatically calculate waterjet cutting time:
+
+1. Navigate to Routing Editor and select a sheet metal part with `cut_length` populated
+2. Add a new operation or edit an existing operation
+3. In the Station dropdown, select **"012 - Waterjet"**
+4. The Time field automatically fills with calculated cut time in minutes
+5. Calculation uses material-specific parameters from `cutting_parameters` table:
+   - Formula: `speed = ref_speed × (0.25/thickness)^exponent × machinability`
+   - Cut time = (cut_length / speed) + handling_time
+   - Material codes map as: STEEL/STEEL_HSLA → CS, ALUMINUM/AL → AL, STAINLESS/304SS → SS
+6. You can override the calculated time by manually entering a different value
+
+**When Auto-Calculation Happens:**
+- Selecting "Waterjet" station in the dropdown
+- Applying a routing template that includes Waterjet (Formed SM, Flat SM)
+- Only if `cut_length > 0` and valid material/thickness exist
+
+#### Apply Routing Templates
+
+Quick-start routing configurations for common part types:
+
+1. Select an item from the item list (left panel)
+2. Click one of the template buttons:
+   - **Formed SM** - Sheet metal with forming operations (Waterjet, Press Brake, Deburr, Clean, Weld, Grind, QC)
+   - **Flat SM** - Flat sheet metal (Waterjet, Deburr, Clean, QC)
+   - **Tube** - Tube cutting and processing (Saw, Deburr, Clean, QC)
+   - **Purchased** - Supplier parts (Receiving 10min, Staging 5min, Inspection 5min)
+3. Template operations are added to the routing automatically
+4. Default times are pre-filled per station:
+   - Waterjet: auto-calculated from cut_length (if available)
+   - Press Brake: 15 min
+   - Deburr: 10 min
+   - Clean: 5 min
+   - Weld: 30 min
+   - Receiving: 10 min
+   - Staging: 5 min
+   - Inspection: 5 min
+5. Edit individual operations to adjust times or sequence
+
+#### Purchased Part Information
+
+For supplier parts (item numbers starting with `mmc` or `spn`):
+
+1. Select the item in the routing editor
+2. The "Purchased Part Information" section appears below routing operations
+3. Fields available:
+   - **Supplier Name** (auto-filled as "McMaster-Carr" for `mmc` items)
+   - **Supplier Part Number**
+   - **Unit Price** ($/unit)
+4. Enter or update values and they save automatically
+5. For McMaster parts, a product page link is generated automatically
+6. Items with `unit_price` set show a green "$" badge in the item list
+
 ### Project Tracking
 
 **Where:** Project Tracking (`/mrp/tracking`)

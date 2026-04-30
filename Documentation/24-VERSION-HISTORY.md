@@ -7,9 +7,81 @@
 
 ## Current Version
 
-### v3.5 (2026-02-07) -- Waterjet Cut Time Calculation and Shop Floor Enhancements
+### v3.5.1 (2026-04-30) -- Routing Editor Enhancements and PDF Upload Improvements
 
 **Status:** Current Production Release
+
+**Summary:** Enhanced MRP routing editor with automatic waterjet time calculation, new Purchased routing template, improved UI state management, and refined PDF upload date stamping.
+
+#### Features Added
+
+**Automatic Waterjet Time Calculation in Routing Editor**
+
+The routing editor now automatically calculates waterjet cutting time when selecting the Waterjet station or applying routing templates:
+
+- **Auto-calculation trigger:** When "012 - Waterjet" is selected in the station dropdown
+- **Data source:** Uses `cut_length` from item data (populated from Creo `CUT_LENGTH` parameter)
+- **Formula:** `speed = ref_speed × (0.25/thickness)^exponent × machinability` from `cutting_parameters` table
+- **Cut time:** `(cut_length / speed) + handling_time` in minutes
+- **Material mapping:** STEEL/STEEL_HSLA → CS, ALUMINUM/AL → AL, STAINLESS/304SS → SS
+- **Template integration:** Auto-fills time when applying "Formed SM" or "Flat SM" templates
+- **Manual override:** User can edit the calculated time if needed
+
+This eliminates manual time estimation for waterjet operations and ensures consistency with material-specific cutting speeds.
+
+**New Purchased Routing Template**
+
+Added a "Purchased" routing template for supplier parts:
+- **005 - Receiving:** 10 minutes
+- **020 - Staging:** 5 minutes
+- **050 - Inspection:** 5 minutes
+
+Use this template for `mmc` and `spn` prefixed items that don't require manufacturing but need receiving/inspection tracking.
+
+**Price Badge on Item List**
+
+Items with assigned `unit_price` now show a green "$" badge in the routing editor item list, making it easy to identify purchased parts with pricing data at a glance.
+
+#### Bug Fixes
+
+**Purchase Info Save Hanging After Tab Switch**
+
+- **Issue:** Editing purchased part info (supplier name, part number, unit price) and then switching to a different browser tab would cause the save operation to hang indefinitely with a spinning loader.
+- **Fix:** Added `AbortError` handling with automatic retry logic. When a tab switch aborts the save request, the system waits 100ms and retries the save operation.
+- **Files Changed:** `frontend/src/views/MrpRoutingView.vue`
+
+**Routing State Reset on Item Change**
+
+- **Issue:** When selecting a new item in the routing editor, stale data from the previously selected item would sometimes appear (old operations, materials, purchase info).
+- **Fix:** Added explicit state reset with `watch()` on `selectedItem` to clear all reactive state and fetch fresh data when switching items.
+- **Files Changed:** `frontend/src/views/MrpRoutingView.vue`
+
+**PDF Upload Date Stamp Position**
+
+- **Issue:** PDF upload date stamps were overlapping with drawing title blocks in the lower-right corner, obscuring revision letters, engineer names, and approval signatures.
+- **Fix:**
+  - Moved stamp from lower-right to lower-left corner (x=82pt, ~1.1" from left edge, past corner marks)
+  - Increased font size from 8pt to 12pt for better visibility
+  - Removed white background box for cleaner appearance
+  - New position: lower-left, just above bottom edge (y=8pt)
+- **Files Changed:** `backend/app/routes/files.py`
+
+#### Files Changed Summary
+
+- `frontend/src/views/MrpRoutingView.vue` - Waterjet auto-calc, Purchased template, state reset, AbortError retry, price badge
+- `backend/app/routes/files.py` - PDF stamp repositioning and font size increase
+
+#### Related Documentation
+
+- [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md) - Pitfalls #19-20, Important Reminders #22-27
+- [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md) - MRP Routing Editor section updated
+- [waterjet-cutting-speeds.md](waterjet-cutting-speeds.md) - Waterjet speed reference
+
+---
+
+### v3.5 (2026-02-07) -- Waterjet Cut Time Calculation and Shop Floor Enhancements
+
+**Status:** Previous Release
 
 #### New Features
 

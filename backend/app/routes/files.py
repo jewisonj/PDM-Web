@@ -66,22 +66,13 @@ def stamp_pdf_upload_date(content: bytes) -> bytes:
             stamp_buffer = BytesIO()
             c = canvas.Canvas(stamp_buffer, pagesize=(page_width, page_height))
 
-            # Position: lower right corner with margin
-            margin = 36  # 0.5 inch margin
-            text_width = c.stringWidth(stamp_text, "Helvetica", 8)
+            # Position: lower left, past corner mark
+            x = 82  # ~1.1 inch from left edge
+            y = 8   # Just below the margin line
 
-            x = page_width - text_width - margin
-            y = margin
-
-            # Draw white background rectangle for readability
-            c.setFillColorRGB(1, 1, 1)
-            c.setStrokeColorRGB(0.5, 0.5, 0.5)
-            padding = 4
-            c.rect(x - padding, y - padding, text_width + padding * 2, 12 + padding, fill=1, stroke=1)
-
-            # Draw text
+            # Draw text only (no box)
             c.setFillColorRGB(0, 0, 0)
-            c.setFont("Helvetica", 8)
+            c.setFont("Helvetica", 12)
             c.drawString(x, y, stamp_text)
 
             c.save()
