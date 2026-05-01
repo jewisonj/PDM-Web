@@ -84,7 +84,8 @@
       "WebFetch(domain:www.engineersedge.com)",
       "WebFetch(domain:www.wjta.org)",
       "WebFetch(domain:me.berkeley.edu)",
-      "WebFetch(domain:pdm-web.fly.dev)"
+      "WebFetch(domain:pdm-web.fly.dev)",
+      "Bash(explorer \"J:\\\\PDM-Web\\\\backend\\\\real_stamped.pdf\")"
     ],
     "deny": []
   },
