@@ -77,11 +77,27 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function login(email: string, password: string) {
+  async function login(usernameOrEmail: string, password: string) {
     loading.value = true
     error.value = null
 
     try {
+      let email = usernameOrEmail
+
+      // If input doesn't contain @, treat as username and look up email
+      if (!usernameOrEmail.includes('@')) {
+        const { data, error: lookupError } = await supabase
+          .from('users')
+          .select('email')
+          .ilike('username', usernameOrEmail)
+          .single()
+
+        if (lookupError || !data) {
+          throw new Error('Username not found')
+        }
+        email = data.email
+      }
+
       const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,

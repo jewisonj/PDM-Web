@@ -7,11 +7,11 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 
-const email = ref('')
+const username = ref('')
 const password = ref('')
 
 async function handleLogin() {
-  const success = await authStore.login(email.value, password.value)
+  const success = await authStore.login(username.value, password.value)
 
   if (success) {
     const redirect = route.query.redirect as string || '/'
@@ -28,12 +28,12 @@ async function handleLogin() {
 
       <form @submit.prevent="handleLogin" class="login-form">
         <div class="field">
-          <label for="email">Email</label>
+          <label for="username">Username</label>
           <input
-            id="email"
-            v-model="email"
-            type="email"
-            placeholder="Enter your email"
+            id="username"
+            v-model="username"
+            type="text"
+            placeholder="Enter your username"
             required
             autocomplete="username"
             :disabled="authStore.loading"
@@ -63,7 +63,7 @@ async function handleLogin() {
       </form>
 
       <div class="help-text">
-        <p>Users: jack@pdm.local, dan@pdm.local, shop@pdm.local</p>
+        <p>Users: Jack, Dan, Shop</p>
       </div>
     </div>
   </div>
