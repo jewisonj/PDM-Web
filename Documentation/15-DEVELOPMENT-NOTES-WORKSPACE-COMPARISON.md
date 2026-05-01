@@ -878,9 +878,14 @@ A `.env` file in `backend/` provides these values for local development. In prod
 25. **PDF upload date stamp position** -- Changed PDF upload date stamp from lower-right to lower-left corner (x=82pt, past corner marks) to avoid overlap with drawing title blocks. Font size increased from 8pt to 12pt for better visibility. Removed white background box for cleaner appearance.
 26. **Price badge on item list** -- Items with assigned `unit_price` now show a green "$" badge in the routing editor item list, making it easy to identify purchased parts with pricing data.
 27. **Routing state reset on item change** -- Routing editor now properly resets all state (operations, materials, purchase info) when selecting a new item. Prevents stale data from previous item from appearing in the UI.
+28. **Station grouping for cost analysis** -- Added `station_group` column to `workstations` table to categorize stations into logical groups (Weld, Assembly, Fabrication, QC, Outsourced). Groups enable high-level cost category analysis in MRP Cost Report without losing individual station detail. Ungrouped stations default to "Other" group.
+29. **ECharts nested pie for dual-level visualization** -- Replaced Chart.js with ECharts for cost report pie chart to support nested (two-ring) visualization. Inner ring shows individual stations color-coded by group (lighter shades), outer ring shows station groups (bold colors). Chart size increased 50% for readability. Legend toggle switches between showing all stations (detailed) vs. groups only (cleaner). ECharts performance is superior to Chart.js for datasets with >50 slices.
+30. **Grouped operations table with expand/collapse** -- Cost report operations table now has grouped view (default) where groups are expandable to show nested stations. Group badges use matching chart colors (Weld red, Assembly purple, Fabrication blue, QC green, Outsourced orange). Toggle "Group By Station" checkbox to switch between grouped and flat views. Click group row to expand/collapse nested stations.
+31. **Station color inheritance from groups** -- Stations inherit lighter shades of their group's color for visual consistency between chart and table. Color palette uses 4 shades per group (lightest to boldest). Station slice colors assigned via index modulo to cycle through shades. Hard-coded color palettes in `groupColors` and `stationColors` objects for predictable appearance.
+32. **Backend dual summary structures** -- Cost report endpoint returns both `operations_summary` (individual stations) and `operations_summary_grouped` (group-level with nested stations) to support both chart views and table modes. Chart data also duplicated as `cost_breakdown_chart` and `cost_breakdown_chart_grouped`. Frontend chooses which structure to display based on UI state.
 
 ---
 
-**Last Updated:** 2026-04-30
-**Version:** 3.5.1
+**Last Updated:** 2026-05-01
+**Version:** 3.6
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

@@ -7,9 +7,203 @@
 
 ## Current Version
 
-### v3.5.1 (2026-04-30) -- Routing Editor Enhancements and PDF Upload Improvements
+### v3.6 (2026-05-01) -- Station Grouping and Cost Report Enhancements
 
 **Status:** Current Production Release
+
+**Summary:** Enhanced MRP cost reporting with station grouping and nested pie chart visualization, plus refined PDF upload date stamping for better drawing readability.
+
+#### Features Added
+
+**Station Grouping for Cost Reports**
+
+The MRP Cost Report now groups workstations into logical categories for better cost analysis and visualization:
+
+- **Database:** Added `station_group` column to `workstations` table
+- **Groups Defined:**
+  - **Weld:** Stations 014-017 (Weld Jigging, Tack Welding, Final Welding, Weld Finishing)
+  - **Assembly:** Stations 020, 025, 035, 045 (Mechanical Assembly, Electrical Assembly, Sub-Assembly, Final Assembly)
+  - **Fabrication:** Stations 005, 010 (Saw, Press Brake)
+  - **QC:** Station 050 (Inspection)
+  - **Outsourced:** Stations 060-080 (Powder Coating, Anodizing, Plating, Heat Treating, Waterjet External)
+- **Backend:** New `operations_summary_grouped` and `cost_breakdown_chart_grouped` data structures in `/api/mrp/projects/{id}/cost-report`
+- **Use Case:** Quickly identify which cost categories (Weld vs Assembly vs Fabrication) dominate project costs without drilling into individual stations
+
+**ECharts Nested Pie Chart Visualization**
+
+Replaced Chart.js pie chart with ECharts nested pie chart for richer cost visualization:
+
+- **Inner Ring:** Individual workstations color-coded by group (lighter shades)
+- **Outer Ring:** Station groups (Weld, Assembly, Fabrication, QC, Outsourced) with bold colors
+- **Interactive Legend Toggle:** Switch between "Show Groups" (outer ring only) and "Show Stations" (all stations)
+- **Chart Size:** Increased by 50% for better readability
+- **Color Palette:**
+  - Weld: Red (#ef4444)
+  - Assembly: Purple (#8b5cf6)
+  - Fabrication: Blue (#3b82f6)
+  - QC: Green (#10b981)
+  - Outsourced: Orange (#f97316)
+  - Raw Material: Amber (#f59e0b)
+  - Purchased Parts: Purple (#a855f7)
+- **Dependencies:** Added `echarts` and `vue-echarts` to frontend
+
+**Grouped Operations Table**
+
+Cost report operations table now has grouped view with expandable station details:
+
+- **Default View:** Groups (e.g., "Weld") with group-level totals
+- **Expandable:** Click group to see individual stations (e.g., "014 - Weld Jigging", "015 - Tack Welding")
+- **Color Badges:** Group names displayed with matching chart colors
+- **Toggle:** Switch between grouped and flat view using "Group By Station" checkbox
+
+**PDF Upload Date Stamping (Refinement)**
+
+Improved PDF date stamp positioning to avoid title block conflicts:
+
+- **Previous Issue:** Stamp overlapped title blocks in lower-right corner, obscuring revision letters and signatures
+- **New Position:** Lower-left corner at x=82pt, y=8pt (~1.1" from left edge, just past corner hash marks)
+- **Font Size:** Increased from 8pt to 12pt for better visibility
+- **Format:** "Upload - MM/DD/YYYY" in Helvetica, black text, no background box
+- **Location:** `backend/app/routes/files.py` in `stamp_pdf_upload_date()` function
+- **Files Changed:** `backend/app/routes/files.py`
+
+#### Database Changes
+
+**Migration: Add station_group to workstations**
+
+```sql
+ALTER TABLE workstations ADD COLUMN station_group TEXT;
+
+-- Update existing stations with groups
+UPDATE workstations SET station_group = 'Fabrication' WHERE station_code IN ('005', '010');
+UPDATE workstations SET station_group = 'Weld' WHERE station_code IN ('014', '015', '016', '017');
+UPDATE workstations SET station_group = 'Assembly' WHERE station_code IN ('020', '025', '035', '045');
+UPDATE workstations SET station_group = 'QC' WHERE station_code = '050';
+UPDATE workstations SET station_group = 'Outsourced' WHERE station_code IN ('060', '065', '070', '075', '080');
+```
+
+**Schema Change:**
+
+| Table | Column | Type | Description |
+|-------|--------|------|-------------|
+| `workstations` | `station_group` | TEXT | Logical grouping: Weld, Assembly, Fabrication, QC, Outsourced, Other |
+
+#### Backend Changes
+
+**Modified Endpoint:** `GET /api/mrp/projects/{project_id}/cost-report`
+
+- **Added Fields to Response:**
+  - `operations_summary_grouped`: Array of group-level summaries with nested stations
+  - `cost_breakdown_chart_grouped`: Chart data with group-level aggregation
+- **Query Enhancement:** Fetch `station_group` from `workstations` table
+- **Grouping Logic:** Aggregate operations by `station_group`, sum time and cost, collect stations per group
+- **Chart Data:** Prepare both individual station slices (with `station_group` tag) and grouped slices (with nested `stations`)
+- **File:** `backend/app/routes/mrp.py` (~100 lines modified)
+
+**New Data Structures:**
+
+```python
+# Per-group summary
+{
+  "group_name": "Weld",
+  "total_time_min": 245.5,
+  "total_cost": 4910.0,
+  "station_count": 4,
+  "stations": [
+    {
+      "station_code": "014",
+      "station_name": "Weld Jigging",
+      "is_outsourced": false,
+      "total_time_min": 60.0,
+      "total_cost": 1200.0
+    },
+    ...
+  ]
+}
+
+# Grouped chart slice
+{
+  "label": "Weld",
+  "value": 4910.0,
+  "category": "labor",
+  "stations": [...]  # Same as above
+}
+```
+
+#### Frontend Changes
+
+**Modified View:** `frontend/src/views/MrpCostReportView.vue` (~300 lines modified)
+
+- **Replaced Chart.js with ECharts:** Swapped `vue-chartjs` for `vue-echarts` with nested pie chart
+- **New Interfaces:**
+  - `OperationSummaryGrouped`: Group-level operation data with nested stations
+  - `GroupStation`: Individual station within a group
+  - `ChartSliceGrouped`: Chart data with nested station details
+- **Chart Configuration:**
+  - Inner ring (radius 0-55%): Individual stations with group-based colors
+  - Outer ring (radius 60-80%): Station groups
+  - Tooltip: Shows station/group name, cost, percentage
+  - Legend: Toggle between groups (default) and all stations
+- **Operations Table:**
+  - Grouped view with expandable rows
+  - Group badge with matching chart color
+  - Station detail rows hidden by default, expand on click
+  - Toggle to switch to flat view (all stations listed)
+- **Color System:**
+  - `groupColors`: Bold colors for outer ring (Weld red, Assembly purple, etc.)
+  - `stationColors`: Lighter shades for inner ring (4 shades per group)
+  - Color assignment: Stations inherit group color with index-based shade selection
+- **Legend Toggle:** Button switches between `showDetailedLegend` (stations) and group-only view
+
+**Dependencies Added:**
+
+```json
+{
+  "echarts": "^6.0.0",
+  "vue-echarts": "^8.0.1"
+}
+```
+
+#### Files Changed Summary
+
+- `backend/app/routes/mrp.py` -- Station grouping logic, grouped summaries, chart data
+- `frontend/src/views/MrpCostReportView.vue` -- ECharts nested pie, grouped table, legend toggle
+- `frontend/package.json` -- Added echarts and vue-echarts
+- `backend/app/routes/files.py` -- PDF stamp position refinement (already in v3.5.1)
+- Database migration (manual via Supabase SQL Editor) -- Add station_group column
+
+#### Use Cases
+
+- **Cost Category Analysis:** Quickly see if Weld, Assembly, or Fabrication dominates project costs
+- **Drill-Down Detail:** Click groups to expand and see individual station costs
+- **Visual Cost Distribution:** Nested pie chart shows both high-level (groups) and detailed (stations) at once
+- **Legend Clarity:** Toggle legend between groups (fewer items, cleaner) and all stations (detailed)
+- **Comparison:** Compare multiple projects by group-level costs without station noise
+- **PDF Readability:** Upload stamps no longer obscure title block signatures and revision letters
+
+#### Technical Notes
+
+- **Station Group Assignment:** Groups assigned manually in migration, not auto-detected
+- **Ungrouped Stations:** Stations without `station_group` default to "Other"
+- **Chart Color Mapping:** Station colors use index modulo to cycle through 4 shades per group
+- **ECharts Performance:** Nested pie renders faster than Chart.js for large datasets (>50 slices)
+- **Legend Toggle:** Only affects visible legend items, chart data remains unchanged
+- **PDF Stamping:** Uses ReportLab Canvas to overlay text on existing PDF pages
+
+#### Related Documentation
+
+- [03-DATABASE-SCHEMA.md](03-DATABASE-SCHEMA.md) -- Updated workstations table schema
+- [04-SERVICES-REFERENCE.md](04-SERVICES-REFERENCE.md) -- Updated cost-report endpoint
+- [02-PDM-COMPLETE-OVERVIEW.md](02-PDM-COMPLETE-OVERVIEW.md) -- MRP cost reporting overview
+- [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md) -- Cost report usage workflow
+
+---
+
+## Previous Versions
+
+### v3.5.1 (2026-04-30) -- Routing Editor Enhancements and PDF Upload Improvements
+
+**Status:** Previous Release (superseded by v3.6)
 
 **Summary:** Enhanced MRP routing editor with automatic waterjet time calculation, new Purchased routing template, improved UI state management, and refined PDF upload date stamping.
 

@@ -372,6 +372,12 @@ Upload a file and associate it with an item. Uses multipart form data. The admin
 
 If the item already has a file with the same filename, the existing record is updated (iteration incremented, storage file overwritten). Otherwise, a new file record is created.
 
+**PDF Date Stamping:** PDF files are automatically stamped with "Upload - MM/DD/YYYY" on each page:
+- **Position:** Lower-left corner at x=82pt, y=8pt (~1.1" from left edge, just past corner hash marks)
+- **Font:** Helvetica 12pt, black text, no background box
+- **Purpose:** Provides visual confirmation of upload date without obscuring title block information
+- **Technical:** Uses ReportLab Canvas to overlay text on existing PDF pages via PyPDF2
+
 **Auto-create items:** If the specified `item_number` does not exist in the database, the endpoint will automatically create the item provided the item number matches one of the recognized naming conventions:
 - Standard: `[a-z]{3}\d{4,6}` (e.g., `csp0030`)
 - McMaster: `mmc\d+[a-z]*\d*` (e.g., `mmc12555k88`)
@@ -721,7 +727,7 @@ Delete a task record.
 
 **File:** `backend/app/routes/mrp.py`
 
-Manufacturing Resource Planning endpoints for print packet generation.
+Manufacturing Resource Planning endpoints for print packet generation and cost reporting.
 
 #### POST /api/mrp/projects/{project_id}/print-packet
 
@@ -734,6 +740,130 @@ Generate a new print packet PDF for a project. The packet includes a cover sheet
 Get the existing print packet for a project, if one has been generated.
 
 **Response (404):** No packet exists.
+
+#### GET /api/mrp/projects/{project_id}/cost-report
+
+Generate comprehensive project cost report with labor, material, outsourced, and purchased component breakdown.
+
+**Response (200):**
+```json
+{
+  "project_id": "uuid",
+  "project_code": "WMA2025",
+  "customer": "Acme Corp",
+  "description": "Main Assembly Project",
+  "labor_cost": 12500.00,
+  "material_cost": 3200.00,
+  "outsourced_cost": 1800.00,
+  "purchased_cost": 4500.00,
+  "overhead_multiplier": 1.35,
+  "subtotal": 22000.00,
+  "total": 29700.00,
+  "manufactured_items": [
+    {
+      "item_id": "uuid",
+      "item_number": "csp0030",
+      "name": "Bracket",
+      "quantity": 10,
+      "material_cost": 85.00,
+      "labor_cost": 320.00,
+      "outsourced_cost": 0.00,
+      "unit_cost": 40.50,
+      "extended_cost": 405.00,
+      "operations": [
+        {
+          "station_code": "012",
+          "station_name": "Waterjet",
+          "is_outsourced": false,
+          "est_time_min": 12.5,
+          "cost": 125.00
+        }
+      ]
+    }
+  ],
+  "purchased_items": [
+    {
+      "item_id": "uuid",
+      "item_number": "mmc12555k88",
+      "name": "Bolt, 1/4-20 x 1\"",
+      "quantity": 40,
+      "unit_price": 0.25,
+      "extended_cost": 10.00,
+      "supplier_name": "McMaster-Carr",
+      "supplier_pn": "12555K88"
+    }
+  ],
+  "operations_summary": [
+    {
+      "station_code": "012",
+      "station_name": "Waterjet",
+      "station_group": "Fabrication",
+      "is_outsourced": false,
+      "total_time_min": 125.5,
+      "total_cost": 1255.00,
+      "item_count": 8,
+      "items": ["csp0030", "csp0031", "csp0032"]
+    }
+  ],
+  "operations_summary_grouped": [
+    {
+      "group_name": "Weld",
+      "total_time_min": 245.5,
+      "total_cost": 4910.00,
+      "station_count": 4,
+      "stations": [
+        {
+          "station_code": "014",
+          "station_name": "Weld Jigging",
+          "is_outsourced": false,
+          "total_time_min": 60.0,
+          "total_cost": 1200.00
+        }
+      ]
+    }
+  ],
+  "cost_breakdown_chart": [
+    {
+      "label": "012 - Waterjet",
+      "value": 1255.00,
+      "category": "labor",
+      "station_group": "Fabrication"
+    },
+    {
+      "label": "Raw Material",
+      "value": 3200.00,
+      "category": "material"
+    }
+  ],
+  "cost_breakdown_chart_grouped": [
+    {
+      "label": "Weld",
+      "value": 4910.00,
+      "category": "labor",
+      "stations": [
+        {
+          "station_code": "014",
+          "station_name": "Weld Jigging",
+          "is_outsourced": false,
+          "total_time_min": 60.0,
+          "total_cost": 1200.00
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Key Features:**
+
+- **Station Grouping:** Operations aggregated by `station_group` (Weld, Assembly, Fabrication, QC, Outsourced)
+- **Dual Summaries:** Both individual station summaries (`operations_summary`) and grouped summaries (`operations_summary_grouped`)
+- **Chart Data:** Pre-formatted chart data for both individual stations and grouped views
+- **Nested Data:** Group summaries include nested array of individual stations for drill-down capability
+- **Cost Categories:** Labor (per-station), raw materials, outsourced operations, purchased parts
+- **Overhead:** Applies overhead multiplier from `mrp_cost_settings` table to calculate final total
+
+**Response (404):** Project not found or has no parts.
 
 ---
 
@@ -1174,5 +1304,5 @@ Error responses follow the format:
 
 ---
 
-**Last Updated:** 2026-01-30
+**Last Updated:** 2026-05-01
 

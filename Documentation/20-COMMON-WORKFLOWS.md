@@ -112,6 +112,21 @@ curl -X POST http://localhost:8000/api/files/upload \
 - Files are stored in Supabase Storage under the `pdm-files` bucket at `{item_number}/{filename}`.
 - Supported file types: STEP, DXF, SVG, PDF, PRT, ASM, DRW, PNG, JPG.
 
+### PDF Upload Date Stamping
+
+**Automatic Feature:** All uploaded PDF files are automatically stamped with "Upload - MM/DD/YYYY" on each page.
+
+- **Position:** Lower-left corner at x=82pt, y=8pt (~1.1" from left edge, just past corner hash marks)
+- **Font:** Helvetica 12pt, black text, no background box
+- **Purpose:** Provides visual confirmation of upload date without obscuring title block information (revision letters, engineer names, approval signatures)
+- **No User Action Required:** Stamping happens automatically during upload
+
+**Technical Details:**
+- Uses ReportLab Canvas to overlay text on existing PDF pages
+- Processes all pages in multi-page PDFs
+- Original PDF content is preserved; stamp is non-destructive
+- Stamp position chosen to avoid common title block locations
+
 ---
 
 ## 4. Uploading a BOM
@@ -674,7 +689,7 @@ curl "http://localhost:8000/api/nesting/jobs/<job-uuid>/sheets/1/download"
 
 **Where:** MRP Cost Report (`/mrp/cost-report`)
 
-Generate a comprehensive cost breakdown for a manufacturing project.
+Generate a comprehensive cost breakdown for a manufacturing project with interactive station grouping and nested pie chart visualization.
 
 ### Steps
 
@@ -689,14 +704,45 @@ Generate a comprehensive cost breakdown for a manufacturing project.
 - Project code, customer name, description
 - Total project cost (all labor, materials, outsourced ops, and purchased parts)
 
-**Cost Distribution Pie Chart:**
-- Visual breakdown showing:
-  - Labor operations (individual slices per workstation in blue/cyan shades)
-  - Raw materials (amber slice, aggregated by alloy)
-  - Purchased parts (purple slice)
-  - Outsourced operations (orange slice, aggregated)
-- Hover over slices to see exact dollar amounts
-- Legend shows percentage of total for each category
+**Nested Pie Chart (ECharts):**
+
+The cost report uses an interactive nested pie chart showing both high-level cost categories and detailed station breakdown:
+
+- **Outer Ring (Groups):** Station groups with bold colors
+  - Weld (Red #ef4444) -- Stations 014-017
+  - Assembly (Purple #8b5cf6) -- Stations 020, 025, 035, 045
+  - Fabrication (Blue #3b82f6) -- Stations 005, 010
+  - QC (Green #10b981) -- Station 050
+  - Outsourced (Orange #f97316) -- Stations 060-080
+  - Raw Material (Amber #f59e0b)
+  - Purchased Parts (Purple #a855f7)
+- **Inner Ring (Stations):** Individual workstations color-coded by group (lighter shades)
+  - Each station slice uses a lighter shade of its group color
+  - Hover to see station name, cost, and percentage
+- **Legend Toggle:** Button switches between two legend modes:
+  - **Show Groups** (default): Legend shows only outer ring (Weld, Assembly, etc.) for cleaner view
+  - **Show Stations**: Legend shows all individual stations for detailed reference
+- **Chart Size:** 50% larger than previous Chart.js version for better readability
+- **Interactivity:** Click legend items to toggle visibility of slices
+
+**Operations Summary Table:**
+
+The operations table shows labor cost breakdown with two view modes:
+
+- **Grouped View (Default):**
+  - Groups displayed with color badges matching chart (e.g., "Weld" in red, "Assembly" in purple)
+  - Shows group-level totals: time, cost, station count
+  - Click any group row to expand and see individual stations
+  - Stations appear indented with detailed breakdown
+- **Flat View:**
+  - Uncheck "Group By Station" to see all stations listed individually
+  - No grouping, sorted by total cost descending
+- **Columns:**
+  - Station/Group name
+  - Total time (minutes)
+  - Total cost (USD)
+  - Item count (number of parts using this station)
+  - Items list (part numbers, comma-separated)
 
 **Summary Cards:**
 - Labor: Total labor cost across all operations

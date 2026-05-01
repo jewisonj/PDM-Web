@@ -318,14 +318,28 @@ CREATE TABLE workstations (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     station_code TEXT NOT NULL UNIQUE,
     station_name TEXT NOT NULL,
+    station_group TEXT,
     sort_order   INTEGER DEFAULT 0,
     created_at   TIMESTAMPTZ DEFAULT now()
 );
 ```
 
 **Key Points:**
-- `station_code` is a short code (e.g., `LASER`, `BRAKE`, `WELD`, `PAINT`).
+- `station_code` is a short code (e.g., `005`, `010`, `014`, `020`).
+- `station_name` is the full descriptive name (e.g., "Saw", "Press Brake", "Weld Jigging").
+- `station_group` categorizes stations for cost reporting: `Weld`, `Assembly`, `Fabrication`, `QC`, `Outsourced`, `Other`.
 - `sort_order` controls display ordering in the UI.
+
+**Station Groups:**
+
+| Group | Station Codes | Stations |
+|-------|---------------|----------|
+| Fabrication | 005, 010 | Saw, Press Brake |
+| Weld | 014, 015, 016, 017 | Weld Jigging, Tack Welding, Final Welding, Weld Finishing |
+| Assembly | 020, 025, 035, 045 | Mechanical Assembly, Electrical Assembly, Sub-Assembly, Final Assembly |
+| QC | 050 | Inspection |
+| Outsourced | 060, 065, 070, 075, 080 | Powder Coating, Anodizing, Plating, Heat Treating, Waterjet External |
+| Other | (none assigned) | Any station without explicit group assignment |
 
 ---
 
@@ -855,4 +869,4 @@ The FastAPI backend registers routers at these prefixes:
 
 ---
 
-**Last Updated:** 2026-01-30
+**Last Updated:** 2026-05-01
