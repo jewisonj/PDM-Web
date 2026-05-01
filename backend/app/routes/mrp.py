@@ -218,13 +218,16 @@ async def get_project_cost_estimate(project_id: UUID):
 # --- Project Cost Report ---
 
 @router.get("/projects/{project_id}/cost-report")
-async def get_project_cost_report(project_id: UUID):
+async def get_project_cost_report(project_id: UUID, group_by: str = None):
     """
     Full cost report for an MRP project with per-operation breakdowns.
 
     Returns manufactured items with operation details, purchased parts with
     supplier info, operations summary across the project, and pre-computed
     chart data for a pie chart visualization.
+
+    Query params:
+        group_by: If "station_group", aggregates operations by station group
     """
     supabase = get_supabase_admin()
     pid = str(project_id)
@@ -254,9 +257,9 @@ async def get_project_cost_report(project_id: UUID):
     if not parts_result.data:
         raise HTTPException(status_code=404, detail="Project not found or has no parts")
 
-    # Load all workstations
+    # Load all workstations (including station_group for grouping)
     ws_result = supabase.table("workstations").select(
-        "id, station_code, station_name, hourly_rate, is_outsourced, outsourced_cost_default"
+        "id, station_code, station_name, hourly_rate, is_outsourced, outsourced_cost_default, station_group"
     ).execute()
     ws_map = {w["id"]: w for w in (ws_result.data or [])}
 
@@ -352,6 +355,7 @@ async def get_project_cost_report(project_id: UUID):
                 ops_accumulator[sid] = {
                     "station_code": ws.get("station_code", ""),
                     "station_name": ws.get("station_name", ""),
+                    "station_group": ws.get("station_group", "Other"),
                     "is_outsourced": is_outsourced,
                     "total_time_min": 0.0,
                     "total_cost": 0.0,
@@ -406,11 +410,12 @@ async def get_project_cost_report(project_id: UUID):
             "operations": item_operations,
         })
 
-    # Build operations summary
+    # Build operations summary (per-station)
     operations_summary = sorted([
         {
             "station_code": v["station_code"],
             "station_name": v["station_name"],
+            "station_group": v["station_group"],
             "is_outsourced": v["is_outsourced"],
             "total_time_min": round(v["total_time_min"], 1),
             "total_cost": round(v["total_cost"], 2),
@@ -418,6 +423,40 @@ async def get_project_cost_report(project_id: UUID):
             "items": sorted(v["items"]),
         }
         for v in ops_accumulator.values()
+    ], key=lambda x: x["total_cost"], reverse=True)
+
+    # Build grouped operations summary (by station_group)
+    group_accumulator: dict[str, dict] = {}
+    for op in operations_summary:
+        grp = op["station_group"] or "Other"
+        if grp not in group_accumulator:
+            group_accumulator[grp] = {
+                "group_name": grp,
+                "total_time_min": 0.0,
+                "total_cost": 0.0,
+                "station_count": 0,
+                "stations": [],
+            }
+        group_accumulator[grp]["total_time_min"] += op["total_time_min"]
+        group_accumulator[grp]["total_cost"] += op["total_cost"]
+        group_accumulator[grp]["station_count"] += 1
+        group_accumulator[grp]["stations"].append({
+            "station_code": op["station_code"],
+            "station_name": op["station_name"],
+            "is_outsourced": op["is_outsourced"],
+            "total_time_min": op["total_time_min"],
+            "total_cost": op["total_cost"],
+        })
+
+    operations_summary_grouped = sorted([
+        {
+            "group_name": v["group_name"],
+            "total_time_min": round(v["total_time_min"], 1),
+            "total_cost": round(v["total_cost"], 2),
+            "station_count": v["station_count"],
+            "stations": v["stations"],
+        }
+        for v in group_accumulator.values()
     ], key=lambda x: x["total_cost"], reverse=True)
 
     # Build chart data: labor ops individually, outsourced aggregated, material, purchased
@@ -428,6 +467,7 @@ async def get_project_cost_report(project_id: UUID):
                 "label": op["station_name"],
                 "value": op["total_cost"],
                 "category": "labor",
+                "station_group": op["station_group"],
             })
     if total_material > 0:
         chart_data.append({
@@ -443,6 +483,35 @@ async def get_project_cost_report(project_id: UUID):
         })
     if total_outsourced > 0:
         chart_data.append({
+            "label": "Outsourced",
+            "value": round(total_outsourced, 2),
+            "category": "outsourced",
+        })
+
+    # Build grouped chart data (for grouped pie view)
+    chart_data_grouped = []
+    for grp in operations_summary_grouped:
+        if grp["total_cost"] > 0:
+            chart_data_grouped.append({
+                "label": grp["group_name"],
+                "value": grp["total_cost"],
+                "category": "labor_group",
+                "stations": grp["stations"],
+            })
+    if total_material > 0:
+        chart_data_grouped.append({
+            "label": "Raw Material",
+            "value": round(total_material, 2),
+            "category": "material",
+        })
+    if total_purchased > 0:
+        chart_data_grouped.append({
+            "label": "Purchased Parts",
+            "value": round(total_purchased, 2),
+            "category": "purchased",
+        })
+    if total_outsourced > 0:
+        chart_data_grouped.append({
             "label": "Outsourced",
             "value": round(total_outsourced, 2),
             "category": "outsourced",
@@ -466,7 +535,9 @@ async def get_project_cost_report(project_id: UUID):
         "manufactured_items": manufactured_items,
         "purchased_items": purchased_items,
         "operations_summary": operations_summary,
+        "operations_summary_grouped": operations_summary_grouped,
         "cost_breakdown_chart": chart_data,
+        "cost_breakdown_chart_grouped": chart_data_grouped,
     }
 
 

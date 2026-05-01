@@ -2,15 +2,13 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase, API_BASE_URL } from '../services/supabase'
-import { Pie } from 'vue-chartjs'
-import {
-  Chart as ChartJS,
-  ArcElement,
-  Tooltip,
-  Legend,
-} from 'chart.js'
+import VChart from 'vue-echarts'
+import { use } from 'echarts/core'
+import { PieChart } from 'echarts/charts'
+import { TooltipComponent, LegendComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 
-ChartJS.register(ArcElement, Tooltip, Legend)
+use([PieChart, TooltipComponent, LegendComponent, CanvasRenderer])
 
 // --- Interfaces ---
 
@@ -49,6 +47,7 @@ interface PurchasedItem {
 interface OperationSummary {
   station_code: string
   station_name: string
+  station_group: string
   is_outsourced: boolean
   total_time_min: number
   total_cost: number
@@ -56,10 +55,34 @@ interface OperationSummary {
   items: string[]
 }
 
+interface GroupStation {
+  station_code: string
+  station_name: string
+  is_outsourced: boolean
+  total_time_min: number
+  total_cost: number
+}
+
+interface OperationSummaryGrouped {
+  group_name: string
+  total_time_min: number
+  total_cost: number
+  station_count: number
+  stations: GroupStation[]
+}
+
 interface ChartSlice {
   label: string
   value: number
   category: string
+  station_group?: string
+}
+
+interface ChartSliceGrouped {
+  label: string
+  value: number
+  category: string
+  stations?: GroupStation[]
 }
 
 interface CostReportData {
@@ -77,7 +100,9 @@ interface CostReportData {
   manufactured_items: ManufacturedItem[]
   purchased_items: PurchasedItem[]
   operations_summary: OperationSummary[]
+  operations_summary_grouped: OperationSummaryGrouped[]
   cost_breakdown_chart: ChartSlice[]
+  cost_breakdown_chart_grouped: ChartSliceGrouped[]
 }
 
 interface ProjectOption {
@@ -97,6 +122,12 @@ const report = ref<CostReportData | null>(null)
 const loading = ref(false)
 const loadingProjects = ref(true)
 const error = ref('')
+
+// Grouping state for table view
+const groupByStation = ref(true) // true = grouped view, false = individual stations
+
+// Legend toggle state
+const showDetailedLegend = ref(false) // false = groups, true = individual stations
 
 // --- Data Loading ---
 
@@ -169,6 +200,13 @@ const sortedOperations = computed(() => {
   )
 })
 
+const sortedOperationsGrouped = computed(() => {
+  if (!report.value?.operations_summary_grouped) return []
+  return [...report.value.operations_summary_grouped].sort(
+    (a, b) => b.total_cost - a.total_cost
+  )
+})
+
 const sortedPurchasedItems = computed(() => {
   if (!report.value) return []
   return [...report.value.purchased_items].sort(
@@ -186,82 +224,215 @@ const purchasedTotal = computed(() => {
   return report.value.purchased_items.reduce((s, i) => s + i.extended_cost, 0)
 })
 
-// --- Chart ---
+// --- Chart (ECharts Nested Pie) ---
 
-const laborColors = ['#3b82f6', '#06b6d4', '#10b981', '#0ea5e9', '#14b8a6', '#22d3ee', '#2dd4bf', '#38bdf8', '#34d399', '#67e8f9']
-
-function getSliceColor(slice: ChartSlice, laborIndex: number): string {
-  if (slice.category === 'material') return '#f59e0b'
-  if (slice.category === 'purchased') return '#8b5cf6'
-  if (slice.category === 'outsourced') return '#f97316'
-  return laborColors[laborIndex % laborColors.length]
+// Group-level colors
+const groupColors: Record<string, string> = {
+  'Weld': '#ef4444',        // Red
+  'Assembly': '#8b5cf6',    // Purple
+  'Fabrication': '#3b82f6', // Blue
+  'QC': '#10b981',          // Green
+  'Outsourced': '#f97316',  // Orange
+  'Other': '#6b7280',       // Gray
+  'Raw Material': '#f59e0b', // Amber
+  'Purchased Parts': '#a855f7', // Purple
 }
 
-const chartData = computed(() => {
-  if (!report.value) return null
-  const slices = report.value.cost_breakdown_chart.filter(s => s.value > 0)
-  if (slices.length === 0) return null
+// Lighter versions for stations (inner ring)
+const stationColors: Record<string, string[]> = {
+  'Weld': ['#fecaca', '#fca5a5', '#f87171', '#ef4444'],
+  'Assembly': ['#ddd6fe', '#c4b5fd', '#a78bfa', '#8b5cf6'],
+  'Fabrication': ['#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6'],
+  'QC': ['#a7f3d0', '#6ee7b7', '#34d399', '#10b981'],
+  'Outsourced': ['#fed7aa', '#fdba74', '#fb923c', '#f97316'],
+  'Other': ['#e5e7eb', '#d1d5db', '#9ca3af', '#6b7280'],
+}
 
-  let laborIdx = 0
-  const colors = slices.map(s => {
-    const color = getSliceColor(s, laborIdx)
-    if (s.category === 'labor') laborIdx++
-    return color
-  })
+function getStationColor(groupName: string, index: number): string {
+  const colors = stationColors[groupName] || stationColors['Other']
+  return colors[index % colors.length]
+}
 
-  return {
-    labels: slices.map(s => s.label),
-    datasets: [{
-      data: slices.map(s => s.value),
-      backgroundColor: colors,
-      borderColor: '#020617',
-      borderWidth: 2,
-    }]
-  }
-})
+// Inner ring data (individual stations)
+const innerRingData = computed(() => {
+  if (!report.value) return []
 
-const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: {
-      position: 'right' as const,
-      labels: {
-        color: '#e5e7eb',
-        font: { size: 12 },
-        padding: 12,
-        generateLabels: (chart: any) => {
-          const data = chart.data
-          if (!data.labels || !data.datasets.length) return []
-          const dataset = data.datasets[0]
-          const total = dataset.data.reduce((a: number, b: number) => a + b, 0)
-          return data.labels.map((label: string, i: number) => {
-            const value = dataset.data[i]
-            const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0'
-            return {
-              text: `${label}: $${value.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} (${pct}%)`,
-              fillStyle: dataset.backgroundColor[i],
-              fontColor: '#e5e7eb',
-              strokeStyle: dataset.borderColor,
-              lineWidth: dataset.borderWidth,
-              index: i,
-            }
+  const data: any[] = []
+  const grouped = report.value.cost_breakdown_chart_grouped || []
+
+  // Add individual stations from each group
+  grouped.forEach(grp => {
+    if (grp.category === 'labor_group' && grp.stations) {
+      grp.stations.forEach((st, idx) => {
+        if (st.total_cost > 0) {
+          data.push({
+            name: st.station_name,
+            value: st.total_cost,
+            groupName: grp.label,
+            itemStyle: { color: getStationColor(grp.label, idx) },
           })
         }
-      }
-    },
-    tooltip: {
-      callbacks: {
-        label: (context: any) => {
-          const value = context.raw as number
-          const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0)
-          const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0'
-          return ` $${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pct}%)`
-        }
-      }
+      })
     }
+  })
+
+  // Add material, purchased, outsourced as single items
+  if (report.value.material_cost > 0) {
+    data.push({
+      name: 'Raw Material',
+      value: report.value.material_cost,
+      groupName: 'Raw Material',
+      itemStyle: { color: '#fcd34d' }, // Lighter amber
+    })
   }
-}
+  if (report.value.purchased_cost > 0) {
+    data.push({
+      name: 'Purchased Parts',
+      value: report.value.purchased_cost,
+      groupName: 'Purchased Parts',
+      itemStyle: { color: '#c4b5fd' }, // Lighter purple
+    })
+  }
+  if (report.value.outsourced_cost > 0) {
+    data.push({
+      name: 'Outsourced Ops',
+      value: report.value.outsourced_cost,
+      groupName: 'Outsourced',
+      itemStyle: { color: '#fdba74' }, // Lighter orange
+    })
+  }
+
+  return data
+})
+
+// Outer ring data (groups)
+const outerRingData = computed(() => {
+  if (!report.value) return []
+
+  const data: any[] = []
+  const grouped = report.value.cost_breakdown_chart_grouped || []
+
+  // Add labor groups
+  grouped.forEach(grp => {
+    if (grp.category === 'labor_group' && grp.value > 0) {
+      data.push({
+        name: grp.label,
+        value: grp.value,
+        itemStyle: { color: groupColors[grp.label] || groupColors['Other'] },
+      })
+    }
+  })
+
+  // Add non-labor categories
+  if (report.value.material_cost > 0) {
+    data.push({
+      name: 'Raw Material',
+      value: report.value.material_cost,
+      itemStyle: { color: '#f59e0b' },
+    })
+  }
+  if (report.value.purchased_cost > 0) {
+    data.push({
+      name: 'Purchased Parts',
+      value: report.value.purchased_cost,
+      itemStyle: { color: '#a855f7' },
+    })
+  }
+  if (report.value.outsourced_cost > 0) {
+    data.push({
+      name: 'Outsourced',
+      value: report.value.outsourced_cost,
+      itemStyle: { color: '#f97316' },
+    })
+  }
+
+  return data
+})
+
+// Legend data for right side - switches based on toggle
+const legendData = computed(() => {
+  if (showDetailedLegend.value) {
+    return innerRingData.value.map(d => d.name)
+  }
+  return outerRingData.value.map(d => d.name)
+})
+
+const chartOptions = computed(() => ({
+  backgroundColor: 'transparent',
+  tooltip: {
+    trigger: 'item',
+    formatter: (params: any) => {
+      const value = params.value
+      const total = report.value?.subtotal || 1
+      const pct = ((value / total) * 100).toFixed(1)
+      const groupInfo = params.data.groupName ? `<br/><span style="color:#9ca3af">${params.data.groupName}</span>` : ''
+      return `<strong>${params.name}</strong>${groupInfo}<br/>$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${pct}%)`
+    },
+    backgroundColor: '#1e293b',
+    borderColor: '#334155',
+    textStyle: { color: '#e5e7eb' },
+  },
+  legend: {
+    orient: 'vertical',
+    right: 10,
+    top: 'center',
+    textStyle: { color: '#e5e7eb', fontSize: 11 },
+    itemWidth: 12,
+    itemHeight: 12,
+    itemGap: 6,
+    data: legendData.value,
+    formatter: (name: string) => {
+      const dataSource = showDetailedLegend.value ? innerRingData.value : outerRingData.value
+      const item = dataSource.find(d => d.name === name)
+      if (!item) return name
+      const total = report.value?.subtotal || 1
+      const pct = ((item.value / total) * 100).toFixed(1)
+      return `${name}: $${item.value.toLocaleString(undefined, { maximumFractionDigits: 0 })} (${pct}%)`
+    },
+  },
+  series: [
+    // Inner ring - individual stations
+    {
+      type: 'pie',
+      radius: ['20%', '50%'],
+      center: ['35%', '50%'],
+      label: { show: false },
+      labelLine: { show: false },
+      itemStyle: {
+        borderColor: '#020617',
+        borderWidth: 1,
+      },
+      emphasis: {
+        itemStyle: {
+          shadowBlur: 10,
+          shadowOffsetX: 0,
+          shadowColor: 'rgba(0, 0, 0, 0.5)',
+        },
+      },
+      data: innerRingData.value,
+    },
+    // Outer ring - groups
+    {
+      type: 'pie',
+      radius: ['55%', '75%'],
+      center: ['35%', '50%'],
+      label: { show: false },
+      labelLine: { show: false },
+      itemStyle: {
+        borderColor: '#020617',
+        borderWidth: 2,
+      },
+      emphasis: {
+        itemStyle: {
+          shadowBlur: 10,
+          shadowOffsetX: 0,
+          shadowColor: 'rgba(0, 0, 0, 0.5)',
+        },
+      },
+      data: outerRingData.value,
+    },
+  ],
+}))
 
 // --- Helpers ---
 
@@ -340,7 +511,21 @@ function navigateToItem(itemNumber: string) {
       <!-- Chart + Summary Row -->
       <div class="chart-summary-row">
         <div class="chart-container">
-          <Pie v-if="chartData" :data="chartData" :options="chartOptions" />
+          <div class="chart-header">
+            <span class="chart-title">Cost Breakdown</span>
+            <div class="chart-controls">
+              <button class="legend-toggle" @click="showDetailedLegend = !showDetailedLegend">
+                {{ showDetailedLegend ? 'Show Groups' : 'Show Stations' }}
+              </button>
+              <span class="chart-hint">Inner: Stations | Outer: Groups</span>
+            </div>
+          </div>
+          <v-chart
+            v-if="innerRingData.length > 0"
+            class="nested-pie-chart"
+            :option="chartOptions"
+            autoresize
+          />
           <div v-else class="no-chart">No cost data to chart</div>
         </div>
         <div class="summary-cards">
@@ -414,11 +599,56 @@ function navigateToItem(itemNumber: string) {
 
       <!-- Operations Summary Table -->
       <div v-if="sortedOperations.length > 0" class="section">
-        <h2>Operations Summary <span class="count-badge">{{ sortedOperations.length }}</span></h2>
-        <table class="report-table">
+        <div class="section-header">
+          <h2>
+            Operations Summary
+            <span class="count-badge">{{ groupByStation ? sortedOperationsGrouped.length + ' groups' : sortedOperations.length }}</span>
+          </h2>
+          <button class="view-toggle" @click="groupByStation = !groupByStation">
+            {{ groupByStation ? 'Show All Stations' : 'Show Groups' }}
+          </button>
+        </div>
+
+        <!-- Grouped View -->
+        <table v-if="groupByStation" class="report-table">
+          <thead>
+            <tr>
+              <th>Group</th>
+              <th class="num">Stations</th>
+              <th class="num">Total Time</th>
+              <th class="num">Total Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="grp in sortedOperationsGrouped" :key="grp.group_name">
+              <tr class="group-row" :style="{ borderLeft: `4px solid ${groupColors[grp.group_name] || '#6b7280'}` }">
+                <td class="group-name">
+                  <span class="group-color" :style="{ background: groupColors[grp.group_name] || '#6b7280' }"></span>
+                  {{ grp.group_name }}
+                </td>
+                <td class="num">{{ grp.station_count }}</td>
+                <td class="num">{{ fmtTime(grp.total_time_min) }}</td>
+                <td class="num extended">{{ fmt(grp.total_cost) }}</td>
+              </tr>
+              <tr v-for="st in grp.stations" :key="st.station_code" class="station-subrow">
+                <td class="station-indent">
+                  <span class="station-code">{{ st.station_code }}</span>
+                  {{ st.station_name }}
+                </td>
+                <td class="num">-</td>
+                <td class="num">{{ st.is_outsourced ? '-' : fmtTime(st.total_time_min) }}</td>
+                <td class="num">{{ fmt(st.total_cost) }}</td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <!-- Individual View -->
+        <table v-else class="report-table">
           <thead>
             <tr>
               <th>Station</th>
+              <th>Group</th>
               <th>Type</th>
               <th class="num">Parts</th>
               <th class="num">Total Time</th>
@@ -431,6 +661,11 @@ function navigateToItem(itemNumber: string) {
               <td class="station-name">
                 <span class="station-code">{{ op.station_code }}</span>
                 {{ op.station_name }}
+              </td>
+              <td>
+                <span class="group-badge" :style="{ background: groupColors[op.station_group] || '#6b7280' }">
+                  {{ op.station_group }}
+                </span>
               </td>
               <td>
                 <span :class="['type-badge', op.is_outsourced ? 'outsourced' : 'in-house']">
@@ -660,15 +895,69 @@ h1 {
   background: #0f172a;
   border-radius: 8px;
   padding: 20px;
-  height: 320px;
+  height: 540px;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.chart-container > canvas,
+.chart-container > div:not(.chart-header):not(.no-chart) {
+  flex: 1;
+  min-height: 0;
 }
 
 .no-chart {
   color: #9ca3af;
   font-size: 14px;
+}
+
+/* Chart header */
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.legend-toggle {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid #1e293b;
+  background: #020617;
+  color: #9ca3af;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.legend-toggle:hover {
+  background: #1e293b;
+  color: #e5e7eb;
+}
+
+.chart-hint {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+/* Nested pie chart */
+.nested-pie-chart {
+  flex: 1;
+  min-height: 460px;
+  width: 100%;
 }
 
 .summary-cards {
@@ -720,13 +1009,35 @@ h1 {
   margin-bottom: 28px;
 }
 
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
 h2 {
   font-size: 18px;
   font-weight: 600;
-  margin: 0 0 12px 0;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.view-toggle {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #1e293b;
+  background: #020617;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.view-toggle:hover {
+  background: #1e293b;
+  color: #e5e7eb;
 }
 
 .count-badge {
@@ -841,6 +1152,51 @@ h2 {
 .type-badge.outsourced {
   background: #7c2d12;
   color: #fed7aa;
+}
+
+/* Group table styles */
+.group-row {
+  background: #0c1222;
+}
+
+.group-row:hover {
+  background: #0f172a;
+}
+
+.group-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.group-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.station-subrow {
+  background: #020617;
+}
+
+.station-subrow td {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.station-indent {
+  padding-left: 32px !important;
+}
+
+.group-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: white;
 }
 
 .items-cell {
