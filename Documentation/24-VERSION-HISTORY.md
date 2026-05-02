@@ -775,7 +775,8 @@ This is a complete platform rewrite. There is no in-place upgrade path from v2.0
 | v3.2 | 2026-01-31 | Previous | Per-material pricing, purchased parts enhancement |
 | v3.3 | 2026-02-03 | Previous | Project cost report, FreeCAD script improvements |
 | v3.4 | 2026-02-05 | Previous | Project scheduling, capacity planning |
-| v3.5 | 2026-02-07 | Current | Waterjet cut time calculation, shop floor enhancements |
+| v3.5 | 2026-02-07 | Previous | Waterjet cut time calculation, shop floor enhancements |
+| v3.6 | 2026-05-01 | Current | Station grouping, ECharts nested pie, PDF stamp refinement |
 
 ---
 
