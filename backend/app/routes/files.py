@@ -1,10 +1,13 @@
 """Files API routes."""
 
 import re
-from io import BytesIO
+import zipfile
+import csv
+from io import BytesIO, StringIO
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from typing import Optional
 from uuid import UUID
 
@@ -151,6 +154,86 @@ ITEM_NUMBER_PATTERNS = [
 def is_valid_item_number(item_number: str) -> bool:
     """Check if an item_number matches a known naming convention."""
     return any(p.match(item_number) for p in ITEM_NUMBER_PATTERNS)
+
+
+def flatten_bom_tree(tree_node: dict, parent_path: str = "", level: int = 0) -> list[dict]:
+    """
+    Flatten a BOM tree into a list of items with their hierarchy.
+
+    Args:
+        tree_node: BOM tree node from get_bom_tree endpoint
+        parent_path: Path of parent items (for indentation/hierarchy display)
+        level: Current depth level
+
+    Returns:
+        List of dicts with: item, quantity, level, path
+    """
+    items = []
+
+    # Add current item
+    item_number = tree_node["item"]["item_number"]
+    current_path = f"{parent_path}/{item_number}" if parent_path else item_number
+
+    items.append({
+        "item": tree_node["item"],
+        "quantity": tree_node["quantity"],
+        "level": level,
+        "path": current_path
+    })
+
+    # Recursively add children
+    for child in tree_node.get("children", []):
+        items.extend(flatten_bom_tree(child, current_path, level + 1))
+
+    return items
+
+
+def generate_bom_csv(tree_node: dict) -> str:
+    """
+    Generate a CSV string from a BOM tree.
+
+    Args:
+        tree_node: BOM tree node from get_bom_tree endpoint
+
+    Returns:
+        CSV string with BOM data
+    """
+    flattened = flatten_bom_tree(tree_node)
+
+    output = StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow([
+        "Level",
+        "Item Number",
+        "Name",
+        "Quantity",
+        "Material",
+        "Thickness",
+        "Mass",
+        "Revision",
+        "Lifecycle State"
+    ])
+
+    # Data rows
+    for entry in flattened:
+        item = entry["item"]
+        indent = "  " * entry["level"]  # Indent based on level
+
+        writer.writerow([
+            entry["level"],
+            f"{indent}{item.get('item_number', '')}",
+            item.get("name", ""),
+            entry["quantity"],
+            item.get("material", ""),
+            item.get("thickness", ""),
+            item.get("mass", ""),
+            item.get("revision", ""),
+            item.get("lifecycle_state", "")
+        ])
+
+    return output.getvalue()
 
 
 def auto_create_item(supabase, item_number: str) -> dict:
@@ -390,3 +473,184 @@ async def delete_file(file_id: UUID):
     supabase.table("files").delete().eq("id", str(file_id)).execute()
 
     return {"message": "File deleted"}
+
+
+@router.get("/assembly/{item_number}/download")
+async def download_assembly_package(item_number: str):
+    """
+    Download assembly as a ZIP package containing:
+    - Assembly STEP file
+    - All child part STEP files (organized in parts/ folder)
+    - BOM CSV file with hierarchy
+    - README with package information
+
+    This endpoint is useful for sharing complete assemblies without
+    requiring users to download individual parts separately.
+    """
+    supabase = get_supabase_admin()
+
+    clean_item_number = item_number.strip().lower()
+
+    # 1. Get assembly item
+    try:
+        item_result = supabase.table("items").select("*").eq("item_number", clean_item_number).single().execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail=f"Item {clean_item_number} not found")
+
+    if not item_result.data:
+        raise HTTPException(status_code=404, detail=f"Item {clean_item_number} not found")
+
+    assembly_item = item_result.data
+
+    # 2. Get BOM tree (recursive)
+    # Inline BOM tree retrieval to avoid circular dependency
+    def build_bom_tree(item_id: str, depth: int = 0, max_depth: int = 10) -> dict:
+        """Recursively build BOM tree."""
+        if depth >= max_depth:
+            return {"item": None, "quantity": 0, "children": []}
+
+        # Get item details
+        item_result = supabase.table("items").select("*").eq("id", item_id).execute()
+        if not item_result.data:
+            return {"item": None, "quantity": 0, "children": []}
+
+        item = item_result.data[0]
+
+        # Get children
+        bom_result = supabase.table("bom").select("child_item_id, quantity").eq("parent_item_id", item_id).execute()
+
+        children = []
+        for entry in bom_result.data:
+            child_tree = build_bom_tree(entry["child_item_id"], depth + 1, max_depth)
+            if child_tree["item"]:
+                child_tree["quantity"] = entry["quantity"]
+                children.append(child_tree)
+
+        return {
+            "item": item,
+            "quantity": 1,
+            "children": children
+        }
+
+    bom_tree = build_bom_tree(assembly_item["id"])
+
+    # Check if this item has a BOM (is an assembly)
+    if not bom_tree["children"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Item {clean_item_number} has no BOM (not an assembly). Use regular file download instead."
+        )
+
+    # 3. Collect all STEP files (assembly + children)
+    files_to_package = []
+
+    # Get all items from flattened tree
+    flattened_items = flatten_bom_tree(bom_tree)
+
+    for entry in flattened_items:
+        item = entry["item"]
+        item_id = item["id"]
+        item_num = item["item_number"]
+        level = entry["level"]
+
+        # Get latest STEP file for this item
+        step_result = supabase.table("files").select("*").eq("item_id", item_id).eq("file_type", "STEP").order("created_at", desc=True).limit(1).execute()
+
+        if step_result.data:
+            step_file = step_result.data[0]
+            # Determine path in ZIP
+            if level == 0:
+                # Assembly goes to root
+                zip_path = f"{item_num}.step"
+            else:
+                # Parts go to parts/ folder
+                zip_path = f"parts/{item_num}.step"
+
+            files_to_package.append({
+                "zip_path": zip_path,
+                "file_path": step_file["file_path"],
+                "item_number": item_num,
+                "level": level
+            })
+
+    if not files_to_package:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No STEP files found for assembly {clean_item_number} or its components"
+        )
+
+    # 4. Create ZIP package in memory
+    zip_buffer = BytesIO()
+
+    try:
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # Add STEP files
+            for file_info in files_to_package:
+                file_path = file_info["file_path"]
+
+                # Parse bucket and path
+                parts = file_path.split("/", 1)
+                if len(parts) == 2:
+                    bucket = parts[0]
+                    storage_path = parts[1]
+                else:
+                    bucket = "pdm-files"
+                    storage_path = file_path
+
+                # Download from Supabase Storage
+                try:
+                    file_bytes = supabase.storage.from_(bucket).download(storage_path)
+                    zf.writestr(file_info["zip_path"], file_bytes)
+                except Exception as e:
+                    print(f"Warning: Could not download {file_path}: {e}")
+                    # Continue with other files even if one fails
+
+            # Add BOM CSV
+            bom_csv = generate_bom_csv(bom_tree)
+            zf.writestr("bom.csv", bom_csv)
+
+            # Add README
+            total_parts = len([f for f in files_to_package if f["level"] > 0])
+            readme_content = f"""Assembly Package: {clean_item_number}
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+Assembly: {assembly_item.get('name', clean_item_number)}
+Revision: {assembly_item.get('revision', 'A')}
+Lifecycle State: {assembly_item.get('lifecycle_state', 'Unknown')}
+
+Contents:
+- {clean_item_number}.step (assembly - {files_to_package[0]['zip_path'] if files_to_package else 'NOT FOUND'})
+- parts/*.step ({total_parts} component{'s' if total_parts != 1 else ''})
+- bom.csv (bill of materials with hierarchy)
+
+Files Included:
+"""
+            for file_info in files_to_package:
+                readme_content += f"  - {file_info['zip_path']} (Level {file_info['level']})\n"
+
+            readme_content += f"""
+Import Instructions:
+1. Extract all files to a folder
+2. Import {clean_item_number}.step into your CAD system
+3. If your CAD system supports external references, parts will link automatically
+4. Otherwise, manually import parts from the parts/ folder as needed
+5. Reference bom.csv for component quantities and properties
+
+PDM-Web System
+Generated by assembly package download feature
+"""
+            zf.writestr("README.txt", readme_content)
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating assembly package: {str(e)}")
+
+    # 5. Return as streaming response
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename={clean_item_number}_assembly.zip"
+        }
+    )

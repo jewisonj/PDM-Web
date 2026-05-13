@@ -19,6 +19,8 @@ const history = ref<any[]>([])
 
 onMounted(async () => {
   await itemsStore.fetchItem(itemNumber.value)
+  // Load BOM immediately to check if item is an assembly (for files tab)
+  await loadBOM()
 })
 
 async function loadBOM() {
@@ -74,6 +76,55 @@ function formatSize(bytes?: number) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Check if item is an assembly (has BOM children)
+const isAssembly = computed(() => {
+  return bomTree.value && bomTree.value.children && bomTree.value.children.length > 0
+})
+
+const downloadingAssembly = ref(false)
+
+async function downloadAssemblyPackage() {
+  if (!itemNumber.value) return
+
+  downloadingAssembly.value = true
+
+  try {
+    // Ensure BOM is loaded to show accurate button state
+    if (!bomTree.value) {
+      await loadBOM()
+    }
+
+    // Check if item is actually an assembly
+    if (!isAssembly.value) {
+      alert('This item has no BOM (not an assembly). Use regular file download instead.')
+      downloadingAssembly.value = false
+      return
+    }
+
+    const response = await fetch(`/api/files/assembly/${itemNumber.value}/download`)
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.detail || 'Failed to download assembly package')
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${itemNumber.value}_assembly.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Assembly download error:', error)
+    alert(error instanceof Error ? error.message : 'Failed to download assembly package')
+  } finally {
+    downloadingAssembly.value = false
+  }
 }
 </script>
 
@@ -162,23 +213,46 @@ function formatSize(bytes?: number) {
 
       <div class="tab-content">
         <!-- Files Tab -->
-        <div v-if="activeTab === 'files'" class="files-list">
-          <div
-            v-for="file in itemsStore.currentItem.files"
-            :key="file.id"
-            class="file-card"
-          >
-            <span class="file-icon">{{ getFileIcon(file.file_type) }}</span>
-            <div class="file-info">
-              <div class="file-name">{{ file.file_name }}</div>
-              <div class="file-meta">
-                {{ file.file_type }} &bull; {{ formatSize(file.file_size) }} &bull; {{ formatDate(file.created_at) }}
+        <div v-if="activeTab === 'files'" class="files-tab">
+          <!-- Assembly Download Section -->
+          <div v-if="bomTree && bomTree.children && bomTree.children.length > 0" class="assembly-download">
+            <div class="assembly-info">
+              <span class="assembly-icon">📦</span>
+              <div class="assembly-text">
+                <strong>Assembly Package Available</strong>
+                <span class="assembly-meta">
+                  Download all STEP files (assembly + {{ bomTree.children.length }} part{{ bomTree.children.length !== 1 ? 's' : '' }}) with BOM
+                </span>
               </div>
             </div>
-            <button class="btn-icon">⬇️</button>
+            <button
+              @click="downloadAssemblyPackage"
+              class="btn-assembly-download"
+              :disabled="downloadingAssembly"
+            >
+              {{ downloadingAssembly ? 'Preparing...' : '⬇️ Download Assembly Package' }}
+            </button>
           </div>
-          <div v-if="!itemsStore.currentItem.files?.length" class="empty">
-            No files uploaded yet
+
+          <!-- Individual Files List -->
+          <div class="files-list">
+            <div
+              v-for="file in itemsStore.currentItem.files"
+              :key="file.id"
+              class="file-card"
+            >
+              <span class="file-icon">{{ getFileIcon(file.file_type) }}</span>
+              <div class="file-info">
+                <div class="file-name">{{ file.file_name }}</div>
+                <div class="file-meta">
+                  {{ file.file_type }} &bull; {{ formatSize(file.file_size) }} &bull; {{ formatDate(file.created_at) }}
+                </div>
+              </div>
+              <button class="btn-icon">⬇️</button>
+            </div>
+            <div v-if="!itemsStore.currentItem.files?.length" class="empty">
+              No files uploaded yet
+            </div>
           </div>
         </div>
 
@@ -476,5 +550,72 @@ function formatSize(bytes?: number) {
   border: 1px solid #444;
   border-radius: 4px;
   cursor: pointer;
+}
+
+.files-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.assembly-download {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(100, 181, 246, 0.1) 0%, rgba(100, 181, 246, 0.05) 100%);
+  border: 1px solid rgba(100, 181, 246, 0.3);
+  border-radius: 6px;
+  gap: 1rem;
+}
+
+.assembly-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+}
+
+.assembly-icon {
+  font-size: 2rem;
+}
+
+.assembly-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.assembly-text strong {
+  color: #64b5f6;
+  font-size: 1rem;
+}
+
+.assembly-meta {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.btn-assembly-download {
+  padding: 0.75rem 1.5rem;
+  background: #64b5f6;
+  color: #0a0e1a;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.btn-assembly-download:hover:not(:disabled) {
+  background: #5ca9e8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(100, 181, 246, 0.3);
+}
+
+.btn-assembly-download:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

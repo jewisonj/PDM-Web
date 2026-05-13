@@ -494,11 +494,38 @@ Get-Content C:\PDM-Upload\pdm-upload.log -Tail 20
 
 **Where:** Part Lookup (`/mrp/parts`)
 
-1. Search for parts by project
-2. View routing operations assigned to each part
-3. Enter time spent on operations
-4. Mark operations as complete
-5. View PDF drawings inline
+The unified Part Lookup view provides shop floor access to PDFs and part information across all projects.
+
+#### Layout and Features
+
+- **Sidebar:** Left sidebar with search bar, project filter, and parts list (matches Routing Editor design)
+- **Project Filter:** Select specific project or "All Parts" to view all items system-wide
+- **File Badges:**
+  - Red PDF icon (🔴) for parts with PDFs
+  - Material badge showing material type (e.g., STEEL, ALUMINUM)
+  - Operations badge showing routing operation count
+- **Main Panel:** PDF viewer and part details tabs
+
+#### Using Part Lookup
+
+1. **Search for parts:** Type item number or description in search bar
+2. **Filter by project:** Select project from dropdown or choose "All Parts" for cross-project search
+3. **View PDFs:** Click part with red PDF icon to view drawing in main panel
+4. **Check details:** Switch to Details tab to see material, thickness, operations count
+5. **Cross-reference:** Material and operations badges help identify part type at a glance
+
+#### PDF Viewing
+
+- PDFs served directly from Supabase Storage buckets
+- Signed URLs generated with 1-hour expiry for security
+- PDFs open in embedded viewer (no separate browser tab)
+- Full-size PDF with zoom controls
+
+#### Notes
+
+- **Replaced Print Lookup:** Part Lookup now serves all PDF viewing needs (Print Lookup page removed in v3.7)
+- **All Parts Option:** "All Parts" filter shows items across all projects, not just selected project
+- **Storage Architecture:** PDFs stored in `pdm-drawings` bucket, organized by item/revision/iteration
 
 ### MRP Routing Editor
 

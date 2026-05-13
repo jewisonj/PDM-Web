@@ -7,9 +7,160 @@
 
 ## Current Version
 
-### v3.6 (2026-05-01) -- Station Grouping and Cost Report Enhancements
+### v3.7 (2026-05-12) -- MRP Part Lookup Redesign and PDF Serving Improvements
 
 **Status:** Current Production Release
+
+**Summary:** Redesigned MRP Part Lookup view with unified layout, removed Print Lookup page, improved PDF serving via Supabase Storage, and documented mapkey changes for Creo favorites.
+
+#### Features Added
+
+**Unified Part Lookup View**
+
+The MRP Part Lookup view has been completely redesigned to match the Routing Editor layout and serve as the unified view for all part/PDF viewing needs:
+
+- **Sidebar Layout:** Left sidebar with search bar and project filter matches Routing Editor design
+- **All Parts Option:** New "All Parts" option in project filter shows all items across all projects (not just project-specific)
+- **File Badges:** PDF icons displayed in red (🔴) for visual clarity, Material badges show material type, Operations badges show routing operation count
+- **Project Filter:** Dropdown to filter by specific project or view all parts system-wide
+- **Removed Print Lookup:** Print Lookup page completely removed (route commented out, all navigation links removed)
+- **Shop Terminal Navigation:** MRP Shop view navigation now shows only Shop Terminal and Part Lookup buttons (Print Lookup button removed)
+
+**PDF Serving via Supabase Storage**
+
+PDFs are now served directly from Supabase Storage buckets using storage helper functions:
+
+- **Storage Buckets:** Files stored in three buckets: `pdm-drawings` (PDFs), `pdm-cad` (PRT/ASM), `pdm-exports` (STEP/DXF/SVG)
+- **Storage Helper Functions:** New `frontend/src/services/storage.ts` provides helper functions for URL generation
+- **Key Function:** `getSignedUrlFromPath()` parses storage paths and creates signed URLs (1-hour expiry)
+- **File Path Format:** Stored in `files` table as `pdm-drawings/csp00025/A/1/csp00025.pdf` (no separate `storage_path` column)
+- **Bug Fix:** Fixed queries that tried to select non-existent `storage_path` column (use `file_path` column directly)
+
+**Mapkey Changes for Creo Integration**
+
+Documented changes to Creo mapkeys replacing FAV_ favorite references with hard-coded paths:
+
+- **FAV_ Favorites Removed:** All FAV_9_, FAV_10_, FAV_14_ favorite button references replaced with computer_pb navigation
+- **Hard-Coded Paths:** Uses `computer_pb` button + double-action Select/Activate for folder navigation
+- **Two Destination Paths:**
+  - `C:\PTC_Data\formats` (for drawing format files)
+  - `C:\PDM-Upload` (for file exports to PDM system)
+- **12 Mapkeys Modified:** All export and format selection mapkeys updated
+- **Documentation:** Created `MAPKEY_CHANGES.md` at project root with full details
+
+#### Database/Storage Architecture
+
+**Files Table Structure:**
+- `id` (UUID) - Primary key
+- `item_id` (UUID) - Links to items table
+- `file_type` (TEXT) - PDF, STEP, DXF, SVG, CAD, etc.
+- `file_name` (TEXT) - Original filename
+- `file_path` (TEXT) - Full storage path including bucket (e.g., `pdm-drawings/csp00025/A/1/csp00025.pdf`)
+- `file_size` (INTEGER) - Size in bytes
+- `revision` (TEXT) - File revision letter
+- `iteration` (INTEGER) - File iteration number
+
+**Storage Buckets:**
+- `pdm-drawings` - PDF files
+- `pdm-cad` - Creo CAD files (PRT, ASM)
+- `pdm-exports` - Exported files (STEP, DXF, SVG)
+- `pdm-other` - Other file types
+
+**Storage Helper Functions (`frontend/src/services/storage.ts`):**
+- `parseStoragePath()` - Parses full path to extract bucket and path
+- `getSignedUrl()` - Creates signed URL for bucket/path (1 hour expiry)
+- `getSignedUrlFromPath()` - Creates signed URL from full storage path
+- `getBucketForFile()` - Maps file extension to bucket
+- `buildStoragePath()` - Builds storage path from item/revision/iteration
+- `uploadFile()` - Uploads file to appropriate bucket
+- `downloadFile()` - Downloads file as blob
+- `createFileRecord()` - Creates/updates files table record
+
+#### Frontend Changes
+
+**Modified View:** `frontend/src/views/MrpPartLookupView.vue` (~500 lines redesigned)
+
+- **Layout:** Switched from top search bar to sidebar layout matching Routing Editor
+- **Sidebar Components:**
+  - Search input with icon
+  - Project filter dropdown (All Parts + project-specific options)
+  - Parts list with scrollable table
+  - File badges (PDF red icon, Material badge, Operations badge)
+- **Main Panel:**
+  - PDF viewer using signed URLs from Supabase Storage
+  - Part details tab with material/operations info
+- **Data Loading:**
+  - Loads all files and builds availability sets for badge display
+  - Uses `getSignedUrlFromPath()` to generate PDF URLs
+  - Queries files table using `file_path` column (not `storage_path`)
+
+**Removed View:** `frontend/src/views/MrpPrintLookupView.vue` (DELETED)
+
+- Print Lookup page no longer needed
+- Part Lookup view serves all PDF viewing needs
+
+**Modified View:** `frontend/src/views/MrpShopView.vue` (~20 lines modified)
+
+- Removed "Print Lookup" navigation button
+- Navigation now shows only "Shop Terminal" and "Part Lookup"
+
+**Modified Router:** `frontend/src/router/index.ts`
+
+- Print Lookup route commented out (lines 97-102)
+- Route definition preserved in comments for reference
+
+#### Files Changed Summary
+
+- `frontend/src/views/MrpPartLookupView.vue` -- Complete redesign with sidebar layout, all parts filter, PDF serving
+- `frontend/src/views/MrpPrintLookupView.vue` -- DELETED
+- `frontend/src/views/MrpShopView.vue` -- Removed Print Lookup navigation button
+- `frontend/src/router/index.ts` -- Commented out Print Lookup route
+- `frontend/src/services/storage.ts` -- Storage helper functions for PDF serving
+- `MAPKEY_CHANGES.md` -- NEW, documents Creo mapkey changes
+
+#### Use Cases
+
+**Part Lookup View:**
+- **Shop Floor PDF Access:** Workers can quickly find and view PDFs for any part across all projects
+- **Project-Specific View:** Filter to see only parts in a specific project
+- **Material Identification:** Material badges show material type at a glance
+- **Routing Status:** Operations badges show if routing is defined
+- **All Parts View:** "All Parts" option enables cross-project part search
+
+**PDF Serving:**
+- **Secure Access:** Signed URLs expire after 1 hour, preventing unauthorized long-term access
+- **No Backend Proxy:** PDFs served directly from Supabase Storage, reducing backend load
+- **Browser Caching:** Signed URLs enable browser caching for better performance
+- **Multiple Buckets:** Files organized by type for easier management and access control
+
+**Mapkey Changes:**
+- **Portable Configuration:** Mapkeys no longer depend on Creo favorites being set up correctly
+- **Consistent Paths:** All users navigate to same hard-coded paths
+- **No Setup Required:** New users don't need to configure favorites
+
+#### Technical Notes
+
+- **Storage Path Format:** Full path includes bucket prefix (e.g., `pdm-drawings/...`) stored in single `file_path` column
+- **No `storage_path` Column:** Database does not have separate `storage_path` column; use `file_path` for all queries
+- **Signed URL Expiry:** URLs valid for 1 hour (3600 seconds) by default, configurable in `getSignedUrl()` calls
+- **File Type Mapping:** `storage.ts` maps file extensions to buckets and database file types
+- **Print Lookup Removal:** Route and view files preserved in comments/history for reference, not deleted from git
+- **Mapkey Double-Action:** Creo mapkeys require both Select and Activate commands to navigate into folders
+
+#### Related Documentation
+
+- [MAPKEY_CHANGES.md](../MAPKEY_CHANGES.md) -- Creo mapkey changes reference
+- [03-DATABASE-SCHEMA.md](03-DATABASE-SCHEMA.md) -- Updated files table schema
+- [04-SERVICES-REFERENCE.md](04-SERVICES-REFERENCE.md) -- Storage service reference
+- [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md) -- Updated MRP workflows
+
+---
+
+## Previous Versions
+
+### v3.6 (2026-05-01) -- Station Grouping and Cost Report Enhancements
+
+**Status:** Previous Release (superseded by v3.7)
 
 **Summary:** Enhanced MRP cost reporting with station grouping and nested pie chart visualization, plus refined PDF upload date stamping for better drawing readability.
 
@@ -776,11 +927,26 @@ This is a complete platform rewrite. There is no in-place upgrade path from v2.0
 | v3.3 | 2026-02-03 | Previous | Project cost report, FreeCAD script improvements |
 | v3.4 | 2026-02-05 | Previous | Project scheduling, capacity planning |
 | v3.5 | 2026-02-07 | Previous | Waterjet cut time calculation, shop floor enhancements |
-| v3.6 | 2026-05-01 | Current | Station grouping, ECharts nested pie, PDF stamp refinement |
+| v3.6 | 2026-05-01 | Previous | Station grouping, ECharts nested pie, PDF stamp refinement |
+| v3.7 | 2026-05-12 | Current | MRP Part Lookup redesign, PDF serving improvements, mapkey documentation |
 
 ---
 
 ## Checking Your Version
+
+**v3.7 indicators:**
+- `frontend/src/views/MrpPartLookupView.vue` has sidebar layout with project filter and "All Parts" option
+- `frontend/src/views/MrpPrintLookupView.vue` does not exist (deleted)
+- `frontend/src/router/index.ts` has Print Lookup route commented out
+- `frontend/src/services/storage.ts` has `getSignedUrlFromPath()` function
+- `MAPKEY_CHANGES.md` exists at project root
+- MRP Shop view has only "Shop Terminal" and "Part Lookup" navigation buttons (no Print Lookup)
+
+**v3.6 indicators:**
+- `workstations` table has `station_group` column
+- MRP Cost Report view uses ECharts nested pie chart (not Chart.js)
+- Cost Report has grouped operations table with expandable groups
+- `frontend/package.json` includes `echarts` and `vue-echarts` dependencies
 
 **v3.5 indicators:**
 - `backend/app/services/cutting.py` exists
@@ -858,6 +1024,6 @@ All future releases follow this format:
 
 ---
 
-**Last Updated:** 2026-02-07
-**Current Version:** v3.5
+**Last Updated:** 2026-05-12
+**Current Version:** v3.7
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md)

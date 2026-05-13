@@ -1018,21 +1018,9 @@ onUnmounted(() => {
           <span class="nav-dot routing"></span>
           Routing Editor
         </button>
-        <button class="nav-btn materials" @click="goToRawMaterials">
-          <span class="nav-dot materials"></span>
-          Raw Materials
-        </button>
         <button class="nav-btn shop" @click="goToShop">
           <span class="nav-dot shop"></span>
           Shop Terminal
-        </button>
-        <button class="nav-btn lookup" @click="goToPartLookup">
-          <span class="nav-dot lookup"></span>
-          Part Lookup
-        </button>
-        <button class="nav-btn settings" @click="goToCostSettings">
-          <span class="nav-dot settings"></span>
-          Cost Settings
         </button>
         <button class="nav-btn tracking" @click="goToProjectTracking">
           <span class="nav-dot tracking"></span>
@@ -1041,6 +1029,14 @@ onUnmounted(() => {
         <button class="nav-btn cost-report" @click="goToCostReport">
           <span class="nav-dot cost-report"></span>
           Cost Report
+        </button>
+        <button class="nav-btn materials" @click="goToRawMaterials">
+          <span class="nav-dot materials"></span>
+          Raw Materials
+        </button>
+        <button class="nav-btn settings" @click="goToCostSettings">
+          <span class="nav-dot settings"></span>
+          Cost Settings
         </button>
         <button class="refresh-btn" @click="refreshDashboard" :disabled="loading">
           <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"></i>

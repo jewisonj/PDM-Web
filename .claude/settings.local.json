@@ -85,7 +85,14 @@
       "WebFetch(domain:www.wjta.org)",
       "WebFetch(domain:me.berkeley.edu)",
       "WebFetch(domain:pdm-web.fly.dev)",
-      "Bash(explorer \"J:\\\\PDM-Web\\\\backend\\\\real_stamped.pdf\")"
+      "Bash(explorer \"J:\\\\PDM-Web\\\\backend\\\\real_stamped.pdf\")",
+      "Bash(uvicorn app.main:app:*)",
+      "Bash(test:*)",
+      "Bash(node:*)",
+      "WebFetch(domain:community.ptc.com)",
+      "WebFetch(domain:www.mcadcentral.com)",
+      "WebFetch(domain:www.eng-tips.com)",
+      "WebFetch(domain:creomapkeys.wordpress.com)"
     ],
     "deny": []
   },

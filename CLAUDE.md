@@ -1,5 +1,20 @@
 # PDM-Web - Product Data Management System (Web Migration)
 
+## ⚠️ CRITICAL: Port Configuration
+
+**ALWAYS check PORTS.md before making any API calls or starting services!**
+
+- **Frontend (Vue/Vite):** Port **5174** (configured in `frontend/vite.config.ts`)
+- **Backend (FastAPI):** Port **8001** (configured in `backend/.env` → API_PORT=8001)
+- **Frontend API calls:** Use relative URLs (`/api/...`) to leverage Vite proxy
+- **Backend startup:** `python -m uvicorn app.main:app --reload --port 8001`
+
+**NEVER hardcode `http://localhost:8000` or assume default ports!**
+
+See `PORTS.md` for complete documentation.
+
+---
+
 ## Project Overview
 
 Migrating a Windows/PowerShell-based PDM system to a **web-based architecture**. This is a small-team, desktop-first application for managing CAD files, BOMs, and manufacturing documents.

@@ -369,10 +369,6 @@ function goToPartLookup() {
   router.push('/mrp/parts')
 }
 
-function goToPrintLookup() {
-  router.push('/mrp/print-lookup')
-}
-
 // PDF Panel functions
 const pdfDisplayUrl = ref<string | null>(null)
 const loadingPdf = ref(false)
@@ -470,10 +466,6 @@ onMounted(() => {
           <button class="nav-btn lookup" @click="goToPartLookup">
             <span class="nav-dot lookup"></span>
             Part Lookup
-          </button>
-          <button class="nav-btn print" @click="goToPrintLookup">
-            <span class="nav-dot print"></span>
-            Print Lookup
           </button>
         </div>
       </header>

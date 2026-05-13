@@ -120,6 +120,8 @@ const loadingPdf = ref(false)
 // Files state
 const itemFiles = ref<FileInfo[]>([])
 const generatingDxf = ref(false)
+const isAssembly = ref(false)
+const downloadingAssembly = ref(false)
 
 // Computed: check if DXF exists
 const hasDxf = computed(() => itemFiles.value.some(f => f.file_type === 'DXF'))
@@ -836,8 +838,63 @@ async function selectItem(item: Item) {
       selectedMaterialSize.value = 'all'
       selectedMaterial.value = ''
     }
+
+    // Check if item is an assembly (has BOM children)
+    await checkIfAssembly(item.id)
   } catch (e: any) {
     error.value = e.message || 'Failed to load item data'
+  }
+}
+
+async function checkIfAssembly(itemId: string) {
+  try {
+    const { data, error } = await supabase
+      .from('bom')
+      .select('id')
+      .eq('parent_item_id', itemId)
+      .limit(1)
+
+    if (error) throw error
+    isAssembly.value = data && data.length > 0
+  } catch (e) {
+    console.error('Failed to check BOM:', e)
+    isAssembly.value = false
+  }
+}
+
+async function downloadAssemblyPackage() {
+  if (!selectedItem.value) return
+
+  downloadingAssembly.value = true
+
+  try {
+    if (!isAssembly.value) {
+      alert('This item has no BOM (not an assembly). Use regular STEP file download instead.')
+      downloadingAssembly.value = false
+      return
+    }
+
+    const response = await fetch(`/api/files/assembly/${selectedItem.value.item_number}/download`)
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.detail || 'Failed to download assembly package')
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${selectedItem.value.item_number}_assembly.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  } catch (e) {
+    console.error('Assembly download error:', e)
+    alert(e instanceof Error ? e.message : 'Failed to download assembly package')
+  } finally {
+    downloadingAssembly.value = false
   }
 }
 
@@ -1386,8 +1443,9 @@ onMounted(() => {
               <span class="item-desc">{{ selectedItem.description || selectedItem.name }}</span>
             </div>
             <div class="file-tiles">
+              <!-- Non-STEP files -->
               <button
-                v-for="file in itemFiles.filter(f => f.file_path)"
+                v-for="file in itemFiles.filter(f => f.file_path && f.file_type !== 'STEP')"
                 :key="file.id"
                 class="file-tile"
                 :class="file.file_type.toLowerCase()"
@@ -1396,6 +1454,32 @@ onMounted(() => {
               >
                 {{ file.file_type }}
               </button>
+
+              <!-- STEP - Assembly Package Download (if assembly) -->
+              <button
+                v-if="hasStep && isAssembly"
+                class="file-tile step-assembly"
+                @click="downloadAssemblyPackage"
+                :disabled="downloadingAssembly"
+                title="Download assembly package (STEP files + BOM)"
+              >
+                <i v-if="downloadingAssembly" class="pi pi-spin pi-spinner"></i>
+                <span v-else>📦</span>
+                STEP
+              </button>
+
+              <!-- STEP - Regular file (if not assembly) -->
+              <button
+                v-for="file in itemFiles.filter(f => f.file_path && f.file_type === 'STEP' && !isAssembly)"
+                :key="file.id"
+                class="file-tile step"
+                @click="openFile(file)"
+                :title="`Open ${file.file_name}`"
+              >
+                STEP
+              </button>
+
+              <!-- Generate DXF button -->
               <button
                 v-if="!hasDxf && hasStep"
                 class="file-tile generate-dxf"
@@ -2073,6 +2157,32 @@ onMounted(() => {
 }
 
 .file-tile.step:hover, .file-tile.cad:hover { background: #1e40af; }
+
+.file-tile.step-assembly {
+  background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+  position: relative;
+  padding-left: 8px;
+}
+
+.file-tile.step-assembly:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #60a5fa 100%);
+  box-shadow: 0 3px 6px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.file-tile.step-assembly:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.file-tile.step-assembly span {
+  margin-right: 3px;
+  font-size: 14px;
+}
 
 .file-tile.generate-dxf {
   background: #065f46;

@@ -653,6 +653,96 @@ $itemNumber = Extract-ItemNumber -BaseName $baseName
 
 ---
 
+### 22. Files Table `storage_path` Column Does Not Exist
+
+**Symptom:** Frontend queries to the `files` table failed with errors like `column "storage_path" does not exist` when trying to load PDFs or other files.
+
+**Root Cause:** The `files` table schema uses `file_path` to store the full storage path including bucket prefix (e.g., `pdm-drawings/csp0030/A/1/csp0030.pdf`). There is no separate `storage_path` column. Some frontend code was querying for `storage_path` expecting it to be a distinct column.
+
+**Diagnosis:**
+1. Frontend tried to select `storage_path` from `files` table
+2. Supabase returned error: `column "storage_path" does not exist`
+3. Inspected database schema and confirmed only `file_path` column exists
+4. Reviewed storage helper functions and found they parse bucket from `file_path`
+
+**Fix:**
+Changed all queries to select `file_path` instead of `storage_path`:
+```typescript
+// WRONG
+const { data: files } = await supabase
+  .from('files')
+  .select('id, item_id, file_type, storage_path')  // Column doesn't exist!
+
+// CORRECT
+const { data: files } = await supabase
+  .from('files')
+  .select('id, item_id, file_type, file_path')  // Use file_path
+```
+
+Then use `getSignedUrlFromPath(file.file_path)` to parse bucket and generate signed URL.
+
+**Files Changed:**
+- `frontend/src/views/MrpPartLookupView.vue` - Changed query to use `file_path`
+- Any other views querying `files` table
+
+**Prevention:**
+- Always check database schema before writing queries
+- Use wildcard `select('*')` during development to see all available columns
+- Document column names clearly in schema documentation
+- Use TypeScript interfaces that match actual database schema
+
+---
+
+### 23. Creo Mapkey FAV_ Favorites Not Portable
+
+**Symptom:** Creo mapkeys using `FAV_9_`, `FAV_10_`, and `FAV_14_` favorites failed when favorites were not configured or configured differently on different workstations.
+
+**Root Cause:** Creo favorites (FAV_*) are user-specific and machine-specific. Mapkeys that reference favorites break when moved to a new workstation or when the user's favorites change. The mapkeys were relying on:
+- `FAV_9_` pointing to `C:\PTC_Data\formats` (for drawing sheet formats)
+- `FAV_10_` and `FAV_14_` pointing to `C:\PDM-Upload` (for file exports)
+
+**Diagnosis:**
+1. Tested mapkeys on fresh Creo installation without favorites configured
+2. Mapkeys executed but saved files to working directory instead of target folder
+3. Recorded manual navigation mapkey to understand correct command sequence
+4. Discovered double-action pattern: must Select AND Activate each folder level
+
+**Fix:**
+Replaced all FAV_ favorite references with hard-coded folder navigation using `computer_pb` button and double-action Select/Activate:
+
+```
+// OLD (broken on new machines)
+~ Activate `file_saveas` `pb_favorites__FAV_10_`;
+
+// NEW (portable)
+~ Activate `file_saveas` `computer_pb`;\
+~ Select `file_saveas` `ph_list.Filelist` 1 `c:`;\
+~ Activate `file_saveas` `ph_list.Filelist` 1 `c:`;\
+~ Select `file_saveas` `ph_list.Filelist` 1 `PDM-Upload`;\
+~ Activate `file_saveas` `ph_list.Filelist` 1 `PDM-Upload`;\
+```
+
+**Key Pattern:** Must use both `Select` AND `Activate` to "enter" each folder (mimics double-clicking).
+
+**Mapkeys Modified:** 12 total
+- Export mapkeys: `cipdf`, `expdf`, `exofa`, `exofp`, `exsta`
+- Format mapkeys: `dfwmba`, `dfwmbp`, `dfwmap`, `dfamfap`, `dfamfbp`, `dfamfba`, `apsf`
+
+**Documentation:** Created `MAPKEY_CHANGES.md` at project root with full details of all changes.
+
+**Files Changed:**
+- `config_FIXED.pro` - Updated mapkey definitions
+- `MAPKEY_CHANGES.md` (NEW) - Full documentation of changes
+
+**Prevention:**
+- Never rely on Creo favorites in mapkeys intended for shared use
+- Use hard-coded paths with `computer_pb` + double-action navigation
+- Test mapkeys on fresh Creo installation without favorites configured
+- Document mapkey changes in dedicated reference files
+- Use exact folder names as they appear in Windows Explorer (case-sensitive)
+
+---
+
 ## Coding Patterns
 
 ### Pydantic Schema Pattern

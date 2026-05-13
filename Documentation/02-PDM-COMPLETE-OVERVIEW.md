@@ -306,33 +306,124 @@ Authentication is handled by Supabase Auth with JWT tokens.
 
 ## File Storage
 
-Files are stored in Supabase Storage in the `pdm-files` bucket.
+Files are stored in Supabase Storage across multiple buckets organized by file type.
 
-**Storage path convention:** `{item_number}/{filename}`
-- Example: `pdm-files/csp0030/csp0030.step`
+### Storage Buckets
 
-**Upload process:**
+| Bucket | Purpose | File Types |
+|--------|---------|------------|
+| `pdm-drawings` | Manufacturing drawings | PDF |
+| `pdm-cad` | Native CAD files | PRT, ASM, DRW |
+| `pdm-exports` | Exported CAD data | STEP, DXF, SVG |
+| `pdm-other` | Miscellaneous files | Other formats |
+
+### Storage Path Convention
+
+Files are organized by item number, revision, and iteration:
+
+```
+{bucket}/{item_number}/{revision}/{iteration}/{filename}
+```
+
+**Examples:**
+- `pdm-drawings/csp0030/A/1/csp0030.pdf`
+- `pdm-exports/csp0030/A/1/csp0030.step`
+- `pdm-cad/csp0030/A/1/csp0030.prt`
+
+### Files Table Structure
+
+The `files` table tracks all uploaded files:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | UUID | Primary key |
+| `item_id` | UUID | Links to items table |
+| `file_type` | TEXT | PDF, STEP, CAD, DXF, SVG, IMAGE, OTHER |
+| `file_name` | TEXT | Original filename |
+| `file_path` | TEXT | Full storage path including bucket |
+| `file_size` | INTEGER | Size in bytes |
+| `revision` | TEXT | File revision letter |
+| `iteration` | INTEGER | File iteration number |
+| `uploaded_by` | UUID | User who uploaded the file |
+| `created_at` | TIMESTAMP | Upload timestamp |
+
+**Important:** The `file_path` column contains the full storage path including bucket prefix (e.g., `pdm-drawings/csp0030/A/1/csp0030.pdf`). There is no separate `storage_path` column.
+
+### Upload Process
+
 1. Client sends multipart form POST to `/api/files/upload` with `file`, `item_number`, and optional `revision`.
 2. Backend reads the file content, determines the file type from the extension.
-3. File is uploaded to Supabase Storage at `pdm-files/{item_number}/{filename}`.
-4. If the file already exists in storage, it is overwritten.
-5. A record is created in the `files` table (or existing record iteration is incremented).
+3. Backend determines the appropriate bucket based on file extension.
+4. File is uploaded to Supabase Storage at `{bucket}/{item_number}/{revision}/{iteration}/{filename}`.
+5. If the file already exists in storage, iteration is incremented.
+6. A record is created or updated in the `files` table with the full storage path.
 
-**Download process:**
+### Download Process
+
+**Method 1: Via API (backend-generated signed URL)**
 1. Client calls `GET /api/files/{file_id}/download`.
 2. Backend generates a signed URL from Supabase Storage (valid for 1 hour).
 3. Client uses the signed URL to download or display the file directly.
 
-**Supported file types:**
-| Extension | Type Code | Description |
-|-----------|-----------|-------------|
-| `.stp`, `.step` | STEP | 3D model files |
-| `.prt`, `.asm`, `.drw` | CAD | Native Creo CAD files |
-| `.dxf` | DXF | Flat pattern files |
-| `.svg` | SVG | Technical/bend drawings |
-| `.pdf` | PDF | Documentation |
-| `.png`, `.jpg`, `.jpeg` | IMAGE | Images |
-| Other | OTHER | Miscellaneous files |
+**Method 2: Via Frontend Storage Service (direct Supabase)**
+1. Frontend loads file record with `file_path` from database.
+2. Frontend calls `getSignedUrlFromPath(file_path)` from `storage.ts`.
+3. Helper function parses bucket and path from full storage path.
+4. Helper function generates signed URL directly from Supabase Storage.
+5. Frontend uses signed URL to display or download file.
+
+### Storage Helper Functions
+
+The frontend provides storage helper functions in `frontend/src/services/storage.ts`:
+
+| Function | Purpose |
+|----------|---------|
+| `parseStoragePath(fullPath)` | Extracts bucket and path from full storage path |
+| `getSignedUrl(bucket, path)` | Creates signed URL for bucket/path (1 hour expiry) |
+| `getSignedUrlFromPath(fullPath)` | Creates signed URL from full storage path |
+| `getBucketForFile(filename)` | Maps file extension to bucket |
+| `buildStoragePath(itemNumber, revision, iteration, filename)` | Builds storage path |
+| `uploadFile(file, itemNumber, revision, iteration)` | Uploads file to appropriate bucket |
+| `downloadFile(bucket, path)` | Downloads file as blob |
+| `createFileRecord(itemId, filename, storagePath, fileSize)` | Creates/updates files table record |
+
+**Example Usage:**
+```typescript
+// Load PDF file path from database
+const { data: file } = await supabase
+  .from('files')
+  .select('file_path')
+  .eq('item_id', itemId)
+  .eq('file_type', 'PDF')
+  .single()
+
+// Generate signed URL
+const pdfUrl = await getSignedUrlFromPath(file.file_path)
+
+// Display in iframe
+<iframe :src="pdfUrl" />
+```
+
+### Supported File Types
+
+| Extension | Type Code | Bucket | Description |
+|-----------|-----------|--------|-------------|
+| `.stp`, `.step` | STEP | pdm-exports | 3D model files |
+| `.prt`, `.asm`, `.drw` | CAD | pdm-cad | Native Creo CAD files |
+| `.dxf` | DXF | pdm-exports | Flat pattern files |
+| `.svg` | SVG | pdm-exports | Technical/bend drawings |
+| `.pdf` | PDF | pdm-drawings | Manufacturing drawings |
+| `.png`, `.jpg`, `.jpeg` | IMAGE | pdm-other | Images |
+| Other | OTHER | pdm-other | Miscellaneous files |
+
+### Technical Notes
+
+- **Signed URL Expiry:** All signed URLs expire after 1 hour (3600 seconds) for security.
+- **No Backend Proxy:** PDFs and other files are served directly from Supabase Storage, reducing backend load.
+- **Browser Caching:** Signed URLs enable browser caching for better performance.
+- **Bucket Organization:** Files organized by type for easier management and access control.
+- **Path Format:** Full path includes bucket prefix, stored in single `file_path` column (no separate `storage_path` column).
+- **Extension Mapping:** `storage.ts` provides canonical mapping from file extensions to buckets and file types.
 
 ---
 
