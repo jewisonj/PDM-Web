@@ -177,19 +177,46 @@ function Upload-File {
     $form.Add($fileContent, "file", $fileName)
 
     try {
-        $response = $httpClient.PostAsync($uri, $form).Result
+        # Set a reasonable timeout for large file uploads
+        $httpClient.Timeout = [TimeSpan]::FromMinutes(5)
+
+        $task = $httpClient.PostAsync($uri, $form)
+        $completed = $task.Wait([TimeSpan]::FromMinutes(5))
+
+        if (-not $completed) {
+            throw "Upload request timed out after 5 minutes"
+        }
+
+        $response = $task.Result
+
+        if ($null -eq $response) {
+            throw "No response received from API at $uri - is the backend running?"
+        }
 
         if (-not $response.IsSuccessStatusCode) {
             $errorBody = $response.Content.ReadAsStringAsync().Result
             throw "Upload failed ($($response.StatusCode)): $errorBody"
         }
 
-        $result = $response.Content.ReadAsStringAsync().Result | ConvertFrom-Json
+        $responseBody = $response.Content.ReadAsStringAsync().Result
+
+        if ([string]::IsNullOrWhiteSpace($responseBody)) {
+            throw "Empty response body from API"
+        }
+
+        $result = $responseBody | ConvertFrom-Json
         return $result
     }
+    catch [System.AggregateException] {
+        $innerMsg = $_.Exception.InnerException.Message
+        if ($innerMsg -match "actively refused|No connection could be made") {
+            throw "Cannot connect to API at $uri - is the backend running on port 8001?"
+        }
+        throw "Upload error: $innerMsg"
+    }
     finally {
-        $form.Dispose()
-        $httpClient.Dispose()
+        if ($form) { $form.Dispose() }
+        if ($httpClient) { $httpClient.Dispose() }
     }
 }
 
