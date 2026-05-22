@@ -1146,10 +1146,10 @@ def _create_stamp(
     x = page_width - stamp_width - 20
     y = (page_height - stamp_height) / 2
 
-    # Draw stamp box
-    c.setStrokeColorRGB(0, 0, 0)
-    c.setFillColorRGB(1, 1, 1)
-    c.rect(x, y, stamp_width, stamp_height, fill=1, stroke=1)
+    # Draw stamp box - transparent background (no fill) so drawing shows through
+    c.setStrokeColorRGB(0.3, 0.3, 0.3)  # Dark gray border
+    c.setLineWidth(0.5)
+    c.rect(x, y, stamp_width, stamp_height, fill=0, stroke=1)  # fill=0 = transparent
 
     # Text settings
     c.setFillColorRGB(0, 0, 0)
