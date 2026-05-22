@@ -614,6 +614,14 @@ curl -X POST http://localhost:8000/api/mrp/projects/{project_id}/print-packet
 
 The packet includes a cover sheet with categorized parts lists and individual part PDFs with routing stamp overlays.
 
+**Routing Stamp Design:**
+- **Position:** Right edge, vertically centered on each part PDF page
+- **Content:** Project code, start/due dates, item number, quantity, routing operations
+- **Transparency:** Stamp box uses transparent background (`fill=0`) so underlying drawing content remains visible
+- **Border:** Thin (0.5pt) dark gray border for subtle visual separation
+- **Text:** Black text for maximum readability on white PDF background
+- **Purpose:** Provides routing information without obscuring critical drawing details, dimensions, or notes
+
 ### Nesting DXF Flat Patterns
 
 **Where:** MRP Dashboard (`/mrp/dashboard/{project_id}`)

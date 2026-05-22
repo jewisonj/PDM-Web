@@ -741,6 +741,66 @@ Replaced all FAV_ favorite references with hard-coded folder navigation using `c
 - Document mapkey changes in dedicated reference files
 - Use exact folder names as they appear in Windows Explorer (case-sensitive)
 
+### 34. Print Packet Routing Stamp Covering Drawing Content
+
+**Symptom:** Routing stamp overlay on print packet PDFs was obscuring important drawing content. The white background box covered drawing lines, dimensions, and notes underneath the stamp.
+
+**Root Cause:** The stamp box in `_create_stamp()` function used `fill=1` (solid white background) to ensure text readability. While this made the routing text legible, it created an opaque rectangle that blocked all underlying drawing content.
+
+**Diagnosis:**
+1. Generated print packet PDFs and reviewed routing stamp placement
+2. Observed that stamp position was good (right edge, vertically centered)
+3. Noticed that complex drawings with dense detail had important content hidden behind the stamp
+4. Drawing lines, dimensions, and notes fell behind the white rectangle
+5. Stamp served its purpose (showing routing) but at the cost of hiding drawing information
+
+**Fix:** Changed stamp from opaque to transparent:
+
+**Before:**
+```python
+# Draw stamp box with white background
+c.setStrokeColorRGB(0, 0, 0)  # Black border
+c.setLineWidth(1)
+c.rect(x, y, stamp_width, stamp_height, fill=1, stroke=1)  # fill=1 = white background
+```
+
+**After:**
+```python
+# Draw stamp box - transparent background so drawing shows through
+c.setStrokeColorRGB(0.3, 0.3, 0.3)  # Dark gray border
+c.setLineWidth(0.5)
+c.rect(x, y, stamp_width, stamp_height, fill=0, stroke=1)  # fill=0 = transparent
+```
+
+**Changes Made:**
+1. **Background fill removed:** Changed `fill=1` to `fill=0` (transparent background)
+2. **Border color softened:** Changed stroke from black `(0, 0, 0)` to dark gray `(0.3, 0.3, 0.3)` for less visual weight
+3. **Border width reduced:** Changed line width from 1pt to 0.5pt for thinner, less intrusive border
+4. **Text remains black:** Routing text stays black for maximum contrast and readability
+
+**Benefits:**
+- Drawing content is now visible through the stamp area
+- Routing information remains readable (black text on white PDF background)
+- Lighter gray border is less visually distracting
+- No loss of functionality - all routing data still shown clearly
+
+**Trade-off Accepted:**
+- If the drawing has dark/dense content in the stamp area, text may be slightly harder to read
+- This is acceptable because drawing content takes priority
+- The stamp position (right edge, centered) is chosen to avoid title blocks and critical areas
+- Most engineering drawings have white space on the right edge
+
+**Files Changed:** `backend/app/services/print_packet.py` (`_create_stamp()` function, lines 1149-1152)
+
+**Prevention:** When adding overlay annotations to PDFs:
+- Default to transparent backgrounds to avoid obscuring content
+- Use light borders (gray, thin) instead of heavy borders (black, thick)
+- Position overlays in areas with expected white space (edges, margins)
+- Test with real-world PDFs that have dense drawing content, not blank test files
+- Consider that engineering drawings prioritize technical content over annotations
+
+**Commit:** b1f3d21
+
 ---
 
 ## Coding Patterns
@@ -973,9 +1033,10 @@ A `.env` file in `backend/` provides these values for local development. In prod
 30. **Grouped operations table with expand/collapse** -- Cost report operations table now has grouped view (default) where groups are expandable to show nested stations. Group badges use matching chart colors (Weld red, Assembly purple, Fabrication blue, QC green, Outsourced orange). Toggle "Group By Station" checkbox to switch between grouped and flat views. Click group row to expand/collapse nested stations.
 31. **Station color inheritance from groups** -- Stations inherit lighter shades of their group's color for visual consistency between chart and table. Color palette uses 4 shades per group (lightest to boldest). Station slice colors assigned via index modulo to cycle through shades. Hard-coded color palettes in `groupColors` and `stationColors` objects for predictable appearance.
 32. **Backend dual summary structures** -- Cost report endpoint returns both `operations_summary` (individual stations) and `operations_summary_grouped` (group-level with nested stations) to support both chart views and table modes. Chart data also duplicated as `cost_breakdown_chart` and `cost_breakdown_chart_grouped`. Frontend chooses which structure to display based on UI state.
+33. **Print packet routing stamp transparency** -- Changed print packet routing stamp from opaque white background to transparent with dark gray border. Stamp box now uses `fill=0` (transparent) instead of `fill=1` (white), stroke color changed from black to dark gray (0.3, 0.3, 0.3), and line width set to 0.5pt. This prevents the stamp from obscuring underlying drawing content while maintaining readability of routing information.
 
 ---
 
-**Last Updated:** 2026-05-01
-**Version:** 3.6
+**Last Updated:** 2026-05-22
+**Version:** 3.7
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)
