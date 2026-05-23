@@ -1484,6 +1484,7 @@ onUnmounted(() => {
                 <i class="pi pi-download"></i>
                 Download PDF
               </button>
+              <!-- Nest DXF button hidden - functionality preserved but not ready for production
               <button
                 class="primary-btn nest-btn"
                 @click="openNestModal"
@@ -1492,6 +1493,7 @@ onUnmounted(() => {
                 <i class="pi pi-th-large"></i>
                 Nest DXF
               </button>
+              -->
               <button
                 class="primary-btn"
                 @click="downloadProjectDXFs"
