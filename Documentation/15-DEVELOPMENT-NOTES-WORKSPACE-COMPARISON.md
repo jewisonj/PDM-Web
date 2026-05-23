@@ -920,6 +920,89 @@ for (const part of parts) {
 
 ---
 
+### 36. Vite Proxy Timeout (Print Packet "Unexpected End of JSON")
+
+**Symptom:** When generating print packets on the web (MRP dashboard, large projects), the browser showed "Unexpected end of JSON" or "SyntaxError: Unexpected end of JSON input" after ~30-60 seconds. The loading spinner would hang indefinitely.
+
+**Root Cause:** The Vite dev server proxy has a default timeout of ~30-60 seconds. Print packet generation for large projects can take several minutes due to:
+1. Downloading multiple PDFs from Supabase Storage (one per part)
+2. Creating routing stamp overlays for each PDF
+3. Combining all PDFs into a single packet
+4. Uploading the final packet back to Supabase Storage
+
+When the proxy timed out, it terminated the connection mid-response. The browser received an incomplete JSON response, causing the parse error.
+
+**Diagnosis:**
+1. Tested print packet generation for small projects (1-3 parts) - worked fine, completed in <30 seconds
+2. Tested large project (20+ parts) - failed consistently with "Unexpected end of JSON" after ~60 seconds
+3. Checked backend logs - the backend continued processing after the browser error and successfully completed the packet
+4. Checked browser Network tab - request showed "cancelled" or "failed" status after ~60 seconds
+5. Searched for Vite proxy timeout configuration and found the default timeout is around 30-60 seconds
+
+**Fix:** Added `timeout: 300000` (5 minutes) to the Vite proxy configuration in `frontend/vite.config.ts`:
+
+**Before:**
+```typescript
+export default defineConfig({
+  plugins: [vue()],
+  server: {
+    port: 5174,
+    host: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        // No timeout specified - defaults to ~30-60 seconds
+      },
+    },
+  },
+})
+```
+
+**After:**
+```typescript
+export default defineConfig({
+  plugins: [vue()],
+  server: {
+    port: 5174,
+    host: true,
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        timeout: 300000, // 5 minutes for long-running operations like print packet generation
+      },
+    },
+  },
+})
+```
+
+**Why 5 Minutes:**
+- Average print packet generation time for a 20-part project: ~2-3 minutes
+- Worst case (50+ parts with large PDFs): ~4 minutes
+- 5 minutes provides a safe buffer while still catching truly hung requests
+
+**Important Notes:**
+- **This only affects development mode** - The Vite dev server proxy is only active during `npm run dev`
+- **Production is unaffected** - In production, the backend serves the frontend directly (no proxy layer)
+- **Backend continues processing** - Even if the user navigates away, the backend completes the packet generation and saves it. The user can access the generated packet when they return.
+
+**Files Changed:** `frontend/vite.config.ts` (line 14)
+
+**Prevention:**
+- **Always test long-running operations with realistic data** - Small test cases may not reveal timeout issues
+- **Consider adding progress indicators** - For operations >30 seconds, show incremental progress instead of a static spinner
+- **Add operation timeouts to endpoints** - Backend endpoints should have their own timeout handling independent of proxy timeouts
+- **Check proxy configs for dev vs production differences** - Dev server proxies may have different behavior than production reverse proxies
+
+**Related Patterns:**
+- Similar to timeout issues in other proxies (nginx, Apache, load balancers)
+- Backend operations that continue after client disconnect need proper error handling
+
+**Commit:** 2d20f24
+
+---
+
 ## Coding Patterns
 
 ### Pydantic Schema Pattern
@@ -1152,6 +1235,7 @@ A `.env` file in `backend/` provides these values for local development. In prod
 32. **Backend dual summary structures** -- Cost report endpoint returns both `operations_summary` (individual stations) and `operations_summary_grouped` (group-level with nested stations) to support both chart views and table modes. Chart data also duplicated as `cost_breakdown_chart` and `cost_breakdown_chart_grouped`. Frontend chooses which structure to display based on UI state.
 33. **Print packet routing stamp transparency** -- Changed print packet routing stamp from opaque white background to transparent with dark gray border. Stamp box now uses `fill=0` (transparent) instead of `fill=1` (white), stroke color changed from black to dark gray (0.3, 0.3, 0.3), and line width set to 0.5pt. This prevents the stamp from obscuring underlying drawing content while maintaining readability of routing information.
 34. **N+1 query batching pattern** -- Fixed MRP dashboard sidebar hanging when loading projects with many parts. The issue was a classic N+1 query pattern: for each part, two separate queries were executed (routing + BOM check), causing 118+ concurrent queries for a 59-part project. Solution: collect all item IDs upfront, batch fetch ALL routing data with a single `.in('item_id', itemIds)` query, batch fetch ALL BOM relationships with `.in('parent_item_id', itemIds)`, build lookup maps in memory, then process parts synchronously using the maps. Reduced 118 queries to 4 queries, making the sidebar load instantly. **Pattern:** Always batch fetch related data using `.in()` for large datasets instead of querying per-item in a loop.
+35. **Vite proxy timeout for long operations** -- Added `timeout: 300000` (5 minutes) to Vite dev server proxy config in `frontend/vite.config.ts` to prevent "Unexpected end of JSON" errors during print packet generation. The default proxy timeout of ~30-60 seconds was too short for operations that download multiple PDFs, create overlays, and combine into one packet. **Development only** - production is unaffected since the backend serves the frontend directly (no proxy layer). Backend continues processing even if client disconnects.
 
 ---
 
