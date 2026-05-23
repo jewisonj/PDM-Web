@@ -584,22 +584,34 @@ async def download_project_dxfs(project_id: UUID):
     """
     Download all DXF files for a project as a ZIP archive.
 
+    Filenames include part info: {item_number}_thk-{thickness}_qty-{quantity}.dxf
+    Example: sjp00015_thk-0250_qty-1.dxf
+
     Returns a streaming ZIP file containing all DXF files for parts in the project.
     """
     supabase = get_supabase_admin()
 
-    # Get all project parts (only those flagged for DXF)
+    # Get all project parts with item details (including thickness and quantity)
     parts_result = supabase.table("mrp_project_parts") \
-        .select("item_id, items(item_number, needs_dxf)") \
+        .select("item_id, quantity, items(item_number, needs_dxf, thickness)") \
         .eq("project_id", str(project_id)) \
         .execute()
 
     if not parts_result.data:
         raise HTTPException(status_code=404, detail="No parts found in project")
 
-    # Filter to only parts with needs_dxf=true
-    item_ids = [p["item_id"] for p in parts_result.data if p.get("items") and p["items"].get("needs_dxf")]
-    item_numbers = {p["item_id"]: p["items"]["item_number"] for p in parts_result.data if p.get("items") and p["items"].get("needs_dxf")}
+    # Filter to only parts with needs_dxf=true and build info map
+    item_ids = []
+    item_info = {}  # item_id -> {item_number, thickness, quantity}
+    for p in parts_result.data:
+        if p.get("items") and p["items"].get("needs_dxf"):
+            item_id = p["item_id"]
+            item_ids.append(item_id)
+            item_info[item_id] = {
+                "item_number": p["items"]["item_number"],
+                "thickness": p["items"].get("thickness"),
+                "quantity": p.get("quantity", 1)
+            }
 
     if not item_ids:
         raise HTTPException(status_code=404, detail="No sheet metal parts (needs_dxf) found in project")
@@ -636,9 +648,24 @@ async def download_project_dxfs(project_id: UUID):
                 # Download file from storage
                 file_data = supabase.storage.from_(bucket).download(file_path)
 
-                # Use item_number as filename if available
-                item_num = item_numbers.get(file_info["item_id"], "")
-                filename = f"{item_num}.dxf" if item_num else file_info["file_name"]
+                # Build descriptive filename: {item_number}_thk-{thickness}_qty-{quantity}.dxf
+                info = item_info.get(file_info["item_id"], {})
+                item_num = info.get("item_number", "")
+                thickness = info.get("thickness")
+                quantity = info.get("quantity", 1)
+
+                if item_num:
+                    # Format thickness as 4 digits without decimal (0.250 -> 0250)
+                    if thickness is not None:
+                        thk_str = f"{float(thickness):.4f}".replace(".", "").lstrip("0") or "0"
+                        # Pad to at least 4 chars (e.g., 0.125 -> 0125, 0.0625 -> 0625)
+                        thk_str = f"{float(thickness):.4f}".replace(".", "")
+                    else:
+                        thk_str = "0000"
+
+                    filename = f"{item_num}_thk-{thk_str}_qty-{quantity}.dxf"
+                else:
+                    filename = file_info["file_name"]
 
                 zip_file.writestr(filename, file_data)
             except Exception as e:
