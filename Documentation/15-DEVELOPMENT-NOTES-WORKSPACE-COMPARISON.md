@@ -1003,6 +1003,96 @@ export default defineConfig({
 
 ---
 
+### 37. DXF Download Filenames and Type Conversion Issues
+
+**Symptom:** DXF bundle downloads from MRP dashboard had generic filenames like `item.dxf`, making it hard to identify parts when multiple files were extracted. Shop floor needed thickness and quantity info visible in filenames for waterjet programming.
+
+**Root Cause (Part 1 - Generic Filenames):** The `download_project_dxfs` endpoint used the original DXF filename from storage without adding part metadata. When extracting a bundle of 20+ DXF files, all filenames were just the item numbers (e.g., `csp0030.dxf`), with no indication of material thickness or quantity needed.
+
+**Root Cause (Part 2 - Type Mismatch):** The `item_info` dictionary used `item_id` as UUID objects for keys, but when looking up file info, the file's `item_id` was also a UUID. However, dictionary lookups were failing silently because Python UUIDs have subtle comparison issues. The lookup always returned `{}` from the `.get()` fallback.
+
+**Diagnosis:**
+1. Reviewed MRP dashboard DXF download flow - confirmed filenames didn't include part specs
+2. Talked to shop floor users - they manually rename files before loading into waterjet CAM software
+3. Added logging to see what was in `item_info` dictionary
+4. Discovered type mismatch: dictionary keys were UUID objects, lookups were using UUID objects, but equality checks were failing
+5. Tested explicit string conversion for both dictionary keys and lookups
+
+**Fix (Part 1 - Descriptive Filenames):** Changed filename format to include thickness and quantity:
+```python
+# backend/app/routes/mrp.py (lines 664-670)
+
+# Build descriptive filename: {item_number}_thk-{thickness}_qty-{quantity}.dxf
+file_item_id = str(file_info["item_id"])  # Ensure string for lookup
+info = item_info.get(file_item_id, {})
+item_num = info.get("item_number", "")
+thickness = info.get("thickness")
+quantity = info.get("quantity", 1)
+
+if item_num:
+    # Format thickness as thousandths (0.25" -> 0250, 0.125" -> 0125)
+    if thickness is not None:
+        thk_str = f"{int(float(thickness) * 1000):04d}"
+    else:
+        thk_str = "0000"
+
+    # Build filename: csp0030_thk-0250_qty-2.dxf
+    filename = f"{item_num}_thk-{thk_str}_qty-{quantity}.dxf"
+else:
+    filename = file_info["file_name"]  # Fallback to original
+```
+
+**Fix (Part 2 - Type Conversion):** Convert UUID to string for all dictionary operations:
+```python
+# When building the info map (line 611)
+item_id = str(p["item_id"])  # Ensure string key
+item_info[item_id] = {
+    "item_number": p["items"]["item_number"],
+    "thickness": p["items"].get("thickness"),
+    "quantity": p.get("quantity", 1)
+}
+
+# When looking up during file processing (line 657)
+file_item_id = str(file_info["item_id"])  # Ensure string for lookup
+info = item_info.get(file_item_id, {})
+```
+
+**Thickness Formatting Details:**
+- Input: `thickness` field from `items` table (decimal inches, e.g., 0.25, 0.125, 0.0625)
+- Output: 4-digit string representing thousandths of inch (e.g., "0250", "0125", "0063")
+- Formula: `f"{int(float(thickness) * 1000):04d}"`
+- Example conversions:
+  - 0.25" → 0250 (250 thousandths)
+  - 0.125" → 0125 (125 thousandths, 1/8")
+  - 0.0625" → 0063 (62.5 thousandths, 1/16")
+  - 0.1875" → 0188 (187.5 thousandths, 3/16")
+
+**Why This Matters:**
+- Shop floor can identify part thickness without opening files
+- CAM programmer knows quantity to nest before starting
+- Waterjet operator can verify correct material loaded based on filename
+- Reduces programming errors and material waste
+- Filenames match industry standard format (part_thk_qty)
+
+**Benefits:**
+- Zero additional clicks - information visible in file browser
+- Prevents wrong material selection (e.g., 0.125" part cut from 0.25" stock)
+- Enables batch sorting by thickness in CAM software
+- Filenames are self-documenting for future reference
+
+**Files Changed:** `backend/app/routes/mrp.py` (lines 605-670)
+
+**Prevention:**
+- **Always use strings for dictionary keys** when dealing with UUIDs from Supabase queries - UUID equality can be unreliable
+- **Add debugging logs** to show dictionary contents when lookups might fail silently
+- **Include critical metadata in filenames** for files used in manufacturing - operators shouldn't need to open files to get basic specs
+- **Use standard industry formats** for manufacturing filenames (part_spec_qty pattern is common in sheet metal shops)
+- **Format thickness in thousandths** - this is the standard unit in US sheet metal industry, easier to read than decimal inches
+
+**Commit:** c2a5e26
+
+---
+
 ## Coding Patterns
 
 ### Pydantic Schema Pattern
@@ -1236,9 +1326,10 @@ A `.env` file in `backend/` provides these values for local development. In prod
 33. **Print packet routing stamp transparency** -- Changed print packet routing stamp from opaque white background to transparent with dark gray border. Stamp box now uses `fill=0` (transparent) instead of `fill=1` (white), stroke color changed from black to dark gray (0.3, 0.3, 0.3), and line width set to 0.5pt. This prevents the stamp from obscuring underlying drawing content while maintaining readability of routing information.
 34. **N+1 query batching pattern** -- Fixed MRP dashboard sidebar hanging when loading projects with many parts. The issue was a classic N+1 query pattern: for each part, two separate queries were executed (routing + BOM check), causing 118+ concurrent queries for a 59-part project. Solution: collect all item IDs upfront, batch fetch ALL routing data with a single `.in('item_id', itemIds)` query, batch fetch ALL BOM relationships with `.in('parent_item_id', itemIds)`, build lookup maps in memory, then process parts synchronously using the maps. Reduced 118 queries to 4 queries, making the sidebar load instantly. **Pattern:** Always batch fetch related data using `.in()` for large datasets instead of querying per-item in a loop.
 35. **Vite proxy timeout for long operations** -- Added `timeout: 300000` (5 minutes) to Vite dev server proxy config in `frontend/vite.config.ts` to prevent "Unexpected end of JSON" errors during print packet generation. The default proxy timeout of ~30-60 seconds was too short for operations that download multiple PDFs, create overlays, and combine into one packet. **Development only** - production is unaffected since the backend serves the frontend directly (no proxy layer). Backend continues processing even if client disconnects.
+36. **DXF filenames include thickness and quantity** -- DXF bundle downloads from MRP dashboard now use descriptive filenames: `{item_number}_thk-{thickness}_qty-{quantity}.dxf`. Thickness is formatted as 4-digit thousandths of inch (0.25" → 0250, 0.125" → 0125). This prevents shop floor errors when loading files into waterjet CAM software - operator can verify correct material thickness from filename without opening the file. Format matches industry standard (part_spec_qty pattern). **UUID dictionary keys must be strings** - when building lookup dictionaries with UUIDs from Supabase, always convert to string with `str(uuid)` for both keys and lookups, as UUID equality checks can fail silently.
 
 ---
 
 **Last Updated:** 2026-05-22
-**Version:** 3.7
+**Version:** 3.7.2
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

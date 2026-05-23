@@ -622,6 +622,73 @@ The packet includes a cover sheet with categorized parts lists and individual pa
 - **Text:** Black text for maximum readability on white PDF background
 - **Purpose:** Provides routing information without obscuring critical drawing details, dimensions, or notes
 
+### Downloading DXF Bundle for Project
+
+**Where:** MRP Dashboard (`/mrp/dashboard/{project_id}`)
+
+Download all DXF flat patterns for a project as a single ZIP file with descriptive filenames for waterjet programming.
+
+#### Prerequisites
+
+- Project must have sheet metal parts with `needs_dxf=true` flag
+- DXF files must be generated (via FreeCAD worker or manual upload)
+- Parts must have `thickness` property populated in database
+
+#### Steps
+
+1. Navigate to MRP Dashboard for your project
+2. Click the **Download DXF Bundle** button
+3. Browser downloads a ZIP file named `project-{project_code}-dxfs.zip`
+4. Extract the ZIP to access individual DXF files
+
+#### DXF Filename Format
+
+Each DXF file in the bundle uses a descriptive filename that includes critical manufacturing information:
+
+**Format:** `{item_number}_thk-{thickness}_qty-{quantity}.dxf`
+
+**Examples:**
+- `csp0030_thk-0250_qty-2.dxf` - Item csp0030, 0.250" thick, quantity 2
+- `xxp1234_thk-0125_qty-1.dxf` - Item xxp1234, 0.125" thick, quantity 1
+- `wmp2050_thk-0063_qty-4.dxf` - Item wmp2050, 0.0625" thick (1/16"), quantity 4
+
+**Thickness Encoding:**
+- Formatted as 4-digit thousandths of inch (industry standard)
+- 0.25" → `0250` (250 thousandths)
+- 0.125" → `0125` (125 thousandths, 1/8")
+- 0.0625" → `0063` (62.5 thousandths, 1/16")
+- 0.1875" → `0188` (187.5 thousandths, 3/16")
+
+**Quantity:**
+- Taken from BOM (bill of materials)
+- Indicates how many copies of this part are needed for the project
+
+#### Benefits
+
+- **Verify material before cutting:** Operator can see thickness in filename without opening file
+- **Batch sorting:** CAM software can sort by thickness for efficient nesting
+- **Prevent errors:** Reduces risk of cutting 0.125" part from 0.25" stock by mistake
+- **Self-documenting:** Filenames serve as manufacturing documentation
+- **Industry standard format:** Matches common sheet metal shop filename conventions
+
+#### Via API Directly
+
+```bash
+# Download DXF bundle for a project
+curl "http://localhost:8001/api/mrp/projects/<project-uuid>/dxfs" -o dxfs.zip
+```
+
+#### Troubleshooting
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| No DXF files in bundle | No parts have `needs_dxf=true` | Mark sheet metal parts as needing DXF in item properties |
+| Missing thickness in filename | Item `thickness` field is NULL | Update item properties with material thickness |
+| Thickness shows "0000" | Same as above | Populate thickness field in items table |
+| Generic filename (no metadata) | Old version or item lookup failed | Check backend logs for UUID conversion issues |
+
+---
+
 ### Nesting DXF Flat Patterns
 
 **Where:** MRP Dashboard (`/mrp/dashboard/{project_id}`)

@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
 **Last Updated:** 2026-05-22
-**Current Version:** v3.7.1
+**Current Version:** v3.7.2
 **Project Status:** Active Development / Production Use
 
 ---
@@ -14,7 +14,17 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.3 - v3.7.1)
+## Recently Completed (v3.3 - v3.7.2)
+
+### v3.7.2 (2026-05-22) - DXF Download Enhancements
+- [x] DXF bundle filenames now include part info: {item_number}_thk-{thickness}_qty-{quantity}.dxf
+- [x] Thickness formatted as thousandths of inch (0.25" → 0250, 0.125" → 0125)
+- [x] Quantity from BOM included in filename
+- [x] Fixed UUID-to-string type mismatch in item info lookup
+- [x] Added logging for DXF download debugging
+- [x] Fixed "0h Remaining" bug in MRP dashboard slideout (remainingMinutes wasn't being incremented)
+- [x] Added 5-minute timeout to Vite proxy for long print packet generation
+- [x] Hid "Nest DXF" button from MRP slideout (functionality kept, just UI hidden)
 
 ### v3.7.1 (2026-05-22) - Vite Proxy Timeout Fix
 - [x] Fixed "Unexpected end of JSON" error when generating print packets
