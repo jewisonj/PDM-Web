@@ -141,10 +141,9 @@ const remainingHours = computed(() => {
     const isComplete = part.has_routing && completedStations >= (part.routing_count || 1)
     if (isComplete) {
       completeParts++
-      console.log(`Part ${part.item_number} is COMPLETE (${completedStations}/${part.routing_count} stations)`)
-    } else if (completedStations > 0) {
-      // Part has some completion but not all stations
-      console.log(`Part ${part.item_number}: ${completedStations}/${part.routing_count} stations done (not complete)`)
+    } else {
+      // Part is not complete - add its time to remaining
+      remainingMinutes += part.quantity * part.est_time_min
     }
   }
   console.log(`Complete parts: ${completeParts}/${projectParts.value.length}, Remaining minutes: ${remainingMinutes}`)
