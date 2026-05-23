@@ -1,8 +1,8 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-01-31
-**Current Version:** v3.2
-**Project Status:** Active Development
+**Last Updated:** 2026-05-22
+**Current Version:** v3.7.1
+**Project Status:** Active Development / Production Use
 
 ---
 
@@ -14,126 +14,107 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.2 - Jan 2026)
+## Recently Completed (v3.3 - v3.7.1)
 
-### Per-Material Pricing Model (v3.2)
-- [x] Replaced generic defaults with per-alloy pricing (CS: $0.85/lb, AL: $3.00/lb, SS: $3.50/lb)
-- [x] Tube $/ft now derived at runtime from $/lb × weight_lb_per_ft
-- [x] Sheet metal materials show "default" placeholder with effective price
-- [x] All SM price_per_unit cleared to use new per-alloy defaults
-- [x] Cost settings view updated to show per-alloy defaults
-- [x] Pricing agent created (`.claude/agents/pricing.md`)
+### v3.7.1 (2026-05-22) - Vite Proxy Timeout Fix
+- [x] Fixed "Unexpected end of JSON" error when generating print packets
+- [x] Added 5-minute timeout to Vite dev server proxy configuration
+- [x] Documented in Development Notes as Pitfall #36
 
-### Material Assignment Auto-Prefill (v3.2)
-- [x] Auto-map item.material to material_code (STEEL→CS, 304SS→SS, ALUMINUM→AL)
-- [x] Find closest matching thickness within 15% tolerance
-- [x] Golden border on assigned material rows for visibility
-- [x] [Mat] badge with golden border in part list when material assigned
-- [x] Auto-calculate blank mass when W and H dimensions filled
+### v3.7 (2026-05-12) - MRP Part Lookup Redesign
+- [x] Unified Part Lookup view with sidebar layout matching Routing Editor
+- [x] "All Parts" filter option for cross-project part search
+- [x] PDF serving via Supabase Storage with signed URLs
+- [x] Removed Print Lookup page (functionality merged into Part Lookup)
+- [x] Documented Creo mapkey changes (FAV_ favorites → hard-coded paths)
+- [x] Storage helper functions (`frontend/src/services/storage.ts`)
 
-### Purchased Parts Enhancement (v3.2)
-- [x] Purchased Part Information section in routing editor
-- [x] Auto-populate supplier name for McMaster parts (mmc prefix)
-- [x] McMaster product page link with external icon
-- [x] Editable supplier info for other supplier parts (spn prefix)
+### v3.6 (2026-05-01) - Station Grouping and Cost Report
+- [x] Station grouping for workstations (Weld, Assembly, Fabrication, QC, Outsourced)
+- [x] ECharts nested pie chart for cost visualization (replaced Chart.js)
+- [x] Grouped operations table with expand/collapse
+- [x] Print packet routing stamp made transparent (no longer covers drawing content)
 
-### CreoJS Web Hosting Migration (v3.1)
-- [x] Moved CreoJS apps from `Local_Creo_Files/creowebjs_apps/` to `frontend/public/creojs/`
-- [x] Added Vite dev proxy for `/api` requests in `vite.config.ts`
-- [x] Updated `workspace.html` with `PDM_CONFIG` auto-origin detection
-- [x] Removed hardcoded localhost URLs (now uses `window.location.origin`)
-- [x] All CreoJS apps now served from web frontend instead of file:/// URLs
+### v3.5.1 (2026-04-30) - Routing Editor Enhancements
+- [x] Automatic waterjet time calculation using physics-based formula
+- [x] New "Purchased" routing template (Receiving → Staging → Inspection)
+- [x] Price badge ($) on items with unit_price in routing editor
+- [x] Fixed purchase info save hanging after tab switch (AbortError retry)
+- [x] Fixed routing state reset on item change
 
-### Workspace Comparison Tool (v3.1)
-- [x] Backend endpoint: `POST /api/workspace/compare` compares local Creo files against vault
-- [x] Local service: `PDM-Local-Service.ps1` on port 8083 handles file operations
-- [x] Added `files.updated_at` column with trigger
-- [x] Fixed UTC timezone conversion for timestamp comparison
-- [x] Fixed item number regex ordering (mmc/spn/zzz before standard pattern)
-- [x] Auto-touch local files after upload to sync timestamps
+### v3.5 (2026-02-07) - Waterjet Cut Time Calculation
+- [x] Physics-based cut time calculation using `cutting_parameters` table
+- [x] Material/thickness filter in MRP Shop view
+- [x] File upload filename normalization (strips `_prt`, `_asm`, `_drw`)
+- [x] Batch recalculate cut times endpoint
+- [x] `Documentation/waterjet-cutting-speeds.md` reference doc
 
-### MRP System (v3.0-v3.2)
-- [x] MRP Dashboard - Project tracking, routing status, nesting results, cost estimate
-- [x] Routing Editor - Operation definition, sheet metal material calc, purchased part info
-- [x] Shop View - Work order tracking for shop floor
-- [x] Raw Materials view - Material inventory management
-- [x] Part Lookup - Cross-project part search
-- [x] Project Tracking - MRP project lifecycle management
-- [x] Cost Settings - Per-alloy defaults, configurable labor/overhead rates
-- [x] Project Cost Estimate - Labor, material, outsourced, purchased breakdown
+### v3.4 (2026-02-05) - Project Scheduling
+- [x] Capacity-constrained project scheduling algorithm
+- [x] BOM-based dependency analysis for assemblies
+- [x] Gantt chart visualization with scheduled start/end days
+- [x] Real-time schedule updates via Supabase Realtime
 
-### Auto-Processing Pipeline
-- [x] Auto-queue DXF/SVG generation on STEP upload (via work_queue)
-- [x] FreeCAD Docker worker for DXF flat patterns and SVG bend drawings
-
-### Nesting Automation
-- [x] Docker nesting worker (`worker/nesting/`) with Bottom-Left Fill algorithm
-- [x] DXF parser (lines, arcs, circles, LWPOLYLINE with bulge)
-- [x] Multi-sheet output with utilization tracking
-- [x] Frontend modal (`NestConfigModal.vue`) for job configuration
-- [x] API endpoints: `/api/nesting/projects/{id}/nest`, `/api/nesting/jobs/{id}`
-- [x] Database tables: `nest_jobs`, `nest_job_items`, `nest_results`
-- [x] Documentation: `29-NESTING-AUTOMATION.md`
-
-### MLBOM Parser
-- [x] Multi-level BOM parsing with indent-based hierarchy detection
-- [x] Bulk upload endpoint integration
-- [x] Parameter sync on parent and child items during BOM upload
-- [x] PowerShell scripts: `PDM-BOM-Parser.ps1`, `PDM-Upload-Service.ps1`
-
-### Archived Projects
-- [x] Soft-delete pattern: `projects.status = 'archived'`
-- [x] Hidden from all views and API queries by default
-- [x] Can be restored by changing status back to 'active'
+### v3.3 (2026-02-03) - Project Cost Report
+- [x] Project Cost Report view with pie chart visualization
+- [x] Labor by workstation, materials, outsourced, purchased breakdown
+- [x] Print support with `@media print` CSS
+- [x] Simplified FreeCAD DXF flattening (uses built-in `unfold()`)
 
 ---
 
 ## In Progress
 
-### FreeCAD Docker Worker - Operational Testing
-**Status:** Pipeline fully built, needs real-world testing
-**Priority:** MEDIUM
+### FreeCAD Docker Worker - Production Validation
+**Status:** Pipeline built and tested, running in production
+**Priority:** LOW (monitoring only)
 
 **Full Pipeline (Complete):**
 - [x] Docker container built (`worker/freecad-worker`)
 - [x] FreeCAD scripts: `flatten_sheetmetal.py`, `bend_drawing.py`
-- [x] Auto-queue on STEP upload (`backend/app/routes/files.py`)
-- [x] `worker/worker_loop.py` — polls `work_queue`, claims tasks, runs FreeCAD via docker exec, uploads output to Supabase Storage, registers file records
-- [x] Atomic task claiming (safe for multiple workers)
-- [x] Error handling with status tracking (pending → processing → completed/failed)
-- [x] Temp file cleanup after processing
+- [x] Auto-queue on STEP upload
+- [x] Worker loop with atomic task claiming
+- [x] Error handling with status tracking
 
-**Remaining:**
-- [ ] Test with real STEP files to verify DXF/SVG output quality
-- [ ] Verify Docker container stays healthy under load
-- [ ] Consider retry logic for transient failures (network, Docker restart)
+**Monitoring:**
+- [ ] Review error rates in `work_queue` table
+- [ ] Consider retry logic for transient failures if needed
 
 ---
 
 ## High Priority (Next Sprint)
 
-### 1. Frontend Build Error Cleanup
+### 1. Automated Testing Setup
+**Priority:** HIGH
+**Effort:** Medium
+
+**Current State:** No automated tests. Manual testing only.
+
+**Action Items:**
+- [ ] Set up Vitest for frontend unit tests
+- [ ] Set up pytest for backend API tests
+- [ ] Add CI pipeline (GitHub Actions) for test runs
+- [ ] Start with critical paths: BOM upload, print packet generation, routing save
+
+---
+
+### 2. TypeScript Error Cleanup
 **Priority:** MEDIUM
 **Effort:** Low-Medium
 
 **Current State:** TypeScript build has pre-existing type errors (non-blocking but noisy)
 
-**Known Issues:**
-- Missing type definitions for some Vue component props
-- Untyped Supabase responses in some store methods
-- Console warnings about reactive objects
-
 **Action Items:**
 - [ ] Audit TypeScript errors: `npm run type-check` in frontend
 - [ ] Add proper type definitions for component props
 - [ ] Type Supabase query responses with generated types
-- [ ] Add `// @ts-ignore` with comments for intentional bypasses
+- [ ] Generate Supabase types: `npx supabase gen types typescript`
 
 ---
 
 ## Medium Priority (Backlog)
 
-### 4. Lifecycle Automation - Release Validation
+### 3. Lifecycle Automation - Release Validation
 **Effort:** Medium
 
 When `lifecycle_state` changes from "Design" to "Released", enforce prerequisites:
@@ -144,13 +125,12 @@ When `lifecycle_state` changes from "Design" to "Released", enforce prerequisite
 
 **Implementation:**
 - Add validation logic in `PATCH /api/items/{item_number}` endpoint
-- Check prerequisites before allowing state transition
 - Return 400 with detailed error if validation fails
 - Record state change in `lifecycle_history` table
 
 ---
 
-### 5. Lifecycle Automation - Revision Management
+### 4. Lifecycle Automation - Revision Management
 **Effort:** Medium
 
 Add endpoint for creating new revisions: `POST /api/items/{item_number}/revise`
@@ -158,143 +138,114 @@ Add endpoint for creating new revisions: `POST /api/items/{item_number}/revise`
 **Workflow:**
 1. Current revision: A, iteration: 3
 2. User calls `/revise` → New revision: B, iteration: 1
-3. Previous revision files are archived (optionally copied or marked obsolete)
+3. Previous revision files are archived
 4. New revision starts fresh
 
-**Database Changes:**
-- [ ] Consider adding `revision_history` table (optional)
-- [ ] Update `lifecycle_history` to track revision changes
-
 ---
 
-### 6. Database Cleanup Endpoint
+### 5. Database Cleanup Endpoint
 **Effort:** Medium
 
-Admin-only endpoint for data hygiene: `POST /api/admin/cleanup` (dry-run mode + execute mode)
+Admin-only endpoint for data hygiene: `POST /api/admin/cleanup`
 
 **Features:**
-- Find orphaned file records (no matching Supabase Storage file)
-- Find orphaned items (no files, no BOM references, lifecycle = "Design")
-- Find duplicate BOM entries
-- Find files in Storage with no database record
-- Optional: Delete orphans (with confirmation)
-
-**UI:**
-- Admin view showing cleanup preview
-- "Dry Run" button shows what would be deleted
-- "Execute" button performs cleanup
+- [ ] Find orphaned file records (no matching Supabase Storage file)
+- [ ] Find orphaned items (no files, no BOM references, lifecycle = "Design")
+- [ ] Find duplicate BOM entries
+- [ ] Dry-run mode + execute mode
 
 ---
 
-### 7. ERP Export
+### 6. ERP Export
 **Effort:** Low
 
 Download items as CSV for ERP integration.
 
 **Endpoint:** `GET /api/items/export?format=csv`
-
-**Response:** CSV file with columns:
-- item_number, name, description, material, mass, unit_price, lifecycle_state, supplier_name, supplier_pn
-
-**Frontend:**
-- Add "Export to CSV" button on Items view
-- Download triggers API call with signed CSV response
+- [ ] Add export endpoint
+- [ ] Add "Export to CSV" button on Items view
 
 ---
 
-### 8. Multi-Level BOM Proper Nesting
+### 7. Multi-Level BOM Proper Nesting
 **Effort:** Low-Medium
 
-Currently, MLBOM parser flattens all levels into direct children of the top-level assembly. True multi-level nesting requires each assembly level to have its own BOM entries.
-
-**Current:**
-```
-Assembly A
-  ├── Part B (child of A)
-  ├── Part C (child of A)
-  └── Subassembly D (child of A)
-      ├── Part E (appears as child of A - WRONG)
-      └── Part F (appears as child of A - WRONG)
-```
-
-**Expected:**
-```
-Assembly A
-  ├── Part B (child of A)
-  ├── Part C (child of A)
-  └── Subassembly D (child of A)
-      ├── Part E (child of D)
-      └── Part F (child of D)
-```
+**Current:** MLBOM parser flattens all levels into direct children
+**Expected:** Each assembly level should have its own BOM entries
 
 **Solution:**
 - Modify `Parse-BOMFile` in `PDM-BOM-Parser.ps1` to track indent levels
 - Call `/api/bom/bulk` once per assembly in the hierarchy
-- Or modify bulk endpoint to accept nested JSON structure
 
 ---
 
 ## Low Priority (Future Enhancements)
 
-### 9. Email Notifications
+### 8. Email Notifications
 **Effort:** Medium
 
 **Use Cases:**
-- Lifecycle state changes (notify project manager when item is released)
+- Lifecycle state changes (notify PM when item released)
 - Task failures (notify engineer when DXF generation fails)
-- Checkout conflicts (notify when someone tries to check out a locked item)
+- Checkout conflicts
 
 **Implementation:**
 - Supabase Edge Functions or SendGrid integration
-- Notification preferences table (user_id, notification_type, email_enabled)
 
 ---
 
-### 10. McMaster-Carr Integration
+### 9. McMaster-Carr Integration
 **Effort:** Medium
 
 Fetch supplier information for `mmc`-prefixed items.
 
-**Note:** McMaster-Carr has no public API. Legacy system likely used web scraping.
-
-**Options:**
-- Manual CSV import of McMaster catalog data
+**Note:** McMaster-Carr has no public API. Options:
+- Manual CSV import of catalog data
 - Web scraping (fragile, not recommended)
 - Defer until McMaster provides API
 
 ---
 
-### 11. Creo Workspace Comparison (Full Local Agent)
-**Effort:** High
-**Likelihood:** Low (unless specifically requested)
+### 10. Mobile-Responsive Shop View
+**Effort:** Medium
 
-**Current State:** Workspace comparison works via `workspace.html` in Creo's embedded browser + `PDM-Local-Service.ps1` on localhost:8083.
+**Current:** Desktop-first design works on tablets but not phones
+**Future:** Add responsive breakpoints for phone-sized screens on Shop View only
 
-**Future Enhancement:** Standalone local agent that:
-- Monitors local Creo workspace directory
-- Compares against Supabase vault automatically
-- Displays desktop notifications for out-of-date files
-- Integrates with PDM-Upload-Service.ps1
+---
 
-**Trade-off:** Adds complexity. Current solution (CreoJS + local service) is working well.
+## Known Issues / Tech Debt
+
+### TypeScript Errors in Build
+**Status:** Non-blocking but should be cleaned up
+**Action:** See "TypeScript Error Cleanup" in High Priority
+
+### Hardcoded Sheet Sizes in Nesting
+**Status:** Works but inflexible
+**Current:** 48x96, 60x120 hardcoded in frontend modal
+**Future:** Add custom sheet size table in database
+
+### No Automated Testing
+**Status:** Manual testing only
+**Risk:** Regressions during refactoring
+**Action:** See "Automated Testing Setup" in High Priority
 
 ---
 
 ## Completed Features (Reference)
 
-### v3.1 Features
-- [x] CreoJS web hosting migration
-- [x] Workspace comparison API and local service
-- [x] Auto-create items on file upload
-- [x] UTC timezone conversion for timestamps
-- [x] Item number regex ordering fix (mmc/spn/zzz)
-- [x] File touch after upload for timestamp sync
-- [x] Auto-queue DXF/SVG generation on STEP upload (`backend/app/routes/files.py`)
-- [x] MRP project cost estimate endpoint (`/api/mrp/projects/{id}/cost-estimate`) — labor, material, outsourced, purchased breakdown
-- [x] Cost settings management (`/api/mrp/cost-settings`)
-- [x] Cost estimate display on MRP Dashboard
+### MRP System (Complete)
+- [x] MRP Dashboard with project selection, cost estimate, print packet generation
+- [x] Routing Editor with operations, materials, purchased part info
+- [x] Shop View with station queues, material filtering, batch marking
+- [x] Raw Materials view with inventory management
+- [x] Part Lookup with cross-project search and PDF viewing
+- [x] Project Tracking with Gantt chart and capacity scheduling
+- [x] Cost Settings with per-alloy defaults, labor rates, overhead
+- [x] Cost Report with nested pie chart, grouped operations, print support
+- [x] Print Packet generation with cover sheet, tracking sheets, routing stamps
 
-### v3.0 Core Migration
+### Core PDM System (Complete)
 - [x] Vue 3 + Vite frontend
 - [x] FastAPI backend with OpenAPI docs
 - [x] Supabase PostgreSQL database
@@ -305,79 +256,33 @@ Fetch supplier information for `mmc`-prefixed items.
 - [x] Where-used lookup
 - [x] Bulk BOM upload endpoint
 - [x] Upload bridge PowerShell scripts
-- [x] Projects CRUD
-- [x] Lifecycle history tracking
-- [x] File upload with auto file type detection
-- [x] Signed URL download for all file types
 
-### MRP System (Full Suite)
-- [x] MRP Dashboard
-- [x] Routing Editor
-- [x] Shop View
-- [x] Raw Materials
-- [x] Part Lookup
-- [x] Project Tracking
-
-### Nesting Automation (Full Pipeline)
-- [x] Docker nesting worker
-- [x] DXF parser (lines, arcs, circles, polylines)
-- [x] Bottom-Left Fill algorithm
-- [x] Multi-sheet output
-- [x] Frontend configuration modal
-- [x] Job status polling
-- [x] Utilization tracking
-
----
-
-## Known Issues / Tech Debt
-
-### TypeScript Errors in Build
-**Status:** Non-blocking but should be cleaned up
-**Impact:** Console noise, potential runtime issues
-**Action:** See "Frontend Build Error Cleanup" in High Priority
-
-### Hardcoded Sheet Sizes in Nesting
-**Status:** Works but inflexible
-**Current:** 48x96, 60x120 hardcoded in frontend modal
-**Future:** Add custom sheet size table in database, fetch from API
-
-### No Automated Testing
-**Status:** Manual testing only
-**Risk:** Regressions during refactoring
-**Future:** Add Vitest for frontend, pytest for backend
-
-### Documentation Status
-**Recently Updated:**
-- [x] `Update-Compare.md` - Marked as REFERENCE (workspace comparison is complete)
-- [x] `Nest_plan.md` - Marked as REFERENCE (nesting service is built)
-- [x] `27-WEB-MIGRATION-PLAN.md` - Updated phase checkboxes based on completed work
-- [x] `24-VERSION-HISTORY.md` - v3.2 release notes added
-- [x] `TODO.md` - Updated with v3.2 completed features
-- [x] `.claude/agents/pricing.md` - New pricing agent created
+### Automation Pipelines (Complete)
+- [x] Auto-queue DXF/SVG generation on STEP upload
+- [x] FreeCAD Docker worker for DXF flat patterns and SVG bend drawings
+- [x] Nesting automation with Bottom-Left Fill algorithm
+- [x] Workspace comparison tool (CreoJS + local service)
+- [x] Waterjet cut time calculation with physics-based formula
 
 ---
 
 ## Documentation Status
 
-### Active Documentation
-- `00-TABLE-OF-CONTENTS.md` - Master index (CURRENT)
-- `03-DATABASE-SCHEMA.md` - Database reference (CURRENT)
-- `04-SERVICES-REFERENCE.md` - Backend API reference (CURRENT)
-- `15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md` - Lessons learned (CURRENT)
-- `24-VERSION-HISTORY.md` - Release notes (CURRENT)
-- `29-NESTING-AUTOMATION.md` - Nesting reference (CURRENT)
+### Active Documentation (Current)
+- `00-TABLE-OF-CONTENTS.md` - Master index
+- `03-DATABASE-SCHEMA.md` - Database reference
+- `04-SERVICES-REFERENCE.md` - Backend API reference
+- `15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md` - 36 pitfalls, 35 reminders
+- `24-VERSION-HISTORY.md` - Release notes (v1.0 through v3.7.1)
+- `29-NESTING-AUTOMATION.md` - Nesting reference
+- `TODO.md` - This file
 
 ### Reference Documentation (Historical)
 - `02-PDM-COMPLETE-OVERVIEW.md` - Legacy system overview
 - `05-POWERSHELL-SCRIPTS-INDEX.md` - Upload bridge scripts
-- `06-BOM-COST-ROLLUP-GUIDE.md` - Cost rollup procedures (to be implemented)
 - `12-FREECAD-AUTOMATION.md` - FreeCAD Docker setup
 - `20-COMMON-WORKFLOWS.md` - Step-by-step task guides
-- `27-WEB-MIGRATION-PLAN.md` - Migration planning (mostly complete)
-
-### Files to Mark as COMPLETED
-- `Update-Compare.md` - Workspace comparison is complete
-- `Nest_plan.md` - Nesting service is complete
+- `27-WEB-MIGRATION-PLAN.md` - Migration planning (complete)
 
 ---
 
@@ -402,31 +307,28 @@ docker-compose up -d freecad-worker
 
 # Nesting worker (for sheet nesting)
 docker-compose up -d nesting-worker
-
-# Worker polling loop (NOT YET CONNECTED)
-cd worker
-python worker_loop.py
 ```
 
 ### Upload Bridge
 ```bash
+cd scripts\pdm-upload
+.\Start-PDMUpload.bat  # Watches C:\PDM-Upload folder
+
 cd Local_Creo_Files\Powershell
-.\PDM-Upload-Service.ps1  # Watches C:\PDM-Upload folder
-.\PDM-Local-Service.ps1   # HTTP service on localhost:8083
+.\PDM-Local-Service.ps1  # HTTP service on localhost:8083
 ```
 
 ---
 
 ## Next Actions (Prioritized)
 
-1. **Test FreeCAD worker end-to-end** - Upload a STEP, verify DXF/SVG appear automatically
+1. **Set up automated testing** - Vitest + pytest + GitHub Actions
 2. **Clean up TypeScript errors** - Run type-check and fix obvious issues
 3. **Lifecycle release validation** - Enforce prerequisites for state transitions
-4. **Revision management** - Endpoint for creating new revisions
-5. **Database cleanup endpoint** - Find orphaned records, dry-run + execute mode
-6. **ERP export** - CSV download for items
+4. **Database cleanup endpoint** - Find orphaned records
+5. **ERP export** - CSV download for items
 
 ---
 
 **Maintained by:** Documentation Agent
-**Related:** `Documentation/24-VERSION-HISTORY.md`, `Documentation/27-WEB-MIGRATION-PLAN.md`, `CLAUDE.md`
+**Related:** `Documentation/24-VERSION-HISTORY.md`, `Documentation/15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md`, `CLAUDE.md`
