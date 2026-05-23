@@ -582,25 +582,38 @@ async def generate_print_packet(project_id: str) -> dict:
 
 async def get_existing_packet(project_id: str) -> Optional[dict]:
     """Get info about existing print packet if available."""
-    supabase = get_supabase_admin()
+    try:
+        supabase = get_supabase_admin()
 
-    result = supabase.table("mrp_projects").select(
-        "print_packet_path, print_packet_generated_at"
-    ).eq("id", project_id).single().execute()
+        result = supabase.table("mrp_projects").select(
+            "print_packet_path, print_packet_generated_at"
+        ).eq("id", project_id).single().execute()
 
-    if not result.data or not result.data.get("print_packet_path"):
+        if not result.data or not result.data.get("print_packet_path"):
+            return None
+
+        path = result.data["print_packet_path"]
+
+        # Get fresh signed URL
+        signed = supabase.storage.from_("print-packets").create_signed_url(path, 3600)
+
+        if not signed:
+            logger.warning(f"Failed to create signed URL for packet: {path}")
+            return None
+
+        url = signed.get("signedURL") or signed.get("signedUrl")
+        if not url:
+            logger.warning(f"No URL in signed response for packet: {path}, response: {signed}")
+            return None
+
+        return {
+            "url": url,
+            "path": path,
+            "generated_at": result.data.get("print_packet_generated_at"),
+        }
+    except Exception as e:
+        logger.error(f"Error getting existing packet for project {project_id}: {e}")
         return None
-
-    path = result.data["print_packet_path"]
-
-    # Get fresh signed URL
-    signed = supabase.storage.from_("print-packets").create_signed_url(path, 3600)
-
-    return {
-        "url": signed.get("signedURL") or signed.get("signedUrl"),
-        "path": path,
-        "generated_at": result.data.get("print_packet_generated_at"),
-    }
 
 
 async def _create_print_packet_pdf(

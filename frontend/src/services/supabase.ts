@@ -22,17 +22,10 @@ function getApiBaseUrl(): string {
     return import.meta.env.VITE_API_URL
   }
 
-  // Production: API is served from same origin (single container deployment)
-  if (import.meta.env.PROD) {
-    return `${window.location.origin}/api`
-  }
-
-  // Development: use current hostname with separate backend port
-  const protocol = window.location.protocol
-  const hostname = window.location.hostname
-  const backendPort = 8001
-
-  return `${protocol}//${hostname}:${backendPort}/api`
+  // Both development and production: use relative /api path
+  // In dev, Vite proxy forwards /api to backend (avoids CORS issues)
+  // In prod, API is served from same origin
+  return '/api'
 }
 
 export const API_BASE_URL = getApiBaseUrl()
