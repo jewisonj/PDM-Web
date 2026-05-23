@@ -803,6 +803,123 @@ c.rect(x, y, stamp_width, stamp_height, fill=0, stroke=1)  # fill=0 = transparen
 
 ---
 
+### 35. MRP Dashboard N+1 Query Pattern (Batching Fix)
+
+**Symptom:** The MRP dashboard sidebar took several seconds to load when opening projects with many parts (e.g., 59 parts). The browser hung briefly with the loading spinner, and Supabase logs showed 100+ concurrent queries.
+
+**Root Cause:** Classic N+1 query problem. The `loadProjectParts()` function in `MrpDashboardView.vue` processed each part individually in an `async` loop:
+
+```javascript
+// OLD CODE (N+1 pattern)
+for (const part of parts) {
+  // Query 1: Fetch routing for this part
+  const { data: routing } = await supabase
+    .from('routing')
+    .select('*')
+    .eq('item_id', part.id)
+
+  // Query 2: Check if part has BOM children
+  const { data: children } = await supabase
+    .from('bom')
+    .select('id')
+    .eq('parent_item_id', part.id)
+    .limit(1)
+
+  part.hasRouting = routing?.length > 0
+  part.hasChildren = children?.length > 0
+}
+```
+
+For 59 parts, this meant:
+- 59 queries for routing data
+- 59 queries for BOM checks
+- **Total: 118 concurrent queries**
+
+The queries were fired simultaneously (because the loop was async), overwhelming the connection pool and causing the UI to hang.
+
+**Diagnosis:**
+1. Opened browser DevTools Network tab and saw 118+ requests to Supabase within 1-2 seconds
+2. Each request was tiny (single item lookup) but the volume was the problem
+3. Realized the pattern: loop over parts, query per part (classic N+1)
+4. Checked Supabase query logs and confirmed the pattern
+
+**Fix:** Changed from per-item queries to batched queries with in-memory lookup:
+
+```javascript
+// NEW CODE (batched queries)
+
+// Step 1: Collect all item IDs upfront
+const itemIds = parts.map(p => p.id)
+
+// Step 2: Batch fetch ALL routing data (1 query instead of 59)
+const { data: allRouting } = await supabase
+  .from('routing')
+  .select('item_id, id')
+  .in('item_id', itemIds)
+
+// Step 3: Build routing lookup map
+const routingMap = new Map()
+allRouting?.forEach(r => {
+  if (!routingMap.has(r.item_id)) {
+    routingMap.set(r.item_id, [])
+  }
+  routingMap.get(r.item_id).push(r)
+})
+
+// Step 4: Batch fetch ALL BOM relationships (1 query instead of 59)
+const { data: allBom } = await supabase
+  .from('bom')
+  .select('parent_item_id, id')
+  .in('parent_item_id', itemIds)
+
+// Step 5: Build BOM lookup set
+const hasChildrenSet = new Set(allBom?.map(b => b.parent_item_id) || [])
+
+// Step 6: Process parts synchronously using the maps
+for (const part of parts) {
+  part.hasRouting = (routingMap.get(part.id)?.length || 0) > 0
+  part.hasChildren = hasChildrenSet.has(part.id)
+}
+```
+
+**Performance Improvement:**
+- **Before:** 118 queries, 3-5 second hang
+- **After:** 4 queries (items + routing + BOM + project), instant load
+
+**Query Breakdown (After):**
+1. Main items query with project join
+2. Batch routing lookup (`.in('item_id', [59 IDs])`)
+3. Batch BOM lookup (`.in('parent_item_id', [59 IDs])`)
+4. Total: 3-4 queries regardless of part count
+
+**Key Pattern:**
+1. **Collect all IDs upfront** before any queries
+2. **Use `.in()` for batch queries** instead of per-item `.eq()`
+3. **Build lookup maps/sets** in JavaScript for fast in-memory lookups
+4. **Process items synchronously** using the pre-fetched data
+
+**When to Use This Pattern:**
+- Any time you're processing a list of items and need related data for each
+- When you see 100+ concurrent queries in DevTools Network tab
+- When UI hangs/freezes during data loading
+- When loop contains `await supabase...` calls
+
+**Files Changed:** `frontend/src/views/MrpDashboardView.vue` (lines 220-260 in `loadProjectParts()`)
+
+**Prevention:**
+- **Never query inside a loop** unless the list is guaranteed tiny (< 5 items)
+- **Always batch fetch** related data with `.in()` for lists
+- **Profile query counts** in browser DevTools during development
+- **Watch for "fan-out" patterns** where each item triggers multiple queries
+
+**Related Pitfalls:**
+- Similar to pitfall #1 (RLS admin client) - both involve Supabase query optimization
+- Pattern applies to any ORM/query system, not just Supabase
+
+**Commit:** 29d8e85
+
+---
+
 ## Coding Patterns
 
 ### Pydantic Schema Pattern
@@ -1034,6 +1151,7 @@ A `.env` file in `backend/` provides these values for local development. In prod
 31. **Station color inheritance from groups** -- Stations inherit lighter shades of their group's color for visual consistency between chart and table. Color palette uses 4 shades per group (lightest to boldest). Station slice colors assigned via index modulo to cycle through shades. Hard-coded color palettes in `groupColors` and `stationColors` objects for predictable appearance.
 32. **Backend dual summary structures** -- Cost report endpoint returns both `operations_summary` (individual stations) and `operations_summary_grouped` (group-level with nested stations) to support both chart views and table modes. Chart data also duplicated as `cost_breakdown_chart` and `cost_breakdown_chart_grouped`. Frontend chooses which structure to display based on UI state.
 33. **Print packet routing stamp transparency** -- Changed print packet routing stamp from opaque white background to transparent with dark gray border. Stamp box now uses `fill=0` (transparent) instead of `fill=1` (white), stroke color changed from black to dark gray (0.3, 0.3, 0.3), and line width set to 0.5pt. This prevents the stamp from obscuring underlying drawing content while maintaining readability of routing information.
+34. **N+1 query batching pattern** -- Fixed MRP dashboard sidebar hanging when loading projects with many parts. The issue was a classic N+1 query pattern: for each part, two separate queries were executed (routing + BOM check), causing 118+ concurrent queries for a 59-part project. Solution: collect all item IDs upfront, batch fetch ALL routing data with a single `.in('item_id', itemIds)` query, batch fetch ALL BOM relationships with `.in('parent_item_id', itemIds)`, build lookup maps in memory, then process parts synchronously using the maps. Reduced 118 queries to 4 queries, making the sidebar load instantly. **Pattern:** Always batch fetch related data using `.in()` for large datasets instead of querying per-item in a loop.
 
 ---
 
