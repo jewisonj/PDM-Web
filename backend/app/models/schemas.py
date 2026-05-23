@@ -55,7 +55,7 @@ class Project(ProjectBase):
 
 # === Item Schemas ===
 class ItemBase(BaseModel):
-    item_number: str = Field(..., pattern=r"^[a-z]{3}\d{4,6}$")
+    item_number: str = Field(..., pattern=r"^[a-zA-Z]{3}\d{4,6}$")  # Accepts both cases, route normalizes to lowercase
     name: Optional[str] = None
     revision: str = "A"
     iteration: int = 1

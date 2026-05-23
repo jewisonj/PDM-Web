@@ -64,7 +64,7 @@ export function buildStoragePath(
  */
 export function parseStoragePath(fullPath: string): { bucket: BucketName; path: string } | null {
   const match = fullPath.match(/^(pdm-\w+)\/(.+)$/)
-  if (match) {
+  if (match && match[1] && match[2]) {
     return {
       bucket: match[1] as BucketName,
       path: match[2]
@@ -159,12 +159,12 @@ export async function uploadFile(
   itemNumber: string,
   revision: string,
   iteration: number,
-  onProgress?: (progress: number) => void
+  _onProgress?: (progress: number) => void  // Reserved for future progress tracking
 ): Promise<{ path: string; bucket: BucketName } | null> {
   const bucket = getBucketForFile(file.name)
   const path = buildStoragePath(itemNumber, revision, iteration, file.name)
 
-  const { data, error } = await supabase.storage
+  const { error } = await supabase.storage
     .from(bucket)
     .upload(path, file, {
       cacheControl: '3600',

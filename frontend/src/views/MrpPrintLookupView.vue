@@ -135,7 +135,7 @@ async function selectPart(part: PartResult) {
       if (part.pdf_path.includes('/')) {
         // Parse bucket and path from file_path (e.g., "pdm-drawings/csp00025/A/1/csp00025.pdf")
         const parts = part.pdf_path.split('/')
-        const bucket = parts[0]
+        const bucket = parts[0] ?? 'pdm-files'
         const filePath = parts.slice(1).join('/')
 
         const { data, error } = await supabase.storage
@@ -181,7 +181,7 @@ async function selectProject(project: ProjectResult) {
   }
 }
 
-function selectItem(item: any) {
+function _selectItem(item: any) {
   if ('item_number' in item) {
     selectPart(item as PartResult)
   } else {
@@ -193,9 +193,13 @@ function isPart(item: any): item is PartResult {
   return 'item_number' in item
 }
 
-function isProject(item: any): item is ProjectResult {
+function _isProject(item: any): item is ProjectResult {
   return 'project_code' in item
 }
+
+// Export for potential future use
+void _selectItem
+void _isProject
 
 function goHome() {
   router.push('/')

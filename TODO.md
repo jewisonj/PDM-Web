@@ -98,27 +98,39 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 **Priority:** HIGH
 **Effort:** Medium
 
-**Current State:** No automated tests. Manual testing only.
+**Current State:** Testing infrastructure established.
+
+**Completed:**
+- [x] Set up Vitest for frontend unit tests (13 tests for scheduling algorithm)
+- [x] Set up pytest for backend API tests (12 tests for items API)
+- [x] Add CI pipeline (GitHub Actions) for test runs
 
 **Action Items:**
-- [ ] Set up Vitest for frontend unit tests
-- [ ] Set up pytest for backend API tests
-- [ ] Add CI pipeline (GitHub Actions) for test runs
 - [ ] Start with critical paths: BOM upload, print packet generation, routing save
 
 ---
 
 ### 2. TypeScript Error Cleanup
-**Priority:** MEDIUM
+**Priority:** MEDIUM - COMPLETED
 **Effort:** Low-Medium
 
-**Current State:** TypeScript build has pre-existing type errors (non-blocking but noisy)
+**Current State:** All 77 build-time TypeScript errors fixed. Build passes clean.
 
-**Action Items:**
-- [ ] Audit TypeScript errors: `npm run type-check` in frontend
-- [ ] Add proper type definitions for component props
-- [ ] Type Supabase query responses with generated types
+**Completed:**
+- [x] Audit TypeScript errors: `npm run type-check` in frontend
+- [x] Fixed unused imports/variables across multiple files
+- [x] Fixed core scheduling.ts type safety
+- [x] Fixed items.ts store type issues
+- [x] Fixed MrpCostReportView.vue - array access and color lookup
+- [x] Fixed MrpDashboardView.vue - array access and type assertions
+- [x] Fixed MrpPrintLookupView.vue - bucket parsing
+- [x] Fixed MrpProjectTrackingView.vue - unused imports and date parsing
+- [x] Fixed MrpRoutingView.vue - 20 errors including API_BASE_URL, null checks, onClick handler
+- [x] Fixed MrpShopView.vue - regex capture groups, bucket parsing, touch events
+
+**Future Improvements (optional):**
 - [ ] Generate Supabase types: `npx supabase gen types typescript`
+- [ ] Add proper type definitions for component props
 
 ---
 

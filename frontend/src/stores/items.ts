@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { supabase } from '../services/supabase'
-import type { Item, FileInfo, BOMTreeNode, BOMEntry } from '../types'
+import type { Item, BOMTreeNode } from '../types'
 
 export const useItemsStore = defineStore('items', () => {
   const items = ref<Item[]>([])
@@ -267,8 +267,8 @@ export const useItemsStore = defineStore('items', () => {
     if (bomError) throw bomError
 
     return (bomEntries || []).map(entry => ({
-      item: entry.parent,
-      quantity: entry.quantity
+      item: entry.parent as unknown as Item,
+      quantity: entry.quantity as number
     }))
   }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { supabase, API_BASE_URL } from '../services/supabase'
+import { supabase } from '../services/supabase'
 import { getSignedUrlFromPath } from '../services/storage'
 
 interface Project {
@@ -83,7 +83,7 @@ const filteredParts = computed(() => {
 
   // Project filter
   if (projectFilter.value !== 'all') {
-    filtered = filtered.filter(p => {
+    filtered = filtered.filter(_p => {
       // For now, we'll need to add project info to parts or filter by selected project
       return true
     })

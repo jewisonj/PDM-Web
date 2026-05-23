@@ -303,7 +303,7 @@ export function createScheduledTasks(
     let prevTaskId: string | null = null
 
     for (let i = 0; i < routing.length; i++) {
-      const r = routing[i]
+      const r = routing[i]!
       const taskId = `${itemId}_${r.station_id}`
       const isComplete = completedStations.has(r.station_id)
       const isFirstOperation = i === 0
@@ -320,7 +320,7 @@ export function createScheduledTasks(
         for (const descendantId of part.all_descendant_ids) {
           const descendantRouting = routingByItem.get(descendantId) || []
           if (descendantRouting.length > 0) {
-            const lastOp = descendantRouting[descendantRouting.length - 1]
+            const lastOp = descendantRouting[descendantRouting.length - 1]!
             const depTaskId = `${descendantId}_${lastOp.station_id}`
             predecessors.push(depTaskId)
           }
@@ -351,7 +351,7 @@ export function createScheduledTasks(
 
     // Log assembly predecessors for debugging
     if (part.is_assembly && part.tasks.length > 0) {
-      const firstTask = part.tasks[0]
+      const firstTask = part.tasks[0]!
       console.log(`Assembly ${part.item_number}: ${firstTask.predecessors.length} predecessors for first task`)
     }
 
@@ -472,7 +472,7 @@ export function scheduleWithCapacity(
         tasks: []
       })
     }
-    return slots[day]
+    return slots[day]!
   }
 
   // Helper: Check if all predecessors are scheduled
@@ -594,7 +594,7 @@ export function scheduleWithCapacity(
       continue
     }
 
-    const task = pending.splice(readyIndex, 1)[0]
+    const task = pending.splice(readyIndex, 1)[0]!
     const earliestDay = getEarliestStart(task)
 
     // Schedule starting from the earliest possible day (based on predecessors)

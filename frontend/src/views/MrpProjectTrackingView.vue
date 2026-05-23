@@ -7,8 +7,7 @@ import {
   type ScheduleResult,
   type PartData,
   type BomData,
-  type RoutingData,
-  type CompletionData
+  type RoutingData
 } from '../utils/scheduling'
 
 interface Project {
@@ -111,7 +110,7 @@ const projectInfo = computed(() => {
     const due = new Date(currentProject.value.due_date)
     // Subtract working days (skip weekends)
     const start = subtractWorkingDays(due, scheduledDays)
-    startDate = start.toISOString().split('T')[0]
+    startDate = start.toISOString().split('T')[0] ?? ''
   }
 
   return {

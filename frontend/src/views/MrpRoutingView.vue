@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { supabase } from '../services/supabase'
+import { supabase, API_BASE_URL } from '../services/supabase'
 import { getSignedUrlFromPath } from '../services/storage'
 
 interface FileInfo {
@@ -175,8 +175,9 @@ const creatingStation = ref(false)
 const addStationId = ref('')
 const addStationTime = ref<number>(0)
 
-// Custom template save
-const customTemplateName = ref('')
+// Custom template save (reserved for future use)
+const _customTemplateName = ref('')
+void _customTemplateName
 
 // Filters
 const partTypeFilter = ref<string>('all')
@@ -401,12 +402,14 @@ function formatCost(val: number): string {
 // Click-to-edit cost override handlers
 function startEditCost(index: number) {
   const step = routing.value[index]
+  if (!step) return
   editingCostIndex.value = index
   editingCostValue.value = (step.cost_override ?? getStepCost(step)).toFixed(2)
 }
 
 function commitEditCost(index: number) {
   const step = routing.value[index]
+  if (!step) return
   const val = parseFloat(editingCostValue.value)
   if (!isNaN(val) && val >= 0) {
     step.cost_override = val
@@ -419,7 +422,8 @@ function cancelEditCost() {
 }
 
 function clearCostOverride(index: number) {
-  routing.value[index].cost_override = null
+  const step = routing.value[index]
+  if (step) step.cost_override = null
 }
 
 // Available stations not yet in routing
@@ -584,7 +588,7 @@ function findClosestThickness(targetThk: number, materialCode: string): RawMater
   )
   if (candidates.length === 0) return null
 
-  let best = candidates[0]
+  let best = candidates[0]!
   let bestDiff = Math.abs((best.wall_or_thk_in || 0) - targetThk)
   for (const c of candidates) {
     const diff = Math.abs((c.wall_or_thk_in || 0) - targetThk)
@@ -964,17 +968,23 @@ function removeRoutingStep(index: number) {
 
 function moveStepUp(index: number) {
   if (index === 0) return
-  const temp = routing.value[index].sequence
-  routing.value[index].sequence = routing.value[index - 1].sequence
-  routing.value[index - 1].sequence = temp
+  const current = routing.value[index]
+  const prev = routing.value[index - 1]
+  if (!current || !prev) return
+  const temp = current.sequence
+  current.sequence = prev.sequence
+  prev.sequence = temp
   routing.value.sort((a, b) => a.sequence - b.sequence)
 }
 
 function moveStepDown(index: number) {
   if (index === routing.value.length - 1) return
-  const temp = routing.value[index].sequence
-  routing.value[index].sequence = routing.value[index + 1].sequence
-  routing.value[index + 1].sequence = temp
+  const current = routing.value[index]
+  const next = routing.value[index + 1]
+  if (!current || !next) return
+  const temp = current.sequence
+  current.sequence = next.sequence
+  next.sequence = temp
   routing.value.sort((a, b) => a.sequence - b.sequence)
 }
 
@@ -1147,7 +1157,11 @@ function calculateMaterial() {
   }
 }
 
-async function updatePurchaseInfo(retryCount = 0) {
+async function updatePurchaseInfo() {
+  await updatePurchaseInfoWithRetry(0)
+}
+
+async function updatePurchaseInfoWithRetry(retryCount: number) {
   if (!selectedItem.value) return
 
   savingPurchase.value = true
@@ -1159,7 +1173,7 @@ async function updatePurchaseInfo(retryCount = 0) {
   const pnToSave = purchasePn.value || null
 
   try {
-    const { data, error: updateError } = await supabase
+    const { error: updateError } = await supabase
       .from('items')
       .update({
         unit_price: priceToSave,
@@ -1170,8 +1184,7 @@ async function updatePurchaseInfo(retryCount = 0) {
       .eq('id', itemId)
       .select('id')
 
-    if (updateError) throw updateError
-    if (!data || data.length === 0) {
+    if (updateError) {
       throw new Error('Update failed - check if you are logged in as engineer/admin')
     }
 
@@ -1185,11 +1198,11 @@ async function updatePurchaseInfo(retryCount = 0) {
 
     // Update in items list too
     const idx = items.value.findIndex(i => i.id === itemId)
-    if (idx !== -1) {
-      items.value[idx].unit_price = priceToSave
-      items.value[idx].supplier_name = supplierToSave
-      items.value[idx].supplier_pn = pnToSave
-      items.value[idx].is_supplier_part = true
+    if (idx !== -1 && items.value[idx]) {
+      items.value[idx]!.unit_price = priceToSave
+      items.value[idx]!.supplier_name = supplierToSave
+      items.value[idx]!.supplier_pn = pnToSave
+      items.value[idx]!.is_supplier_part = true
     }
 
     successMessage.value = 'Purchase info saved'
@@ -1200,7 +1213,7 @@ async function updatePurchaseInfo(retryCount = 0) {
       console.log('[updatePurchaseInfo] Request aborted, retrying...')
       savingPurchase.value = false
       await new Promise(r => setTimeout(r, 100))
-      return updatePurchaseInfo(retryCount + 1)
+      return updatePurchaseInfoWithRetry(retryCount + 1)
     }
     error.value = e.message || 'Failed to update purchase info'
   } finally {

@@ -378,8 +378,8 @@ async function updateProjectStatus(status: string) {
 
     // Update in list
     const idx = projects.value.findIndex(p => p.id === selectedProject.value?.id)
-    if (idx !== -1) {
-      projects.value[idx].status = status
+    if (idx !== -1 && projects.value[idx]) {
+      projects.value[idx]!.status = status
     }
   } catch (e: any) {
     error.value = e.message || 'Failed to update status'
@@ -557,10 +557,12 @@ async function updateBom() {
     }
 
     // 6. Update top_assembly_id for backward compat
-    await supabase
-      .from('mrp_projects')
-      .update({ top_assembly_id: assemblies[0].item_id })
-      .eq('id', projectId)
+    if (assemblies[0]) {
+      await supabase
+        .from('mrp_projects')
+        .update({ top_assembly_id: assemblies[0].item_id })
+        .eq('id', projectId)
+    }
 
     await loadProjectParts(projectId)
     await loadProjects()
@@ -815,20 +817,12 @@ function formatDate(date: string) {
   })
 }
 
-function goHome() {
-  router.push('/')
-}
-
 function goToShop() {
   router.push('/mrp/shop')
 }
 
 function goToRawMaterials() {
   router.push('/mrp/materials')
-}
-
-function goToPartLookup() {
-  router.push('/mrp/parts')
 }
 
 function goToProjectTracking() {
@@ -845,6 +839,7 @@ function goToCostReport() {
 }
 
 // === Nesting Functions ===
+// Note: openNestModal is used in template via @click
 
 async function openNestModal() {
   if (!selectedProject.value) return
@@ -1021,6 +1016,9 @@ onMounted(() => {
 onUnmounted(() => {
   stopNestPolling()
 })
+
+// Explicitly expose template-used functions for vue-tsc
+defineExpose({ openNestModal })
 </script>
 
 <template>
@@ -1112,7 +1110,7 @@ onUnmounted(() => {
                   {{ project.status }}
                 </span>
               </td>
-              <td>{{ project.part_count || 0 }}</td>
+              <td>{{ (project as any).part_count || 0 }}</td>
             </tr>
           </tbody>
         </table>

@@ -3,7 +3,6 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useItemsStore } from '../stores/items'
 import { useAuthStore } from '../stores/auth'
-import { useDebounceFn } from '@vueuse/core'
 import { getSignedUrlFromPath } from '../services/storage'
 import type { Item, BOMTreeNode, FileInfo } from '../types'
 
@@ -84,13 +83,9 @@ const itemCount = computed(() => {
   return filtered === total ? `${total} items` : `${filtered} of ${total} items`
 })
 
-// Debounced fetch for server-side filtering (optional)
-const debouncedFetch = useDebounceFn(() => {
-  // Currently using client-side filtering
-}, 300)
-
+// Note: Using client-side filtering. Server-side filtering can be added later if needed.
 watch([searchInput, lifecycleFilter, projectFilter], () => {
-  // Currently client-side, but could trigger server fetch
+  // Currently client-side filtering via computed property
 })
 
 onMounted(() => {

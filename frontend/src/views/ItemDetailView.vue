@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useItemsStore } from '../stores/items'
 import { useAuthStore } from '../stores/auth'
-import type { BOMTreeNode, FileInfo } from '../types'
+import type { BOMTreeNode } from '../types'
 
 const route = useRoute()
 const router = useRouter()

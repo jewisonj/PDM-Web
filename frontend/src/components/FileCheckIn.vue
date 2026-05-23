@@ -6,8 +6,7 @@ import {
   uploadFileWithRecord,
   getSignedUrlFromPath,
   downloadFileToDevice,
-  parseStoragePath,
-  getBucketForFile
+  parseStoragePath
 } from '../services/storage'
 
 interface FileInfo {

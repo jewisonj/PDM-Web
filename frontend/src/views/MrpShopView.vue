@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../services/supabase'
 
@@ -96,7 +96,7 @@ const availableMaterialSizes = computed(() => {
     // Sort by thickness (numeric) first, then by material name
     const aMatch = a.match(/^([\d.]+)"?\s*(.*)$/)
     const bMatch = b.match(/^([\d.]+)"?\s*(.*)$/)
-    if (aMatch && bMatch) {
+    if (aMatch?.[1] && aMatch?.[2] && bMatch?.[1] && bMatch?.[2]) {
       const aThick = parseFloat(aMatch[1])
       const bThick = parseFloat(bMatch[1])
       if (aThick !== bThick) return aThick - bThick
@@ -383,7 +383,7 @@ async function openPdfPanel(item: QueueItem) {
     if (item.pdf_url) {
       // Parse bucket and path from file_path (e.g., "pdm-drawings/csp00025/A/1/csp00025.pdf")
       const parts = item.pdf_url.split('/')
-      const bucket = parts[0] // e.g., "pdm-drawings"
+      const bucket = parts[0] ?? 'pdm-files' // e.g., "pdm-drawings"
       const filePath = parts.slice(1).join('/') // e.g., "csp00025/A/1/csp00025.pdf"
 
       // Get signed URL for the PDF
@@ -416,12 +416,12 @@ function closePdfPanel() {
 // Panel resize handlers
 function startResize(e: MouseEvent | TouchEvent) {
   isResizing.value = true
-  const startX = 'touches' in e ? e.touches[0].clientX : e.clientX
+  const startX = 'touches' in e ? (e.touches[0]?.clientX ?? 0) : e.clientX
   const startWidth = pdfPanelWidth.value
 
   const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
     if (!isResizing.value) return
-    const currentX = 'touches' in moveEvent ? moveEvent.touches[0].clientX : moveEvent.clientX
+    const currentX = 'touches' in moveEvent ? (moveEvent.touches[0]?.clientX ?? 0) : moveEvent.clientX
     const diff = startX - currentX
     pdfPanelWidth.value = Math.min(Math.max(startWidth + diff, 300), window.innerWidth - 400)
   }

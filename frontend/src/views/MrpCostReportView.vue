@@ -147,7 +147,7 @@ async function loadProjects() {
     if (queryProject && projects.value.find(p => p.id === queryProject)) {
       selectedProjectId.value = queryProject
     } else if (projects.value.length > 0 && !selectedProjectId.value) {
-      selectedProjectId.value = projects.value[0].id
+      selectedProjectId.value = projects.value[0]!.id
     }
   } catch (e: any) {
     error.value = e.message || 'Failed to load projects'
@@ -249,8 +249,8 @@ const stationColors: Record<string, string[]> = {
 }
 
 function getStationColor(groupName: string, index: number): string {
-  const colors = stationColors[groupName] || stationColors['Other']
-  return colors[index % colors.length]
+  const colors = stationColors[groupName] ?? stationColors['Other'] ?? ['#6b7280']
+  return colors[index % colors.length] ?? '#6b7280'
 }
 
 // Inner ring data (individual stations)
