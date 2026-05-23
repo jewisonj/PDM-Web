@@ -1,11 +1,14 @@
 """MRP (Manufacturing Resource Planning) API routes."""
 
+import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from uuid import UUID
 import io
 import zipfile
+
+logger = logging.getLogger(__name__)
 
 from ..services.print_packet import generate_print_packet, get_existing_packet
 from ..services.supabase import get_supabase_admin
@@ -602,16 +605,18 @@ async def download_project_dxfs(project_id: UUID):
 
     # Filter to only parts with needs_dxf=true and build info map
     item_ids = []
-    item_info = {}  # item_id -> {item_number, thickness, quantity}
+    item_info = {}  # item_id (str) -> {item_number, thickness, quantity}
     for p in parts_result.data:
         if p.get("items") and p["items"].get("needs_dxf"):
-            item_id = p["item_id"]
+            item_id = str(p["item_id"])  # Ensure string key
             item_ids.append(item_id)
             item_info[item_id] = {
                 "item_number": p["items"]["item_number"],
                 "thickness": p["items"].get("thickness"),
                 "quantity": p.get("quantity", 1)
             }
+
+    logger.info(f"DXF download: {len(item_ids)} items with needs_dxf, item_info keys: {list(item_info.keys())[:3]}")
 
     if not item_ids:
         raise HTTPException(status_code=404, detail="No sheet metal parts (needs_dxf) found in project")
@@ -649,17 +654,16 @@ async def download_project_dxfs(project_id: UUID):
                 file_data = supabase.storage.from_(bucket).download(file_path)
 
                 # Build descriptive filename: {item_number}_thk-{thickness}_qty-{quantity}.dxf
-                info = item_info.get(file_info["item_id"], {})
+                file_item_id = str(file_info["item_id"])  # Ensure string for lookup
+                info = item_info.get(file_item_id, {})
                 item_num = info.get("item_number", "")
                 thickness = info.get("thickness")
                 quantity = info.get("quantity", 1)
 
                 if item_num:
-                    # Format thickness as 4 digits without decimal (0.250 -> 0250)
+                    # Format thickness as thousandths (0.25" -> 0250, 0.125" -> 0125)
                     if thickness is not None:
-                        thk_str = f"{float(thickness):.4f}".replace(".", "").lstrip("0") or "0"
-                        # Pad to at least 4 chars (e.g., 0.125 -> 0125, 0.0625 -> 0625)
-                        thk_str = f"{float(thickness):.4f}".replace(".", "")
+                        thk_str = f"{int(float(thickness) * 1000):04d}"
                     else:
                         thk_str = "0000"
 
