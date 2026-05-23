@@ -7,9 +7,36 @@
 
 ## Current Version
 
-### v3.7 (2026-05-12) -- MRP Part Lookup Redesign and PDF Serving Improvements
+### v3.7.1 (2026-05-22) -- Vite Proxy Timeout Fix
 
 **Status:** Current Production Release
+
+**Summary:** Fixed "Unexpected end of JSON" error when generating print packets for large projects.
+
+#### Bug Fixes
+
+**Print Packet Generation Timeout**
+
+- **Issue:** Large projects (20+ parts) caused "Unexpected end of JSON" errors during print packet generation
+- **Root Cause:** Vite dev server proxy default timeout (~30-60 seconds) was too short for operations that download multiple PDFs, create overlays, and combine into one packet
+- **Fix:** Added `timeout: 300000` (5 minutes) to Vite proxy configuration in `frontend/vite.config.ts`
+- **Note:** Only affects development mode; production serves frontend directly from backend (no proxy)
+- **Commit:** 03f788e
+
+#### Files Changed
+
+- `frontend/vite.config.ts` -- Added timeout to proxy configuration
+
+#### Documentation
+
+- Added Pitfall #36 to Development Notes explaining the timeout issue and fix
+- Added Reminder #35 documenting the Vite proxy timeout pattern
+
+---
+
+### v3.7 (2026-05-12) -- MRP Part Lookup Redesign and PDF Serving Improvements
+
+**Status:** Previous Release (superseded by v3.7.1)
 
 **Summary:** Redesigned MRP Part Lookup view with unified layout, removed Print Lookup page, improved PDF serving via Supabase Storage, and documented mapkey changes for Creo favorites.
 
@@ -928,11 +955,17 @@ This is a complete platform rewrite. There is no in-place upgrade path from v2.0
 | v3.4 | 2026-02-05 | Previous | Project scheduling, capacity planning |
 | v3.5 | 2026-02-07 | Previous | Waterjet cut time calculation, shop floor enhancements |
 | v3.6 | 2026-05-01 | Previous | Station grouping, ECharts nested pie, PDF stamp refinement |
-| v3.7 | 2026-05-12 | Current | MRP Part Lookup redesign, PDF serving improvements, mapkey documentation |
+| v3.7 | 2026-05-12 | Previous | MRP Part Lookup redesign, PDF serving improvements, mapkey documentation |
+| v3.7.1 | 2026-05-22 | Current | Vite proxy timeout fix for print packet generation |
 
 ---
 
 ## Checking Your Version
+
+**v3.7.1 indicators:**
+- `frontend/vite.config.ts` has `timeout: 300000` in the proxy configuration
+- Development Notes has Pitfall #36 (Vite Proxy Timeout)
+- Important Reminders has #35 (Vite proxy timeout for long operations)
 
 **v3.7 indicators:**
 - `frontend/src/views/MrpPartLookupView.vue` has sidebar layout with project filter and "All Parts" option
@@ -1024,6 +1057,6 @@ All future releases follow this format:
 
 ---
 
-**Last Updated:** 2026-05-12
-**Current Version:** v3.7
+**Last Updated:** 2026-05-22
+**Current Version:** v3.7.1
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md)

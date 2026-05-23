@@ -999,7 +999,7 @@ export default defineConfig({
 - Similar to timeout issues in other proxies (nginx, Apache, load balancers)
 - Backend operations that continue after client disconnect need proper error handling
 
-**Commit:** 2d20f24
+**Commit:** 03f788e
 
 ---
 
