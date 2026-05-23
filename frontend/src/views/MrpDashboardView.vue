@@ -217,7 +217,37 @@ async function loadProjectParts(projectId: string) {
 
     if (queryError) throw queryError
 
-    // Load completion data for this project
+    // Collect all item_ids for batched queries
+    const itemIds = (data || []).map((pp: any) => pp.item_id)
+
+    // Batch query 1: Get ALL routing data for all items at once
+    const { data: allRoutingData } = await supabase
+      .from('routing')
+      .select('item_id, est_time_min')
+      .in('item_id', itemIds)
+
+    // Build routing lookup map: item_id -> { steps: count, totalTime: minutes }
+    const routingByItem = new Map<string, { steps: number, totalTime: number }>()
+    for (const r of allRoutingData || []) {
+      const existing = routingByItem.get(r.item_id) || { steps: 0, totalTime: 0 }
+      existing.steps++
+      existing.totalTime += r.est_time_min || 0
+      routingByItem.set(r.item_id, existing)
+    }
+
+    // Batch query 2: Get ALL BOM parent relationships to identify assemblies
+    const { data: allBomData } = await supabase
+      .from('bom')
+      .select('parent_item_id')
+      .in('parent_item_id', itemIds)
+
+    // Build set of item_ids that are assemblies (have BOM children)
+    const assemblyIds = new Set<string>()
+    for (const b of allBomData || []) {
+      assemblyIds.add(b.parent_item_id)
+    }
+
+    // Batch query 3: Load completion data for this project
     const { data: compData } = await supabase
       .from('part_completion')
       .select('item_id, station_id')
@@ -225,22 +255,9 @@ async function loadProjectParts(projectId: string) {
 
     completionData.value = compData || []
 
-    // Get routing info for each part
-    const partsWithRouting = await Promise.all((data || []).map(async (pp: any) => {
-      // Fetch routing steps for this item (to check existence + sum est_time_min)
-      const { data: routingData } = await supabase
-        .from('routing')
-        .select('est_time_min')
-        .eq('item_id', pp.item_id)
-
-      const routingSteps = routingData || []
-      const estTimeMin = routingSteps.reduce((sum: number, r: any) => sum + (r.est_time_min || 0), 0)
-
-      // Check if it's an assembly (has children in BOM)
-      const { count: bomCount } = await supabase
-        .from('bom')
-        .select('*', { count: 'exact', head: true })
-        .eq('parent_item_id', pp.item_id)
+    // Process parts using batched data (no additional queries needed)
+    const partsWithRouting = (data || []).map((pp: any) => {
+      const routing = routingByItem.get(pp.item_id) || { steps: 0, totalTime: 0 }
 
       return {
         id: pp.id,
@@ -248,13 +265,13 @@ async function loadProjectParts(projectId: string) {
         item_number: pp.items?.item_number || '',
         name: pp.items?.name || '',
         quantity: pp.quantity,
-        is_assembly: (bomCount || 0) > 0,
-        has_routing: routingSteps.length > 0,
+        is_assembly: assemblyIds.has(pp.item_id),
+        has_routing: routing.steps > 0,
         is_manual: pp.is_manual || false,
-        est_time_min: estTimeMin,
-        routing_count: routingSteps.length
+        est_time_min: routing.totalTime,
+        routing_count: routing.steps
       }
-    }))
+    })
 
     if (selectedProject.value) {
       selectedProject.value.parts = partsWithRouting
