@@ -883,8 +883,30 @@ async def _create_print_packet_pdf(
 
             logger.info(f"Downloading from bucket '{bucket_name}' path '{storage_path}'")
 
-            # Download PDF from Supabase storage
-            pdf_data = supabase.storage.from_(bucket_name).download(storage_path)
+            # Download PDF from Supabase storage with timeout
+            # Use signed URL + httpx for timeout control (Supabase SDK has no timeout)
+            try:
+                signed_url_response = supabase.storage.from_(bucket_name).create_signed_url(storage_path, 300)
+                if not signed_url_response or not signed_url_response.get('signedURL'):
+                    logger.warning(f"Failed to create signed URL for {part['item_number']}: {pdf_path}")
+                    parts_skipped += 1
+                    continue
+
+                signed_url = signed_url_response['signedURL']
+
+                # Download with 30 second timeout per file
+                with httpx.Client(timeout=30.0) as client:
+                    response = client.get(signed_url)
+                    response.raise_for_status()
+                    pdf_data = response.content
+            except httpx.TimeoutException:
+                logger.warning(f"Download timeout for {part['item_number']}: {pdf_path}")
+                parts_skipped += 1
+                continue
+            except httpx.HTTPStatusError as e:
+                logger.warning(f"HTTP error downloading {part['item_number']}: {e}")
+                parts_skipped += 1
+                continue
 
             if pdf_data is None:
                 logger.warning(f"Download returned None for {part['item_number']}: {pdf_path}")
