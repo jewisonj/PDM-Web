@@ -7,9 +7,307 @@
 
 ## Current Version
 
-### v3.7.1 (2026-05-22) -- Vite Proxy Timeout Fix
+### v3.7.4 (2026-05-23) -- PDF Revision/Iteration Stamping
 
 **Status:** Current Production Release
+
+**Summary:** Added automatic revision.iteration stamping to uploaded PDFs, with each file tracking its own iteration count that auto-increments on subsequent uploads.
+
+#### Features Added
+
+**PDF Revision/Iteration Stamping**
+
+PDFs now receive automatic revision and iteration stamps during upload:
+
+- **Revision.Iteration Format:** Stamps appear as "A.15" (revision letter + iteration number)
+- **Stamp Location:** Bottom left corner at x=250pt, right next to the existing upload date stamp
+- **Auto-Increment:** Each upload of the same filename increments the iteration count (1 → 2 → 3...)
+- **Per-File Tracking:** Each file maintains its own revision and iteration in the database
+- **All Pages Stamped:** Both stamps (date and revision.iteration) appear on every page of the PDF
+- **Example:** First upload shows "A.1", second upload of same file shows "A.2"
+
+**Stamp Details:**
+- **Upload Date Stamp:** "Upload - MM/DD/YYYY" at x=82pt, y=8pt (unchanged)
+- **Revision Stamp:** "A.1" at x=250pt, y=8pt (NEW)
+- **Font:** Helvetica 12pt, black text
+- **Position:** Lower left corner, past corner hash marks
+
+**Database Integration:**
+- `files` table tracks `revision` (TEXT) and `iteration` (INTEGER) per file
+- Iteration determined BEFORE PDF stamping to ensure correct value
+- Existing files: iteration = current + 1
+- New files: iteration = 1
+
+#### Backend Changes
+
+**Modified Endpoint:** `POST /api/files/upload` in `backend/app/routes/files.py`
+
+- **Iteration Detection:** Queries `files` table for existing file record before stamping
+- **Stamp Function:** `stamp_pdf_upload_date(content, revision, iteration)` updated with iteration parameter
+- **Stamp Positioning:** Two stamps per page (date at x=82, revision at x=250)
+- **File Record Update:** Saves iteration to database after upload
+
+**Key Code Pattern:**
+```python
+# Check existing iteration BEFORE stamping
+existing = supabase.table("files").select("id, iteration").eq("item_id", item_id).eq("file_name", normalized_filename).execute()
+
+if existing.data:
+    new_iteration = existing.data[0]["iteration"] + 1
+else:
+    new_iteration = 1
+
+# Stamp PDF with revision and iteration
+if file_type == "PDF":
+    content = stamp_pdf_upload_date(content, file_revision, new_iteration)
+```
+
+#### Bug Fixes
+
+**Backend Reload Issue on Windows (Pitfall #37)**
+
+- **Issue:** Uvicorn's `--reload` flag on Windows was not reloading changes to `files.py`
+- **Root Cause:** File watcher issues on Windows with certain file paths or editors
+- **Solution:** Manual restart of backend process after code changes
+- **Workaround:** Use `Ctrl+C` and restart `uvicorn app.main:app --reload --port 8001`
+- **Note:** This is a known uvicorn/watchfiles limitation on Windows
+- **Long-term:** Consider using WSL or Docker for development to avoid Windows file watcher issues
+
+#### Use Cases
+
+- **Drawing Revision Tracking:** Easily see which iteration of a PDF drawing is in the system
+- **Upload History:** Stamp shows exact upload date and revision/iteration on every page
+- **Version Identification:** Shop floor workers can identify current revision/iteration at a glance
+- **Change Management:** Track how many times a drawing has been updated within same revision
+- **Audit Trail:** Permanent record of upload date and iteration on PDF itself
+
+#### Files Changed Summary
+
+- `backend/app/routes/files.py` -- Updated `stamp_pdf_upload_date()` function to accept and stamp revision.iteration, modified upload logic to detect iteration before stamping
+
+#### Technical Notes
+
+- Stamping happens AFTER iteration detection to ensure correct value
+- Both stamps use same font and style for visual consistency
+- Stamp positioning uses absolute coordinates (works for all page sizes)
+- If stamping fails, original PDF is uploaded without stamps (fallback behavior)
+- Iteration count never resets (continues incrementing across revision changes)
+- ReportLab Canvas used to overlay text on existing PDF pages
+
+---
+
+### v3.7.3 (2026-05-23) -- Testing Infrastructure and TypeScript Error Cleanup
+
+**Status:** Previous Release (superseded by v3.7.4)
+
+**Summary:** Added comprehensive testing infrastructure with Vitest (frontend) and pytest (backend), plus CI pipeline. Fixed all 77 build-time TypeScript errors across multiple views.
+
+#### Testing Infrastructure Added
+
+**Frontend Testing (Vitest)**
+
+- **Test Framework:** Added Vitest for Vue 3 component and unit testing
+- **Configuration:** New `frontend/vitest.config.ts` with Vue plugin integration
+- **Initial Test Suite:** 13 tests for scheduling algorithm in `frontend/src/utils/scheduling.test.ts`
+- **Test Coverage:**
+  - Dependency graph building (4 tests)
+  - Task creation and predecessors (3 tests)
+  - Priority scoring (3 tests)
+  - Capacity-constrained scheduling (3 tests)
+- **Run Command:** `npm test` in frontend directory
+
+**Backend Testing (pytest)**
+
+- **Test Framework:** Added pytest for FastAPI endpoint testing
+- **Configuration:** New `backend/pytest.ini` with test discovery settings
+- **Initial Test Suite:** 12 tests for items API in `backend/tests/test_items.py`
+- **Test Coverage:**
+  - List items endpoint (pagination, sorting)
+  - Get item by number (success and 404 cases)
+  - Create item (valid, invalid, duplicate)
+  - Update item (success, 404, validation)
+  - Search items by name
+  - Filter items by project
+- **Fixtures:** Database setup in `backend/tests/conftest.py` with test client
+- **Run Command:** `pytest` in backend directory
+
+**CI Pipeline (GitHub Actions)**
+
+- **Configuration:** New `.github/workflows/ci.yml` for automated testing on push/PR
+- **Jobs:**
+  - Backend tests (Python 3.11, PostgreSQL service, pytest)
+  - Frontend tests (Node 20, Vitest)
+- **Triggers:** Push to main branch, pull requests
+- **Environment:** Uses PostgreSQL 14 service container for backend tests
+
+#### TypeScript Error Cleanup (77 Errors Fixed)
+
+**Core Utilities Fixed:**
+
+- **scheduling.ts** (5 errors) -- Non-null assertions for array access in `calculateSchedule()`
+  - `tasks[0]!` for guaranteed non-empty task arrays
+  - Safer array access patterns throughout
+- **items.ts store** (3 errors) -- Type safety fixes for Pinia store
+  - Proper typing for store state updates
+  - Fixed undefined checks
+- **storage.ts** (2 errors) -- Null safety in storage helper functions
+  - Safe navigation for optional chaining
+
+**View Components Fixed:**
+
+- **MrpCostReportView.vue** (8 errors)
+  - Array access safety with non-null assertions
+  - Color lookup type guards for chart data
+  - Proper typing for ECharts options
+- **MrpDashboardView.vue** (12 errors)
+  - Array access safety for project data
+  - Type assertions for component refs
+  - `defineExpose` for `openNestModal` method (enables parent component access)
+- **MrpPrintLookupView.vue** (4 errors)
+  - Safe bucket name parsing from storage paths
+  - Type guards for undefined checks
+- **MrpProjectTrackingView.vue** (6 errors)
+  - Removed unused imports (`onMounted`, `watch`)
+  - Safe date parsing with null checks
+  - Type safety for schedule data
+- **MrpRoutingView.vue** (20 errors)
+  - Fixed `API_BASE_URL` import and usage
+  - Comprehensive null checks for nested object access
+  - Refactored `onClick` handlers to proper TypeScript syntax
+  - Type guards for optional properties
+  - Safe array access patterns
+- **MrpShopView.vue** (17 errors)
+  - Regex capture group safety with non-null assertions
+  - Bucket parsing type guards
+  - Touch event handler typing fixes
+  - Safe array operations
+
+**Build Status:**
+- **Before:** 77 TypeScript errors, warnings during build
+- **After:** Clean build with no TypeScript errors
+
+#### Backend Schema Enhancement
+
+**ItemCreate Pattern Validation Update**
+
+- **File:** `backend/app/schemas.py`
+- **Change:** `item_number` pattern now accepts both uppercase and lowercase
+- **Before:** `^[a-z]{3}[0-9]{4,6}$` (lowercase only)
+- **After:** `^[a-zA-Z]{3}[0-9]{4,6}$` (case-insensitive)
+- **Impact:** Allows item creation with mixed-case item numbers (e.g., `CSP0001` and `csp0001`)
+
+#### PowerShell Upload Bridge Fix
+
+**PDM-Upload-Functions.ps1 Improvement**
+
+- **Function:** `Upload-File` in `scripts\pdm-upload\PDM-Upload-Functions.ps1`
+- **Issue:** PowerShell errors when API returned null response body
+- **Fix:** Added null/empty response handling before JSON parsing
+- **Pattern:**
+  ```powershell
+  if (-not $response -or [string]::IsNullOrWhiteSpace($response)) {
+      # Handle null response gracefully
+  }
+  ```
+
+#### Files Changed Summary
+
+**Testing Infrastructure (NEW):**
+- `frontend/vitest.config.ts` -- Vitest configuration with Vue plugin
+- `frontend/src/utils/scheduling.test.ts` -- 13 scheduling algorithm tests
+- `backend/pytest.ini` -- pytest configuration
+- `backend/tests/__init__.py` -- Test package marker
+- `backend/tests/conftest.py` -- Test fixtures and database setup
+- `backend/tests/test_items.py` -- 12 items API tests
+- `.github/workflows/ci.yml` -- GitHub Actions CI pipeline
+
+**TypeScript Fixes:**
+- `frontend/src/utils/scheduling.ts` -- Array access safety
+- `frontend/src/stores/items.ts` -- Store type fixes
+- `frontend/src/services/storage.ts` -- Null safety
+- `frontend/src/views/MrpCostReportView.vue` -- Array/color lookup fixes
+- `frontend/src/views/MrpDashboardView.vue` -- Type assertions, defineExpose
+- `frontend/src/views/MrpPrintLookupView.vue` -- Bucket parsing
+- `frontend/src/views/MrpProjectTrackingView.vue` -- Unused imports, date parsing
+- `frontend/src/views/MrpRoutingView.vue` -- API_BASE_URL, null checks, onClick handlers
+- `frontend/src/views/MrpShopView.vue` -- Regex, bucket parsing, touch events
+
+**Backend/Schema:**
+- `backend/app/schemas.py` -- ItemCreate pattern now case-insensitive
+
+**PowerShell:**
+- `scripts/pdm-upload/PDM-Upload-Functions.ps1` -- Null response handling
+
+#### Technical Notes
+
+- **Test Isolation:** Backend tests use separate test database with rollback after each test
+- **TypeScript Strict Mode:** All fixes maintain strict type safety without using `@ts-ignore`
+- **Non-Null Assertions:** Used only where control flow guarantees non-null values
+- **CI Performance:** GitHub Actions pipeline runs both test suites in ~3-5 minutes
+- **Coverage:** Initial test suites cover critical paths (scheduling, items CRUD)
+- **Vitest Speed:** Vitest runs faster than Jest for Vue 3 component testing
+- **pytest Fixtures:** Reusable test client and database fixtures in conftest.py
+
+#### Use Cases
+
+- **Automated Testing:** Run `npm test` (frontend) or `pytest` (backend) to verify changes
+- **CI/CD Pipeline:** GitHub Actions automatically tests all PRs and commits to main
+- **Type Safety:** TypeScript errors caught at build time, preventing runtime issues
+- **Regression Prevention:** Test suites prevent breaking existing functionality during refactoring
+- **Documentation:** Test files serve as executable examples of API usage
+
+#### Related Documentation
+
+- [TODO.md](../TODO.md) -- Updated to reflect completed testing infrastructure and TypeScript cleanup
+- [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md) -- TypeScript error patterns documented
+- [CONTRIBUTING.md](../CONTRIBUTING.md) -- Testing guidelines (if added in future)
+
+---
+
+### v3.7.2 (2026-05-22) -- DXF Download Enhancements
+
+**Status:** Previous Release (superseded by v3.7.3)
+
+**Summary:** Enhanced DXF bundle download filenames with part info (thickness, quantity), fixed remaining time calculation bug in MRP dashboard, and hidden "Nest DXF" button from slideout UI.
+
+#### Features Added
+
+**DXF Bundle Filename Enhancement**
+
+- **Pattern:** `{item_number}_thk-{thickness}_qty-{quantity}.dxf`
+- **Thickness Format:** Thousandths of inch (0.25" → 0250, 0.125" → 0125)
+- **Example:** `csp0025_thk-0250_qty-4.dxf` for 0.25" thick part with qty 4
+- **Backend:** Modified `/api/mrp/projects/{id}/download-dxf-bundle` endpoint
+- **Item Lookup:** Fixed UUID-to-string type mismatch when fetching item info
+- **Logging:** Added debug logging for DXF download operations
+
+#### Bug Fixes
+
+**MRP Dashboard "Remaining Time" Calculation**
+
+- **Issue:** Dashboard slideout showed "0h Remaining" for all projects
+- **Root Cause:** `remainingMinutes` wasn't being incremented in the `incompleteItems` loop
+- **Fix:** Changed from assignment (`remainingMinutes = ...`) to increment (`remainingMinutes += ...`)
+- **File:** `frontend/src/views/MrpDashboardView.vue`
+
+#### UI Changes
+
+**MRP Dashboard Slideout**
+
+- **Hidden Button:** "Nest DXF" button removed from slideout UI (functionality preserved in code)
+- **Reason:** Nesting typically done from main dashboard, not quick slideout
+- **Implementation:** `v-if="false"` on Nest DXF button
+
+#### Files Changed
+
+- `backend/app/routes/mrp.py` -- DXF bundle filename enhancement with thickness/qty
+- `frontend/src/views/MrpDashboardView.vue` -- Fixed remaining time calculation, hid Nest DXF button
+
+---
+
+### v3.7.1 (2026-05-22) -- Vite Proxy Timeout Fix
+
+**Status:** Previous Release (superseded by v3.7.2)
 
 **Summary:** Fixed "Unexpected end of JSON" error when generating print packets for large projects.
 
@@ -956,11 +1254,33 @@ This is a complete platform rewrite. There is no in-place upgrade path from v2.0
 | v3.5 | 2026-02-07 | Previous | Waterjet cut time calculation, shop floor enhancements |
 | v3.6 | 2026-05-01 | Previous | Station grouping, ECharts nested pie, PDF stamp refinement |
 | v3.7 | 2026-05-12 | Previous | MRP Part Lookup redesign, PDF serving improvements, mapkey documentation |
-| v3.7.1 | 2026-05-22 | Current | Vite proxy timeout fix for print packet generation |
+| v3.7.1 | 2026-05-22 | Previous | Vite proxy timeout fix for print packet generation |
+| v3.7.2 | 2026-05-22 | Previous | DXF download enhancements, MRP dashboard fixes |
+| v3.7.3 | 2026-05-23 | Previous | Testing infrastructure (Vitest, pytest, CI), TypeScript error cleanup (77 fixes) |
+| v3.7.4 | 2026-05-23 | Current | PDF revision/iteration stamping, backend reload fix (Pitfall #37) |
 
 ---
 
 ## Checking Your Version
+
+**v3.7.4 indicators:**
+- `stamp_pdf_upload_date()` function in `backend/app/routes/files.py` accepts `revision` and `iteration` parameters
+- PDF stamping adds both upload date (x=82) and revision.iteration (x=250) stamps
+- Upload endpoint queries existing file iteration BEFORE stamping
+- Files table tracks per-file iteration that auto-increments on re-upload
+
+**v3.7.3 indicators:**
+- `frontend/vitest.config.ts` exists with Vue plugin configuration
+- `frontend/src/utils/scheduling.test.ts` exists with 13 scheduling tests
+- `backend/tests/test_items.py` exists with 12 items API tests
+- `.github/workflows/ci.yml` exists with CI pipeline configuration
+- `npm run type-check` in frontend passes with zero errors
+- Build passes clean without TypeScript warnings
+
+**v3.7.2 indicators:**
+- DXF bundle filenames include thickness and quantity (e.g., `csp0025_thk-0250_qty-4.dxf`)
+- MRP Dashboard slideout "Nest DXF" button hidden with `v-if="false"`
+- Remaining time calculation uses `remainingMinutes +=` (not `=`)
 
 **v3.7.1 indicators:**
 - `frontend/vite.config.ts` has `timeout: 300000` in the proxy configuration
@@ -1057,6 +1377,6 @@ All future releases follow this format:
 
 ---
 
-**Last Updated:** 2026-05-22
-**Current Version:** v3.7.1
+**Last Updated:** 2026-05-23
+**Current Version:** v3.7.4
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md)

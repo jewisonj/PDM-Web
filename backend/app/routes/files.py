@@ -40,17 +40,21 @@ def get_file_type(filename: str) -> str:
     return type_map.get(ext, "OTHER")
 
 
-def stamp_pdf_upload_date(content: bytes) -> bytes:
+def stamp_pdf_upload_date(content: bytes, revision: str = "A", iteration: int = 1) -> bytes:
     """
-    Stamp a PDF with upload date in the lower right corner.
+    Stamp a PDF with upload date and revision/iteration info.
 
-    Adds "Upload - MM/DD/YYYY" text to each page of the PDF.
+    Adds two stamps to each page:
+    - Bottom left: "Upload - MM/DD/YYYY"
+    - Bottom right: "A.1" (revision.iteration)
 
     Args:
         content: Original PDF file content as bytes
+        revision: File revision letter (e.g., "A", "B")
+        iteration: File iteration number (e.g., 1, 2, 3)
 
     Returns:
-        Modified PDF content as bytes with date stamp on each page
+        Modified PDF content as bytes with stamps on each page
     """
     try:
         reader = PdfReader(BytesIO(content))
@@ -58,7 +62,8 @@ def stamp_pdf_upload_date(content: bytes) -> bytes:
 
         # Get current date formatted as MM/DD/YYYY
         upload_date = datetime.now().strftime("%m/%d/%Y")
-        stamp_text = f"Upload - {upload_date}"
+        date_stamp = f"Upload - {upload_date}"
+        rev_stamp = f"{revision}.{iteration}"
 
         for page in reader.pages:
             # Get page dimensions
@@ -69,14 +74,17 @@ def stamp_pdf_upload_date(content: bytes) -> bytes:
             stamp_buffer = BytesIO()
             c = canvas.Canvas(stamp_buffer, pagesize=(page_width, page_height))
 
-            # Position: lower left, past corner mark
-            x = 82  # ~1.1 inch from left edge
-            y = 8   # Just below the margin line
-
-            # Draw text only (no box)
             c.setFillColorRGB(0, 0, 0)
             c.setFont("Helvetica", 12)
-            c.drawString(x, y, stamp_text)
+
+            # Position: lower left, past corner mark (upload date)
+            x_left = 82  # ~1.1 inch from left edge
+            y = 8   # Just below the margin line
+            c.drawString(x_left, y, date_stamp)
+
+            # Position: bottom left, near upload date stamp
+            x_rev = 250  # Right after upload date text
+            c.drawString(x_rev, y, rev_stamp)
 
             c.save()
             stamp_buffer.seek(0)
@@ -333,17 +341,27 @@ async def upload_file(
     # Determine file type
     file_type = get_file_type(file.filename)
 
-    # Stamp PDFs with upload date
-    if file_type == "PDF":
-        print(f"Stamping PDF with upload date: {file.filename}")
-        content = stamp_pdf_upload_date(content)
-
-    file_size = len(content)
-
     # Normalize filename (strip redundant suffixes like _dxf.dxf -> .dxf)
     normalized_filename = normalize_filename(file.filename, clean_item_number)
     if normalized_filename != file.filename:
         print(f"Normalized filename: {file.filename} -> {normalized_filename}")
+
+    # Check if file record exists to determine iteration BEFORE stamping
+    existing = supabase.table("files").select("id, iteration").eq("item_id", item_id).eq("file_name", normalized_filename).execute()
+
+    if existing.data:
+        new_iteration = existing.data[0]["iteration"] + 1
+        existing_file_id = existing.data[0]["id"]
+    else:
+        new_iteration = 1
+        existing_file_id = None
+
+    # Stamp PDFs with upload date and revision/iteration
+    if file_type == "PDF":
+        print(f"Stamping PDF: {file.filename} (Rev {file_revision} / Iter {new_iteration})", flush=True)
+        content = stamp_pdf_upload_date(content, file_revision, new_iteration)
+
+    file_size = len(content)
 
     # Upload to Supabase Storage
     # Use pdm-files bucket for all uploads via this service
@@ -368,18 +386,15 @@ async def upload_file(
         else:
             raise HTTPException(status_code=500, detail=f"Storage error: {str(e)}")
 
-    # Check if file record exists (use normalized filename)
-    existing = supabase.table("files").select("id, iteration").eq("item_id", item_id).eq("file_name", normalized_filename).execute()
-
-    if existing.data:
+    # Update or create file record
+    if existing_file_id:
         # Update existing file record
-        new_iteration = existing.data[0]["iteration"] + 1
         result = supabase.table("files").update({
             "file_path": storage_path,
             "file_size": file_size,
             "revision": file_revision,
             "iteration": new_iteration,
-        }).eq("id", existing.data[0]["id"]).execute()
+        }).eq("id", existing_file_id).execute()
     else:
         # Create new file record
         file_data = {

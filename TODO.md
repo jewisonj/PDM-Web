@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-05-22
-**Current Version:** v3.7.2
+**Last Updated:** 2026-05-23
+**Current Version:** v3.7.4
 **Project Status:** Active Development / Production Use
 
 ---
@@ -14,7 +14,33 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.3 - v3.7.2)
+## Recently Completed (v3.3 - v3.7.4)
+
+### v3.7.4 (2026-05-23) - PDF Revision/Iteration Stamping
+- [x] Added automatic revision.iteration stamp to uploaded PDFs (e.g., "A.15")
+- [x] Stamp appears in bottom left corner next to existing upload date stamp (x=250pt)
+- [x] File iteration auto-increments on each upload of same filename (1 → 2 → 3...)
+- [x] Each file tracks its own revision and iteration in the database
+- [x] Iteration determined BEFORE stamping to ensure correct value
+- [x] Both stamps (upload date and revision.iteration) appear on every page
+- [x] Fixed backend reload issues on Windows (documented as Pitfall #37)
+
+### v3.7.3 (2026-05-23) - Testing Infrastructure and TypeScript Error Cleanup
+- [x] Set up Vitest for frontend unit tests (13 tests for scheduling algorithm)
+- [x] Set up pytest for backend API tests (12 tests for items API)
+- [x] Added GitHub Actions CI pipeline for automated testing on push/PR
+- [x] Fixed all 77 build-time TypeScript errors across multiple views
+- [x] Fixed scheduling.ts non-null assertions for array access
+- [x] Fixed items.ts store type issues
+- [x] Fixed storage.ts null safety
+- [x] Fixed MrpCostReportView.vue array access and color lookup
+- [x] Fixed MrpDashboardView.vue array access, type assertions, defineExpose
+- [x] Fixed MrpPrintLookupView.vue bucket parsing
+- [x] Fixed MrpProjectTrackingView.vue unused imports and date parsing
+- [x] Fixed MrpRoutingView.vue (20 errors: API_BASE_URL, null checks, onClick handlers)
+- [x] Fixed MrpShopView.vue regex capture groups, bucket parsing, touch events
+- [x] Updated ItemCreate schema pattern to accept both uppercase and lowercase
+- [x] Improved PDM-Upload-Functions.ps1 null response handling
 
 ### v3.7.2 (2026-05-22) - DXF Download Enhancements
 - [x] DXF bundle filenames now include part info: {item_number}_thk-{thickness}_qty-{quantity}.dxf
@@ -94,43 +120,28 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ## High Priority (Next Sprint)
 
-### 1. Automated Testing Setup
+### 1. Expand Test Coverage
 **Priority:** HIGH
 **Effort:** Medium
 
-**Current State:** Testing infrastructure established.
+**Current State:** Testing infrastructure established with initial test suites.
 
-**Completed:**
+**Completed (v3.7.3):**
 - [x] Set up Vitest for frontend unit tests (13 tests for scheduling algorithm)
 - [x] Set up pytest for backend API tests (12 tests for items API)
 - [x] Add CI pipeline (GitHub Actions) for test runs
 
-**Action Items:**
-- [ ] Start with critical paths: BOM upload, print packet generation, routing save
+**Next Steps:**
+- [ ] Add tests for BOM upload endpoint and parsing logic
+- [ ] Add tests for print packet generation workflow
+- [ ] Add tests for routing save and cost estimation
+- [ ] Add component tests for MRP views using Vue Test Utils
+- [ ] Add integration tests for file upload and processing
 
----
-
-### 2. TypeScript Error Cleanup
-**Priority:** MEDIUM - COMPLETED
-**Effort:** Low-Medium
-
-**Current State:** All 77 build-time TypeScript errors fixed. Build passes clean.
-
-**Completed:**
-- [x] Audit TypeScript errors: `npm run type-check` in frontend
-- [x] Fixed unused imports/variables across multiple files
-- [x] Fixed core scheduling.ts type safety
-- [x] Fixed items.ts store type issues
-- [x] Fixed MrpCostReportView.vue - array access and color lookup
-- [x] Fixed MrpDashboardView.vue - array access and type assertions
-- [x] Fixed MrpPrintLookupView.vue - bucket parsing
-- [x] Fixed MrpProjectTrackingView.vue - unused imports and date parsing
-- [x] Fixed MrpRoutingView.vue - 20 errors including API_BASE_URL, null checks, onClick handler
-- [x] Fixed MrpShopView.vue - regex capture groups, bucket parsing, touch events
-
-**Future Improvements (optional):**
+**Future Improvements:**
 - [ ] Generate Supabase types: `npx supabase gen types typescript`
-- [ ] Add proper type definitions for component props
+- [ ] Add test coverage reporting (Vitest coverage, pytest-cov)
+- [ ] Set up E2E tests with Playwright or Cypress
 
 ---
 

@@ -1327,9 +1327,47 @@ A `.env` file in `backend/` provides these values for local development. In prod
 34. **N+1 query batching pattern** -- Fixed MRP dashboard sidebar hanging when loading projects with many parts. The issue was a classic N+1 query pattern: for each part, two separate queries were executed (routing + BOM check), causing 118+ concurrent queries for a 59-part project. Solution: collect all item IDs upfront, batch fetch ALL routing data with a single `.in('item_id', itemIds)` query, batch fetch ALL BOM relationships with `.in('parent_item_id', itemIds)`, build lookup maps in memory, then process parts synchronously using the maps. Reduced 118 queries to 4 queries, making the sidebar load instantly. **Pattern:** Always batch fetch related data using `.in()` for large datasets instead of querying per-item in a loop.
 35. **Vite proxy timeout for long operations** -- Added `timeout: 300000` (5 minutes) to Vite dev server proxy config in `frontend/vite.config.ts` to prevent "Unexpected end of JSON" errors during print packet generation. The default proxy timeout of ~30-60 seconds was too short for operations that download multiple PDFs, create overlays, and combine into one packet. **Development only** - production is unaffected since the backend serves the frontend directly (no proxy layer). Backend continues processing even if client disconnects.
 36. **DXF filenames include thickness and quantity** -- DXF bundle downloads from MRP dashboard now use descriptive filenames: `{item_number}_thk-{thickness}_qty-{quantity}.dxf`. Thickness is formatted as 4-digit thousandths of inch (0.25" → 0250, 0.125" → 0125). This prevents shop floor errors when loading files into waterjet CAM software - operator can verify correct material thickness from filename without opening the file. Format matches industry standard (part_spec_qty pattern). **UUID dictionary keys must be strings** - when building lookup dictionaries with UUIDs from Supabase, always convert to string with `str(uuid)` for both keys and lookups, as UUID equality checks can fail silently.
+37. **Backend reload requires killing all Python processes** -- On Windows, uvicorn's `--reload` flag doesn't always properly restart when code changes. Multiple zombie Python processes can accumulate on port 8001, and requests may be routed to old processes with stale code. **Always kill ALL Python processes before restarting backend:** `taskkill /F /IM python.exe`, then verify port 8001 is free with `netstat -ano | findstr 8001`, then start a single clean backend. VS Code integrated terminals can auto-start multiple servers. Use a single dedicated terminal for backend development.
 
 ---
 
-**Last Updated:** 2026-05-22
-**Version:** 3.7.2
+### 37. Backend Code Changes Not Taking Effect
+
+**Problem:** When modifying Python backend code (especially in `app/routes/files.py`), changes may not take effect even with uvicorn's `--reload` flag. Multiple zombie Python processes can accumulate on port 8001, and requests may be handled by old processes with stale code.
+
+**Symptoms:**
+- Code changes don't appear in behavior (e.g., PDF stamps don't move)
+- Backend logs don't show expected debug output
+- `netstat -ano | findstr 8001` shows multiple LISTENING processes
+- Iteration numbers increment but visual changes don't appear
+
+**Solution:**
+1. Kill ALL Python processes: `taskkill /F /IM python.exe`
+2. Verify port 8001 is free: `netstat -ano | findstr 8001` should return empty
+3. Start a single clean backend: `cd backend && python -m uvicorn app.main:app --reload --port 8001`
+4. Verify single listener: `netstat -ano | findstr 8001` should show ONE process
+
+**Why This Happens:**
+- Windows doesn't always release port bindings immediately
+- Multiple terminal sessions may have started backends
+- VS Code integrated terminals may auto-start servers
+- The `--reload` flag watches files but may not properly restart in all cases
+
+**Prevention:**
+- Always check for existing processes before starting backend
+- Use a single terminal for backend development
+- Add `flush=True` to print statements for immediate output visibility
+
+**Files Affected:** Any backend route file, especially `backend/app/routes/files.py`
+
+**Related Pitfalls:**
+- Similar to pitfall #1 (service restarts) - services can cache old code
+- Applies to any hot-reload development workflow on Windows
+
+**Commit:** (Current session)
+
+---
+
+**Last Updated:** 2026-05-24
+**Version:** 3.7.4
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)
