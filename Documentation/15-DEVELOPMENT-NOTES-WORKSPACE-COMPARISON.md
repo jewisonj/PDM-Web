@@ -1438,6 +1438,92 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 
 ---
 
+### 39. Vue Proxy Breaks External Library Private Fields (shallowRef Pattern)
+
+**Problem:** When integrating PDF.js library with Vue 3 for PDF measurement tool, the PDF document object became inaccessible after being stored in a `ref()`. Attempting to call methods on the PDF document returned "Cannot read private property #X" errors, and the PDF would not render.
+
+**Root Cause:** Vue 3 wraps all objects in `ref()` with JavaScript Proxy objects to track reactivity. When the Proxy wraps an object with private class fields (fields defined with `#` syntax), those fields become inaccessible because Proxy cannot intercept Symbol-based property access. PDF.js `PDFDocumentProxy` uses private fields internally, so the Proxy breaks all internal state access.
+
+**Code Pattern (Wrong):**
+```typescript
+import * as pdfjsLib from 'pdfjs-dist'
+
+// This wraps PDFDocumentProxy in a Proxy, breaking private fields
+const pdfDoc = ref<pdfjsLib.PDFDocumentProxy | null>(null)
+
+async function loadPdf() {
+  const loadingTask = pdfjsLib.getDocument(url)
+  pdfDoc.value = await loadingTask.promise  // Wrapped in Proxy here!
+
+  // Error when trying to access internal methods:
+  const page = await pdfDoc.value.getPage(1)  // "Cannot read private field"
+}
+```
+
+**Symptoms:**
+- PDF fails to render in canvas
+- Console errors: "Cannot read private property #X of PDFDocumentProxy"
+- PDF.js methods return undefined or throw exceptions
+- Works fine outside Vue components (plain JavaScript)
+
+**Diagnosis:**
+1. Checked browser console and saw private field access errors
+2. Tested same PDF.js code in plain JavaScript - worked fine
+3. Realized the issue was Vue's reactivity system wrapping the object
+4. Researched Vue 3 documentation and found `shallowRef()` for this exact case
+5. Tested `shallowRef()` instead of `ref()` - PDF worked immediately
+
+**Fix:** Use `shallowRef()` instead of `ref()` for external library objects with private fields:
+
+```typescript
+import { shallowRef } from 'vue'
+import * as pdfjsLib from 'pdfjs-dist'
+
+// shallowRef skips proxy wrapping - keeps original object intact
+const pdfDoc = shallowRef<pdfjsLib.PDFDocumentProxy | null>(null)
+
+async function loadPdf() {
+  const loadingTask = pdfjsLib.getDocument(url)
+  pdfDoc.value = await loadingTask.promise  // Not wrapped in Proxy
+
+  // Works fine - no private field access errors:
+  const page = await pdfDoc.value.getPage(1)  // Success!
+}
+```
+
+**Why This Works:**
+- `shallowRef()` only tracks changes at the top level, doesn't deep-proxy inner objects
+- PDF.js object keeps all private fields accessible
+- Reactivity still works - replacing the entire PDF document triggers re-renders
+- No loss of functionality, just no reactivity on inner properties (which don't change anyway)
+
+**Files Changed:**
+- `frontend/src/components/PdfMeasure.vue` - Line 24: `const pdfDoc = shallowRef<pdfjsLib.PDFDocumentProxy | null>(null)`
+
+**Prevention:**
+- **When integrating external libraries:** Check if the library uses private fields or Symbol-based properties
+- **If private fields are used:** Use `shallowRef()` instead of `ref()`
+- **General pattern:** For objects that manage their own internal state (like PDF.js, Canvas API, D3.js), use `shallowRef()`
+- **When in doubt:** Try `shallowRef()` first for external libraries, switch to `ref()` only if you need deep reactivity
+
+**Key Insight:**
+The `shallowRef()` / `ref()` choice is about **what needs to be reactive**, not about whether to use reactivity. PDF.js object is replaced wholesale (entire new document loaded), not mutated piece-by-piece. `shallowRef()` captures that pattern perfectly.
+
+**Related Patterns:**
+- Similar to context-specific tool choices (use the right tool for the pattern)
+- Vue's `markRaw()` is another option but `shallowRef()` is cleaner here
+- D3.js selections, Canvas API contexts, and other library objects have same pattern
+
+**Applies To:**
+- PDF.js library integration
+- D3.js selections
+- Canvas API contexts
+- Any external library with private fields or Symbol-based state
+
+**Commit:** (Current session - PDF Measurement Tool feature)
+
+---
+
 **Last Updated:** 2026-05-28
-**Version:** 3.7.5
+**Version:** 3.7.6
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

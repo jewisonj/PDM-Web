@@ -7,9 +7,104 @@
 
 ## Current Version
 
-### v3.7.5 (2026-05-27) -- Auto-Queue DXF Generation
+### v3.7.6 (2026-05-28) -- PDF Measurement Tool
 
 **Status:** Current Production Release
+
+**Summary:** Added interactive PDF measurement tool allowing shop floor to measure dimensions on drawings. Includes calibration mode, measurement mode, and magnifier overlay.
+
+#### Features Added
+
+**PDF Measurement Tool**
+
+Allows shop floor users to measure dimensions directly on PDF drawings without leaving the application:
+
+- **Calibration Mode:** Click "Calibrate" → draw line on known dimension (e.g., 1" scale bar) → enter actual length → click "Calibrate"
+- **Measurement Mode:** Click "Measure" → click two points on PDF → distance calculated in calibrated units
+- **Unit Selection:** Toggle between inches (in) and millimeters (mm)
+- **Magnifier Overlay:** 3x zoom magnifier (120px circle) assists with precise point selection
+- **Multi-Page Support:** Page up/down buttons to navigate multi-page PDFs
+- **Stored Measurements:** All measurements shown in list below PDF
+- **Clear Measurements:** Button to clear all measurements and start fresh
+
+**Integration Points:**
+
+- **Part Lookup Page:** "Measure" button next to PDF viewer in MrpPartLookupView
+- **Shop Terminal:** "Measure" button on Shop View (MrpShopView)
+
+**User Workflow:**
+
+1. Open a part with PDF in Part Lookup or Shop Terminal
+2. Click "Measure" button to open measurement tool
+3. Click "Calibrate" → draw line on known dimension on PDF
+4. Enter actual length (e.g., 1" for scale bar)
+5. Click "Calibrate" button → scaling established
+6. Click "Measure" → click two points on PDF
+7. Distance appears in list below (in calibrated units)
+8. Repeat for multiple measurements
+9. Click X to close measurement tool
+
+#### Backend Changes
+
+No backend changes required. Feature uses existing PDF URLs from Supabase Storage.
+
+#### Frontend Changes
+
+**New Component:** `frontend/src/components/PdfMeasure.vue`
+
+- Standalone measurement component
+- Props: `pdfUrl` (string), `partNumber` (optional string)
+- Emits: `close` event
+- Uses PDF.js library for document rendering
+- Canvas overlays for measurement visualization
+
+**Modified Files:**
+
+- `frontend/src/views/MrpPartLookupView.vue` -- Added "Measure" button in PDF detail panel
+- `frontend/src/views/MrpShopView.vue` -- Added "Measure" button in PDF viewer
+
+**Technical Decision: shallowRef for PDF.js**
+
+The PDF.js `PDFDocumentProxy` object contains private class fields that become inaccessible when wrapped in a Vue reactive proxy. Solution: Use `shallowRef()` instead of `ref()`:
+
+```typescript
+// WRONG: Vue proxy breaks PDF.js internal state
+const pdfDoc = ref<pdfjsLib.PDFDocumentProxy | null>(null)
+
+// CORRECT: shallowRef skips proxy wrapping, keeps object intact
+const pdfDoc = shallowRef<pdfjsLib.PDFDocumentProxy | null>(null)
+```
+
+This is a critical pattern when integrating external libraries that use private fields or Symbol-based properties.
+
+#### Use Cases
+
+- **Dimension Verification:** Shop floor verifies drawing dimensions before manufacturing
+- **Off-the-Shelf Parts:** Measure supplier datasheets to verify part dimensions
+- **Quality Control:** Compare actual manufactured parts against PDF drawing dimensions
+- **Design Review:** Engineers verify dimensions without opening CAD software
+- **Documentation:** No need to print drawings or use separate measurement tools
+
+#### Files Changed Summary
+
+- `frontend/src/components/PdfMeasure.vue` (new) -- Measurement tool component
+- `frontend/src/views/MrpPartLookupView.vue` -- Added measure button and modal
+- `frontend/src/views/MrpShopView.vue` -- Added measure button and modal
+- `TODO.md` -- Updated with v3.7.6 feature list
+
+#### Technical Notes
+
+- Calibration unit is global to measurement session (applies to all subsequent measurements)
+- Magnifier zoom is 3x and centered on mouse cursor
+- Canvas rendering uses `scale` factor (1.5x by default) for crisp display
+- Pixel-to-unit conversion: `distance_in_units = pixel_distance / calibration_scale`
+- PDF pages rendered on demand (not all pages pre-rendered)
+
+---
+
+### v3.7.5 (2026-05-27) -- Auto-Queue DXF Generation
+
+**Status:** Previous Release
 
 **Summary:** Re-enabled automatic DXF generation queuing when STEP files are uploaded for items with `needs_dxf=true` flag.
 

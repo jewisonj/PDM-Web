@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-05-27
-**Current Version:** v3.7.5
+**Last Updated:** 2026-05-28
+**Current Version:** v3.7.6
 **Project Status:** Active Development / Production Use
 
 ---
@@ -14,7 +14,17 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.3 - v3.7.5)
+## Recently Completed (v3.3 - v3.7.6)
+
+### v3.7.6 (2026-05-28) - PDF Measurement Tool
+- [x] Added PDF measurement tool to Part Lookup and Shop Terminal views
+- [x] Calibration mode: draw line on known dimension, enter actual length
+- [x] Measurement mode: click two points on PDF to measure distance
+- [x] Fixed Vue proxy compatibility with PDF.js using shallowRef for PDFDocumentProxy
+- [x] Measurement results displayed with unit selection (inches or mm)
+- [x] Magnifier overlay assists with precise point selection
+- [x] Multi-page PDF support with page navigation
+- [x] Measure button added to MrpPartLookupView and MrpShopView
 
 ### v3.7.5 (2026-05-27) - Auto-Queue DXF Generation
 - [x] Re-enabled automatic DXF queuing when STEP files uploaded for items with `needs_dxf=true`
