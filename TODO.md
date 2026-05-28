@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-05-23
-**Current Version:** v3.7.4
+**Last Updated:** 2026-05-27
+**Current Version:** v3.7.5
 **Project Status:** Active Development / Production Use
 
 ---
@@ -14,7 +14,13 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.3 - v3.7.4)
+## Recently Completed (v3.3 - v3.7.5)
+
+### v3.7.5 (2026-05-27) - Auto-Queue DXF Generation
+- [x] Re-enabled automatic DXF queuing when STEP files uploaded for items with `needs_dxf=true`
+- [x] Upload endpoint checks item's `needs_dxf` flag after STEP file save
+- [x] Creates pending GENERATE_DXF job with item_number and auto_queued flag in payload
+- [x] Engineers no longer need to manually queue DXF generation for sheetmetal parts
 
 ### v3.7.4 (2026-05-23) - PDF Revision/Iteration Stamping
 - [x] Added automatic revision.iteration stamp to uploaded PDFs (e.g., "A.15")

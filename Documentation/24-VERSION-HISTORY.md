@@ -7,9 +7,52 @@
 
 ## Current Version
 
-### v3.7.4 (2026-05-23) -- PDF Revision/Iteration Stamping
+### v3.7.5 (2026-05-27) -- Auto-Queue DXF Generation
 
 **Status:** Current Production Release
+
+**Summary:** Re-enabled automatic DXF generation queuing when STEP files are uploaded for items with `needs_dxf=true` flag.
+
+#### Features Added
+
+**Auto-Queue DXF for STEP Uploads**
+
+When a STEP file is uploaded for an item that has `needs_dxf=true` in the routing:
+
+- **Automatic Detection:** Upload endpoint checks item's `needs_dxf` flag after STEP file upload
+- **Work Queue Entry:** Creates pending GENERATE_DXF job with item_id, file_id, and payload
+- **Payload Includes:** `item_number` and `auto_queued: true` flag for tracking
+- **No Manual Action:** Engineers no longer need to manually queue DXF generation for sheetmetal parts
+
+**Backend Changes:**
+
+`POST /api/files/upload` in `backend/app/routes/files.py`:
+
+```python
+# Auto-queue DXF generation for STEP files when item has needs_dxf flag
+if file_type == "STEP":
+    item_check = supabase.table("items").select("needs_dxf").eq("id", item_id).single().execute()
+    if item_check.data and item_check.data.get("needs_dxf", False):
+        supabase.table("work_queue").insert({
+            "item_id": item_id,
+            "file_id": file_record["id"],
+            "task_type": "GENERATE_DXF",
+            "status": "pending",
+            "payload": {"item_number": clean_item_number, "auto_queued": True}
+        }).execute()
+```
+
+#### Use Cases
+
+- **Streamlined Workflow:** Upload STEP → DXF automatically queued → Worker processes → DXF available for nesting
+- **Sheetmetal Parts:** Parts marked with `needs_dxf=true` in routing get automatic flat pattern generation
+- **Bulk Processing:** Engineers can upload multiple STEP files and DXF jobs queue automatically
+
+---
+
+### v3.7.4 (2026-05-23) -- PDF Revision/Iteration Stamping
+
+**Status:** Previous Release
 
 **Summary:** Added automatic revision.iteration stamping to uploaded PDFs, with each file tracking its own iteration count that auto-increments on subsequent uploads.
 
