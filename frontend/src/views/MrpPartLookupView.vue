@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { supabase } from '../services/supabase'
+import { supabase, API_BASE_URL } from '../services/supabase'
 import { getSignedUrlFromPath } from '../services/storage'
 
 interface Project {
@@ -71,6 +71,12 @@ const activeTab = ref<'pdf' | 'details'>('pdf')
 const itemsWithPdf = ref(new Set<string>())
 const itemsWithStep = ref(new Set<string>())
 const itemsWithDxf = ref(new Set<string>())
+const itemsWithSvg = ref(new Set<string>())
+const itemsWithCad = ref(new Set<string>())
+
+// File download/generate state
+const generatingDxf = ref(false)
+const itemFiles = ref<FileRecord[]>([])
 
 // Computed
 const projectOptions = computed(() => {
@@ -119,55 +125,34 @@ async function loadProjects() {
 async function loadFiles() {
   // Load all files and build availability sets (like Routing Editor)
 
-  // FIRST: Check what's actually in the files table
-  const { data: allFilesCheck, error: allFilesError } = await supabase
+  // Load all file types with full data
+  const { data: allFiles, error: filesError } = await supabase
     .from('files')
     .select('*')
-    .limit(5)
-
-  console.log('[Files] Database check - first 5 files:', allFilesCheck)
-  if (allFilesError) console.error('[Files] Database check error:', allFilesError)
-
-  // Load PDFs with all columns (like Routing Editor does)
-  const { data: pdfData, error: pdfError } = await supabase
-    .from('files')
-    .select('*')
-    .eq('file_type', 'PDF')
     .not('file_path', 'is', null)
 
-  if (pdfError) console.error('[Files] PDF query error:', pdfError)
+  if (filesError) {
+    console.error('[Files] Query error:', filesError)
+    return
+  }
 
-  const { data: stepData } = await supabase
-    .from('files')
-    .select('item_id')
-    .eq('file_type', 'STEP')
-    .not('file_path', 'is', null)
+  // Store all files
+  files.value = allFiles || []
 
-  const { data: dxfData } = await supabase
-    .from('files')
-    .select('item_id')
-    .eq('file_type', 'DXF')
-    .not('file_path', 'is', null)
-
-  // Store full file records for PDFs (needed for opening)
-  files.value = pdfData || []
-
-  // Create sets for fast lookups
-  itemsWithPdf.value = new Set((pdfData || []).map(f => f.item_id))
-  itemsWithStep.value = new Set((stepData || []).map(f => f.item_id))
-  itemsWithDxf.value = new Set((dxfData || []).map(f => f.item_id))
+  // Create sets for fast lookups by file type
+  itemsWithPdf.value = new Set((allFiles || []).filter(f => f.file_type === 'PDF').map(f => f.item_id))
+  itemsWithStep.value = new Set((allFiles || []).filter(f => f.file_type === 'STEP').map(f => f.item_id))
+  itemsWithDxf.value = new Set((allFiles || []).filter(f => f.file_type === 'DXF').map(f => f.item_id))
+  itemsWithSvg.value = new Set((allFiles || []).filter(f => f.file_type === 'SVG').map(f => f.item_id))
+  itemsWithCad.value = new Set((allFiles || []).filter(f => f.file_type === 'CAD').map(f => f.item_id))
 
   console.log('[Files] Loaded files:', {
-    pdfs: files.value.length,
+    total: files.value.length,
+    pdfs: itemsWithPdf.value.size,
     steps: itemsWithStep.value.size,
-    dxfs: itemsWithDxf.value.size
+    dxfs: itemsWithDxf.value.size,
+    svgs: itemsWithSvg.value.size
   })
-
-  // Show sample of actual file records
-  if (files.value.length > 0) {
-    console.log('[Files] Sample PDF file record:', files.value[0])
-    console.log('[Files] Sample PDF item_ids:', Array.from(itemsWithPdf.value).slice(0, 5))
-  }
 }
 
 async function loadParts() {
@@ -177,7 +162,7 @@ async function loadParts() {
   if (projectFilter.value === 'all') {
     const { data: itemsData, error: itemsError } = await supabase
       .from('items')
-      .select('id, item_number, description, material, thickness')
+      .select('id, item_number, name, description, material, thickness')
       .order('item_number')
 
     if (itemsError) {
@@ -216,7 +201,7 @@ async function loadParts() {
         id: item.id,
         item_id: item.id,
         item_number: item.item_number,
-        description: item.description,
+        description: item.name || item.description,
         quantity: 1,
         has_pdf,
         has_step,
@@ -269,6 +254,7 @@ async function loadParts() {
       items (
         id,
         item_number,
+        name,
         description,
         material,
         thickness
@@ -330,7 +316,7 @@ async function loadParts() {
       id: p.id,
       item_id: item.id,
       item_number: item.item_number,
-      description: item.description,
+      description: item.name || item.description,
       quantity: p.quantity,
       has_pdf,
       has_step,
@@ -360,65 +346,69 @@ async function loadParts() {
 }
 
 async function selectPart(part: Part) {
+  // Set selected part immediately for UI feedback
   selectedPart.value = part
   activeTab.value = 'pdf'
   pdfUrl.value = null
+  itemFiles.value = []
 
-  // Load PDF using storage helper (same as Routing Editor)
-  const pdfFile = files.value.find(f => f.item_id === part.item_id && f.file_type === 'PDF')
-
-  if (pdfFile && pdfFile.file_path) {
-    try {
-      console.log('[PDF] Loading PDF for part:', part.item_number)
-      console.log('[PDF] File path:', pdfFile.file_path)
-
-      const url = await getSignedUrlFromPath(pdfFile.file_path)
-      if (url) {
-        pdfUrl.value = url
-        console.log('[PDF] Successfully loaded PDF URL')
-      } else {
-        console.warn('[PDF] Failed to get signed URL')
-      }
-    } catch (e) {
-      console.error('[PDF] Error loading PDF:', e)
-    }
-  } else {
-    console.log('[PDF] No PDF file found for part:', part.item_number)
+  // Ensure files are loaded
+  if (files.value.length === 0) {
+    await loadFiles()
   }
 
-  // Load routing
-  const { data: routingData } = await supabase
-    .from('routing')
-    .select(`
-      id,
-      station_id,
-      sequence,
-      est_time_min,
-      workstations (
-        id,
-        station_code,
-        station_name
-      )
-    `)
-    .eq('item_id', part.item_id)
-    .order('sequence')
+  // Load all files for this part
+  itemFiles.value = files.value.filter(f => f.item_id === part.item_id)
 
-  currentRouting.value = (routingData || []).map(r => ({
-    id: r.id,
-    station_id: r.station_id,
-    station_code: (r as any).workstations?.station_code || '',
-    station_name: (r as any).workstations?.station_name || '',
-    sequence: r.sequence,
-    est_time_min: r.est_time_min
-  }))
-
-  // Update URL
-  router.replace({
-    query: {
-      project: projectFilter.value,
-      part: part.item_number
+  // Load PDF
+  const pdfFile = itemFiles.value.find(f => f.file_type === 'PDF')
+  if (pdfFile?.file_path) {
+    const url = await getSignedUrlFromPath(pdfFile.file_path)
+    // Only set if this is still the selected part (handles rapid clicking)
+    if (selectedPart.value?.item_id === part.item_id && url) {
+      pdfUrl.value = url
     }
-  })
+  }
+
+  // Load routing (only if still selected)
+  if (selectedPart.value?.item_id === part.item_id) {
+    const { data: routingData } = await supabase
+      .from('routing')
+      .select(`
+        id,
+        station_id,
+        sequence,
+        est_time_min,
+        workstations (
+          id,
+          station_code,
+          station_name
+        )
+      `)
+      .eq('item_id', part.item_id)
+      .order('sequence')
+
+    if (selectedPart.value?.item_id === part.item_id) {
+      currentRouting.value = (routingData || []).map(r => ({
+        id: r.id,
+        station_id: r.station_id,
+        station_code: (r as any).workstations?.station_code || '',
+        station_name: (r as any).workstations?.station_name || '',
+        sequence: r.sequence,
+        est_time_min: r.est_time_min
+      }))
+    }
+  }
+
+  // Update URL (only if still selected)
+  if (selectedPart.value?.item_id === part.item_id) {
+    router.replace({
+      query: {
+        project: projectFilter.value,
+        part: part.item_number
+      }
+    })
+  }
 }
 
 function goToDashboard() {
@@ -438,6 +428,58 @@ function isStationComplete(stationId: string): boolean {
     c => c.item_id === selectedPart.value!.item_id && c.station_id === stationId
   )
 }
+
+// File operations
+async function openFile(file: FileRecord) {
+  if (!file.file_path) {
+    console.warn('[File] No file_path for file:', file)
+    return
+  }
+
+  try {
+    const url = await getSignedUrlFromPath(file.file_path)
+    if (url) {
+      window.open(url, '_blank')
+    }
+  } catch (e) {
+    console.error('[File] Error opening file:', e)
+  }
+}
+
+async function generateDxf() {
+  if (!selectedPart.value) return
+
+  generatingDxf.value = true
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/items/${selectedPart.value.item_id}/generate-dxf`, {
+      method: 'POST'
+    })
+
+    const data = await response.json()
+
+    if (response.ok && data.queued) {
+      // Refresh files after a delay to pick up the new DXF
+      setTimeout(async () => {
+        await loadFiles()
+        // Refresh selected part files
+        itemFiles.value = files.value.filter(f => f.item_id === selectedPart.value?.item_id)
+      }, 2000)
+    } else if (data.dxf_exists) {
+      console.log('[DXF] Already exists')
+    } else {
+      console.error('[DXF] Generation failed:', data)
+    }
+  } catch (e) {
+    console.error('[DXF] Error:', e)
+  } finally {
+    generatingDxf.value = false
+  }
+}
+
+// Computed for file badges
+const hasDxf = computed(() => itemFiles.value.some(f => f.file_type === 'DXF'))
+const hasStep = computed(() => itemFiles.value.some(f => f.file_type === 'STEP'))
 
 // Watch for project changes
 watch(projectFilter, () => {
@@ -563,11 +605,31 @@ onMounted(async () => {
             <div class="part-info">
               <span class="part-number-large">{{ selectedPart.item_number }}</span>
               <span class="part-desc">{{ selectedPart.description || '-' }}</span>
-              <span class="part-qty">Qty: {{ selectedPart.quantity }}</span>
             </div>
-            <div class="part-meta-badges">
-              <span v-if="selectedPart.material" class="info-chip">{{ selectedPart.material }}</span>
-              <span v-if="selectedPart.thickness" class="info-chip">{{ selectedPart.thickness }}"</span>
+            <div class="file-tiles">
+              <!-- File type badges -->
+              <button
+                v-for="file in itemFiles.filter(f => f.file_path)"
+                :key="file.id"
+                class="file-tile"
+                :class="file.file_type.toLowerCase()"
+                @click="openFile(file)"
+                :title="`Open ${file.file_name}`"
+              >
+                {{ file.file_type }}
+              </button>
+
+              <!-- Generate DXF button (if has STEP but no DXF) -->
+              <button
+                v-if="!hasDxf && hasStep"
+                class="file-tile generate-dxf"
+                @click="generateDxf"
+                :disabled="generatingDxf"
+                title="Generate DXF flat pattern"
+              >
+                <i :class="generatingDxf ? 'pi pi-spin pi-spinner' : 'pi pi-plus'"></i>
+                DXF
+              </button>
             </div>
           </div>
 
@@ -666,11 +728,12 @@ onMounted(async () => {
 
 <style scoped>
 .part-lookup-view {
-  min-height: 100vh;
+  height: 100vh;
   background: #020617;
   color: #e5e7eb;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Header */
@@ -768,11 +831,13 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .sidebar-header {
   padding: 1rem;
   border-bottom: 1px solid #1e293b;
+  flex-shrink: 0;
 }
 
 .search-input {
@@ -993,6 +1058,58 @@ onMounted(async () => {
   border-radius: 0.375rem;
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+/* File Tiles (badges) */
+.file-tiles {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.file-tile {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.file-tile.pdf {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+.file-tile.pdf:hover { background: #991b1b; }
+
+.file-tile.svg {
+  background: #365314;
+  color: #bef264;
+}
+.file-tile.svg:hover { background: #3f6212; }
+
+.file-tile.dxf {
+  background: #3f3f46;
+  color: #a1a1aa;
+}
+.file-tile.dxf:hover { background: #52525b; }
+
+.file-tile.step, .file-tile.cad {
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+.file-tile.step:hover, .file-tile.cad:hover { background: #1e40af; }
+
+.file-tile.generate-dxf {
+  background: #065f46;
+  color: #6ee7b7;
+  border: 1px dashed #6ee7b7;
+}
+.file-tile.generate-dxf:hover { background: #047857; }
+.file-tile.generate-dxf:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Tabs */

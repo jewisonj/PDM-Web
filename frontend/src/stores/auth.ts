@@ -55,10 +55,14 @@ export const useAuthStore = defineStore('auth', () => {
 
     // Listen for auth changes (only once)
     supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change:', event)
+      console.log('Auth state change:', event, user.value ? '(already have user)' : '(no user)')
 
       if (event === 'SIGNED_IN' && session) {
-        await fetchUser()
+        // Skip if we already have a user - prevents spurious refetches that can
+        // interfere with Chrome PDF extension message channels
+        if (!user.value) {
+          await fetchUser()
+        }
       } else if (event === 'SIGNED_OUT') {
         user.value = null
       } else if (event === 'TOKEN_REFRESHED' && session) {
