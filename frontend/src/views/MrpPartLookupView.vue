@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase, API_BASE_URL } from '../services/supabase'
 import { getSignedUrlFromPath } from '../services/storage'
+import PdfMeasure from '../components/PdfMeasure.vue'
 
 interface Project {
   id: string
@@ -77,6 +78,9 @@ const itemsWithCad = ref(new Set<string>())
 // File download/generate state
 const generatingDxf = ref(false)
 const itemFiles = ref<FileRecord[]>([])
+
+// Measure mode
+const showMeasureMode = ref(false)
 
 // Computed
 const projectOptions = computed(() => {
@@ -655,6 +659,14 @@ onMounted(async () => {
 
           <!-- PDF Tab -->
           <div v-if="activeTab === 'pdf'" class="tab-content">
+            <div class="pdf-toolbar" v-if="pdfUrl">
+              <button class="measure-btn" @click="showMeasureMode = true" title="Measure distances on the drawing">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                  <path d="M4 20L20 4M4 20l3-1M4 20l1-3M20 4l-3 1M20 4l-1 3"/>
+                </svg>
+                Measure
+              </button>
+            </div>
             <div class="pdf-viewer">
               <iframe v-if="pdfUrl" :src="pdfUrl" />
               <div v-else class="no-pdf">
@@ -723,6 +735,14 @@ onMounted(async () => {
         </template>
       </div>
     </div>
+
+    <!-- PDF Measure Mode -->
+    <PdfMeasure
+      v-if="showMeasureMode && pdfUrl"
+      :pdf-url="pdfUrl"
+      :part-number="selectedPart?.item_number"
+      @close="showMeasureMode = false"
+    />
   </div>
 </template>
 
@@ -1150,6 +1170,35 @@ onMounted(async () => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* PDF Toolbar */
+.pdf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+}
+
+.measure-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #2563eb;
+  border: none;
+  border-radius: 0.375rem;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.measure-btn:hover {
+  background: #1d4ed8;
 }
 
 /* PDF Viewer */

@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '../services/supabase'
+import PdfMeasure from '../components/PdfMeasure.vue'
 
 const router = useRouter()
 
@@ -119,6 +120,7 @@ const showPdfPanel = ref(false)
 const selectedPartForPdf = ref<QueueItem | null>(null)
 const pdfPanelWidth = ref(500)
 const isResizing = ref(false)
+const showMeasureMode = ref(false)
 
 async function loadWorkstations() {
   loading.value = true
@@ -411,6 +413,15 @@ function closePdfPanel() {
   showPdfPanel.value = false
   selectedPartForPdf.value = null
   pdfDisplayUrl.value = null
+  showMeasureMode.value = false
+}
+
+function openMeasureMode() {
+  showMeasureMode.value = true
+}
+
+function closeMeasureMode() {
+  showMeasureMode.value = false
 }
 
 // Panel resize handlers
@@ -796,6 +807,17 @@ onMounted(() => {
           </div>
         </div>
         <div class="panel-footer">
+          <button
+            v-if="pdfDisplayUrl"
+            class="measure-btn"
+            @click="openMeasureMode"
+            title="Measure distances on the drawing"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+              <path d="M4 20L20 4M4 20l3-1M4 20l1-3M20 4l-3 1M20 4l-1 3"/>
+            </svg>
+            Measure
+          </button>
           <a
             v-if="pdfDisplayUrl"
             :href="pdfDisplayUrl"
@@ -809,6 +831,14 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- PDF Measure Mode -->
+    <PdfMeasure
+      v-if="showMeasureMode && pdfDisplayUrl"
+      :pdf-url="pdfDisplayUrl"
+      :part-number="selectedPartForPdf?.item_number"
+      @close="closeMeasureMode"
+    />
   </div>
 </template>
 
@@ -1525,6 +1555,25 @@ onMounted(() => {
 
 .pdf-open-btn i {
   font-size: 1rem;
+}
+
+.measure-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  background: #2563eb;
+  border: none;
+  border-radius: 0.5rem;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.measure-btn:hover {
+  background: #1d4ed8;
 }
 
 .empty-state {
