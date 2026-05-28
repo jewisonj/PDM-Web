@@ -410,8 +410,19 @@ async def upload_file(
 
     file_record = result.data[0]
 
-    # Note: DXF/SVG generation is now controlled via needs_dxf flag in routing editor
-    # No automatic queuing on STEP upload
+    # Auto-queue DXF generation for STEP files when item has needs_dxf flag
+    if file_type == "STEP":
+        # Check if item has needs_dxf flag set
+        item_check = supabase.table("items").select("needs_dxf").eq("id", item_id).single().execute()
+        if item_check.data and item_check.data.get("needs_dxf", False):
+            print(f"Auto-queuing DXF generation for {clean_item_number}", flush=True)
+            supabase.table("work_queue").insert({
+                "item_id": item_id,
+                "file_id": file_record["id"],
+                "task_type": "GENERATE_DXF",
+                "status": "pending",
+                "payload": {"item_number": clean_item_number, "auto_queued": True}
+            }).execute()
 
     return file_record
 
