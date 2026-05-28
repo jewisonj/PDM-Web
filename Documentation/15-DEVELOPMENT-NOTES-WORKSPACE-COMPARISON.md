@@ -1368,6 +1368,76 @@ A `.env` file in `backend/` provides these values for local development. In prod
 
 ---
 
-**Last Updated:** 2026-05-24
-**Version:** 3.7.4
+### 38. Chrome PDF Extension Crash from Supabase Auth Events
+
+**Problem:** Opening files via `window.open()` to Supabase signed URLs caused the Chrome PDF viewer extension to crash with "Aw, snap!" error. The page would briefly load the PDF, then crash completely.
+
+**Root Cause:** Supabase fires `SIGNED_IN` auth events when generating signed URLs, even if the user is already authenticated. The auth handler in `auth.ts` called `fetchUser()` on every `SIGNED_IN` event, which made API requests to `/api/auth/user`. These API requests disrupted Chrome's PDF viewer extension message channels, causing the extension to crash mid-render.
+
+**Flow:**
+1. User clicks "View PDF" button
+2. Frontend calls `getSignedUrlFromPath()` to get Supabase signed URL
+3. Supabase client fires `SIGNED_IN` auth event during signed URL generation
+4. Auth handler calls `fetchUser()` (unnecessary - user already loaded)
+5. `fetchUser()` makes `/api/auth/user` request
+6. Chrome PDF viewer extension receives message channel disruption
+7. PDF extension crashes with "Aw, snap!" error
+
+**Symptoms:**
+- Clicking "View PDF" button shows PDF briefly (~1 second), then crashes
+- Browser console shows "Aw, snap!" error page
+- Happens consistently when opening PDFs via `window.open()`
+- Works fine when downloading files (no extension involvement)
+- Issue specific to Chrome's built-in PDF viewer
+
+**Diagnosis:**
+1. Added logging to auth event handler to see event frequency
+2. Discovered `SIGNED_IN` events firing every time signed URL was generated
+3. Confirmed `fetchUser()` was making API requests on each event
+4. Tested disabling auth handler entirely - PDF viewing worked fine
+5. Tested skipping `fetchUser()` when user already loaded - PDF viewing worked fine
+
+**Fix:** Added guard clause in auth event handler to skip `fetchUser()` if user already loaded:
+
+```typescript
+// frontend/src/services/auth.ts
+
+supabase.auth.onAuthStateChange(async (event, session) => {
+  if (event === 'SIGNED_IN') {
+    // Skip fetchUser if already loaded (prevents Chrome PDF extension crash)
+    if (currentUser.value) {
+      return
+    }
+    await fetchUser()
+  }
+  // ... other event handling
+})
+```
+
+**Why This Works:**
+- Prevents redundant API calls when user is already authenticated
+- Avoids disrupting Chrome's PDF viewer extension message channels
+- User data stays fresh from initial auth, no need to refetch on every signed URL
+- Still fetches user on genuine sign-in events (when `currentUser.value` is null)
+
+**Files Changed:**
+- `frontend/src/services/auth.ts` - Added guard clause in `onAuthStateChange` handler
+
+**Prevention:**
+- **Avoid unnecessary API calls in auth event handlers** - check if data is already loaded before fetching
+- **Be aware of auth event triggers** - Supabase fires events for internal operations like signed URL generation
+- **Test file viewing in Chrome** - Chrome PDF extension is sensitive to message channel disruptions
+- **Use browser DevTools Network tab** - helps identify unexpected API calls during user interactions
+- **Consider idempotency** - auth handlers should safely handle duplicate events
+
+**Related Patterns:**
+- Similar to performance issues in other pitfalls - reducing unnecessary operations
+- Chrome extension message channels are fragile and need stable contexts
+
+**Commit:** (Current session)
+
+---
+
+**Last Updated:** 2026-05-28
+**Version:** 3.7.5
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)
