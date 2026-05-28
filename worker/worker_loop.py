@@ -206,8 +206,15 @@ def process_task(supabase, task: dict):
     task_id = task["id"]
     task_type = task["task_type"]
     item_id = task["item_id"]
+    file_id = task.get("file_id")
     payload = task.get("payload") or {}
     file_path = payload.get("file_path", "")
+
+    # If file_path not in payload, look it up from files table using file_id
+    if not file_path and file_id:
+        file_result = supabase.table("files").select("file_path").eq("id", file_id).limit(1).execute()
+        if file_result.data and file_result.data[0].get("file_path"):
+            file_path = file_result.data[0]["file_path"]
 
     if task_type not in TASK_MAP:
         complete_task(supabase, task_id, f"Unknown task type: {task_type}")
