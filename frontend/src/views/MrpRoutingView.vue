@@ -645,16 +645,15 @@ async function loadData() {
 
     if (itemsError) throw itemsError
 
-    // Get routing counts per item
+    // Get routing counts per item via RPC (bypasses 1000 row limit)
     const { data: routingData, error: routingError } = await supabase
-      .from('routing')
-      .select('item_id')
+      .rpc('get_routing_counts')
 
     if (routingError) throw routingError
 
     const routingCounts = new Map<string, number>()
-    ;(routingData || []).forEach(r => {
-      routingCounts.set(r.item_id, (routingCounts.get(r.item_id) || 0) + 1)
+    ;(routingData || []).forEach((r: { item_id: string; count: number }) => {
+      routingCounts.set(r.item_id, r.count)
     })
 
     // Get items with PDFs

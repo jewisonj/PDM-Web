@@ -185,6 +185,10 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
                     edges_2d.append(arc.toShape())
                     edge_stats["Arc"] += 1
                 except Exception:
+                    # Skip zero-length edges (coincident points)
+                    if p1.distanceToPoint(p2) < 1e-6:
+                        edge_stats["Skipped"] += 1
+                        return
                     edges_2d.append(Part.makeLine(p1, p2))
                     edge_stats["Fallback"] += 1
             elif len(edge.Vertexes) == 0:
@@ -225,6 +229,10 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
         if len(edge.Vertexes) >= 2:
             p1 = get_2d_coords(edge.Vertexes[0].Point)
             p2 = get_2d_coords(edge.Vertexes[-1].Point)
+            # Skip zero-length edges (coincident points)
+            if p1.distanceToPoint(p2) < 1e-6:
+                edge_stats["Skipped"] += 1
+                return
             edges_2d.append(Part.makeLine(p1, p2))
             edge_stats["Fallback"] += 1
             print(f"  {label}Fallback: line from vertex to vertex")
