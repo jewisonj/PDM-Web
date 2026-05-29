@@ -92,7 +92,8 @@
       "WebFetch(domain:community.ptc.com)",
       "WebFetch(domain:www.mcadcentral.com)",
       "WebFetch(domain:www.eng-tips.com)",
-      "WebFetch(domain:creomapkeys.wordpress.com)"
+      "WebFetch(domain:creomapkeys.wordpress.com)",
+      "Bash(points\" crashes\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ],
     "deny": []
   },
