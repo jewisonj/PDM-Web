@@ -402,7 +402,23 @@ This is expected behavior. Items with the `zzz` prefix are reference-only and ar
 
 **Symptom:** Incorrect data in the database, missing items, or inconsistent records.
 
-### Step 1: Verify Item Number Format
+### Step 1: Routing Badge Shows "No Routing" When Routing Exists
+
+**Symptom:** MRP routing view shows "No routing" for items that have routing entries in the database.
+
+**Cause:** Supabase has a 1000-row query limit. If the routing table has >1000 rows, queries that fetch all routing data will be truncated, causing items beyond row 1000 to show as "No routing".
+
+**Fix:** The system now uses an RPC function `get_routing_counts()` to bypass this limit. If you see this issue:
+
+1. Check routing table size: `SELECT COUNT(*) FROM routing`
+2. If >1000 rows, verify the RPC function exists: `SELECT * FROM get_routing_counts() LIMIT 5`
+3. If function doesn't exist, apply migration `add_routing_counts_function`
+
+**See:** Development Notes pitfall #40 for full details.
+
+---
+
+### Step 2: Verify Item Number Format
 
 Item numbers must match the pattern `[a-z]{3}\d{4,6}` (3 lowercase letters + 4-6 digits).
 
@@ -416,7 +432,7 @@ ORDER BY item_number;
 
 This should return no rows. Any results indicate invalid item numbers.
 
-### Step 2: Check for Duplicate Items
+### Step 3: Check for Duplicate Items
 
 ```sql
 SELECT item_number, COUNT(*) as cnt
@@ -427,7 +443,7 @@ HAVING COUNT(*) > 1;
 
 The `item_number` column has a unique constraint, so true duplicates should not exist. If you see this error during inserts, the upsert logic should handle it.
 
-### Step 3: Orphaned Files
+### Step 4: Orphaned Files
 
 Files linked to deleted items:
 
@@ -438,7 +454,7 @@ LEFT JOIN items i ON f.item_id = i.id
 WHERE i.id IS NULL;
 ```
 
-### Step 4: Orphaned BOM Entries
+### Step 5: Orphaned BOM Entries
 
 BOM entries referencing deleted items:
 
@@ -450,7 +466,7 @@ LEFT JOIN items c ON b.child_item_id = c.id
 WHERE p.id IS NULL OR c.id IS NULL;
 ```
 
-### Step 5: Check items vs files Consistency
+### Step 6: Check items vs files Consistency
 
 Every file should have a valid `item_id`:
 
@@ -459,6 +475,32 @@ SELECT f.file_name, f.item_id
 FROM files f
 WHERE f.item_id NOT IN (SELECT id FROM items);
 ```
+
+---
+
+## DXF/SVG Generation Issues
+
+**Symptom:** DXF or SVG generation fails or produces incorrect output.
+
+### DXF Generation Crashes with "Line through identical points"
+
+**Error:** `Part.OCCError: Line through identical points` in FreeCAD worker logs.
+
+**Cause:** The STEP file contains degenerate geometry (zero-length edges, zero-radius arcs, or coincident points). This can happen when:
+- CAD model has sharp corners that export as zero-radius arcs
+- Boolean operations create collapsed edges
+- Surface intersections produce tiny slivers
+- STEP import/export introduces duplicate vertices
+
+**Fix:** The system now skips zero-length edges automatically. If you see this error:
+
+1. Check FreeCAD worker logs: `docker logs pdm-freecad-worker`
+2. Look for "Skipping degenerate arc edge" or "Skipping zero-length segment" messages
+3. If DXF generation still fails, the STEP file may need geometry cleanup in CAD
+
+**Workaround:** Re-export STEP file from CAD with geometry repair option enabled.
+
+**See:** Development Notes pitfall #41 for technical details.
 
 ---
 

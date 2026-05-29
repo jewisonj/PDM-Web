@@ -1524,6 +1524,155 @@ The `shallowRef()` / `ref()` choice is about **what needs to be reactive**, not 
 
 ---
 
+### 40. Routing Badge Not Showing (Supabase 1000 Row Limit)
+
+**Symptom:** The routing badge in MrpRoutingView.vue showed "No routing" for items like sjp00020 even though routing existed in the database. Some parts showed routing correctly, others did not, with no obvious pattern.
+
+**Root Cause:** Supabase has a server-side hard limit of 1000 rows per query. The routing table had 1016+ rows. When the frontend queried `supabase.from('routing').select('item_id')` to get all item IDs with routing, Supabase truncated results at 1000 rows. Items whose routing entries fell beyond row 1000 (like sjp00020) weren't included in the returned data, so the routing count for those items was zero.
+
+**Diagnosis:**
+1. Checked routing table row count in Supabase SQL editor: `SELECT COUNT(*) FROM routing` returned 1016+
+2. Checked query in browser DevTools Network tab - response only contained ~1000 rows
+3. Realized the frontend was using a plain `select()` query with no pagination
+4. Researched Supabase docs and confirmed 1000-row server limit exists
+5. Tested with RPC function approach - worked correctly for all items
+
+**Fix:** Created a PostgreSQL RPC function `get_routing_counts()` that uses SQL GROUP BY to return item_id/count pairs, bypassing the row limit:
+
+```sql
+-- Migration: add_routing_counts_function
+CREATE OR REPLACE FUNCTION get_routing_counts()
+RETURNS TABLE (item_id UUID, routing_count BIGINT) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT r.item_id, COUNT(*)::BIGINT as routing_count
+  FROM routing r
+  GROUP BY r.item_id;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+Updated MrpRoutingView.vue to use RPC instead of direct table query:
+
+```typescript
+// OLD (broken for items beyond row 1000)
+const { data: allRouting } = await supabase
+  .from('routing')
+  .select('item_id')
+
+// NEW (works for any table size)
+const { data: routingCounts } = await supabase
+  .rpc('get_routing_counts')
+```
+
+**Why This Works:**
+- RPC functions return computed results, not raw table rows
+- The GROUP BY aggregation happens server-side in Postgres (no row limit)
+- Result set is item_id + count pairs (one row per item with routing)
+- Typical result is 50-200 rows (number of unique items with routing), well below 1000-row limit
+- Even with 10,000 routing entries, result set stays small
+
+**Files Changed:**
+- Database migration: `add_routing_counts_function.sql` (new RPC function)
+- `frontend/src/views/MrpRoutingView.vue` (lines ~145-155, changed to use RPC)
+
+**Prevention:**
+- **Never assume unlimited query results** - Supabase has hard limits
+- **Use RPC functions for aggregations** - GROUP BY, COUNT, SUM operations should happen server-side
+- **Test with production-scale data** - Small dev datasets don't reveal row limit issues
+- **Check table row counts** - If a table has >500 rows, assume it will eventually hit the 1000 limit
+- **Use pagination or RPC** - For tables that grow over time, plan for the limit from the start
+
+**Related Patterns:**
+- Similar to N+1 query batching (pitfall #35) - both involve optimizing database access patterns
+- RPC functions are the Supabase equivalent of stored procedures for aggregations
+
+**Commit:** 3ac1a85
+
+---
+
+### 41. DXF Generation Crash on Coincident Points
+
+**Symptom:** DXF generation for sjp00020 failed with error `Part.OCCError: Line through identical points`. The flattening script crashed during arc or discretization processing, preventing DXF output from being created.
+
+**Root Cause:** The `flatten_sheetmetal.py` script had two code paths that could produce zero-length edges (coincident start/end points):
+
+1. **Arc fallback case (line ~189):** When arc processing failed, the script fell back to creating lines. If the arc start and end points were identical (zero-radius arc or degenerate geometry), it tried to create a line with identical start/end points, which crashes FreeCAD's Part module.
+
+2. **Discretize fallback case (line ~233):** When edge type was unknown, the script discretized the edge into line segments. If discretization produced consecutive points that were identical (e.g., very small curve segments), it tried to create zero-length lines, causing the same crash.
+
+**Diagnosis:**
+1. Ran DXF generation for sjp00020 via MRP dashboard "Generate DXF" button
+2. Backend logs showed `Part.OCCError: Line through identical points` from FreeCAD worker
+3. Checked `flatten_sheetmetal.py` and found arc fallback and discretize cases lacked distance checks
+4. Reviewed FreeCAD Part.makeLine() documentation - confirmed it rejects zero-length lines
+5. Tested fix with zero-length edge check (`< 1e-6 mm`) - generation succeeded
+
+**Fix:** Added distance checks before creating lines in both fallback cases:
+
+```python
+# Arc fallback case (line ~189)
+try:
+    # ... arc creation code ...
+except Exception as e_arc:
+    # Arc failed - fallback to line IF length is non-zero
+    p1 = FreeCAD.Vector(...)
+    p2 = FreeCAD.Vector(...)
+
+    # Check for zero-length edge (coincident points)
+    if p1.distanceToPoint(p2) < 1e-6:
+        print(f"  Skipping degenerate arc edge (zero length)")
+        continue
+
+    line_2d = Part.makeLine(p1, p2)
+    # ...
+
+# Discretize fallback case (line ~233)
+points_3d = edge.discretize(20)
+for i in range(len(points_3d) - 1):
+    p1 = project_to_2d(points_3d[i])
+    p2 = project_to_2d(points_3d[i+1])
+
+    # Check for zero-length segment
+    if p1.distanceToPoint(p2) < 1e-6:
+        continue
+
+    segment = Part.makeLine(p1, p2)
+    # ...
+```
+
+**Why 1e-6 Threshold:**
+- FreeCAD works in millimeters internally
+- 1e-6 mm = 0.000001 mm = 1 nanometer (effectively zero for sheet metal parts)
+- Prevents floating-point precision issues from triggering false positives
+- Standard tolerance for geometric equality checks in CAD systems
+
+**Files Changed:**
+- `worker/scripts/flatten_sheetmetal.py` (lines ~189 and ~233)
+
+**Prevention:**
+- **Always validate geometric inputs before creating shapes** - Check for degenerate cases (zero length, zero radius, etc.)
+- **Use distance thresholds for comparisons** - Floating-point equality (`p1 == p2`) is unreliable, use `distance < epsilon`
+- **Add defensive checks in fallback paths** - Fallback code runs when primary logic fails, so input assumptions may not hold
+- **Test with real-world geometry** - CAD files can have edge cases (pun intended) like zero-radius arcs
+- **Log and skip invalid geometry** - Better to skip a degenerate edge than crash the entire export
+
+**Related Patterns:**
+- Similar to other geometric processing pitfalls - always validate inputs before operations
+- Epsilon-based comparisons are standard in CAD/CAM systems
+- Defensive programming in error-handling paths is critical
+
+**What Degenerate Geometry Looks Like:**
+- Zero-radius arc from a sharp corner or vertex
+- Collapsed edge from boolean operations
+- Tiny sliver from surface intersection
+- Duplicate vertices in imported STEP geometry
+- Curve endpoints that overlap after projection to 2D
+
+**Commit:** 3ac1a85
+
+---
+
 **Last Updated:** 2026-05-28
 **Version:** 3.7.6
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

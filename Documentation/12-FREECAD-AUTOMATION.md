@@ -357,6 +357,7 @@ DXF files are scaled by `1/25.4` before export to compensate for DXF importers t
 - **Arcs** -- Circular arc segments, constructed via three-point method (start, midpoint, end)
 - **Circles** -- Full circles (typically holes)
 - **Inner wires** -- Hole outlines are included in the DXF output
+- **Degenerate edges** -- Zero-length edges (coincident points) are automatically skipped with a 1e-6mm tolerance (v3.7.6+)
 
 ## Debugging
 
@@ -393,6 +394,7 @@ freecadcmd
 | Empty DXF output | Face orientation not detected | Check face normal in script output; may need geometry adjustment |
 | Large memory usage | Complex STEP assembly | Process individual parts rather than full assemblies |
 | Script timeout | Very complex geometry | Increase timeout; consider simpler geometry |
+| `Part.OCCError: Line through identical points` | Degenerate geometry (zero-length edges) | Fixed in v3.7.6 - script now skips coincident points automatically. Re-export STEP from CAD if issue persists. |
 
 ## Performance Considerations
 
