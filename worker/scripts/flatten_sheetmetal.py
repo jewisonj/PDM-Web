@@ -144,7 +144,7 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     print("\nCreating 2D geometry for DXF export...")
 
     edges_2d = []
-    edge_stats = {"Line": 0, "Arc": 0, "Circle": 0, "BSpline": 0, "Other": 0, "Fallback": 0}
+    edge_stats = {"Line": 0, "Arc": 0, "Circle": 0, "BSpline": 0, "Other": 0, "Fallback": 0, "Skipped": 0}
 
     def process_edge(edge, label=""):
         """Convert a 3D edge to 2D. Always produces output — falls back to
@@ -164,6 +164,10 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
         if 'Line' in curve_type:
             p1 = get_2d_coords(edge.Vertexes[0].Point)
             p2 = get_2d_coords(edge.Vertexes[1].Point)
+            # Skip zero-length edges (identical points)
+            if p1.distanceToPoint(p2) < 1e-6:
+                edge_stats["Skipped"] += 1
+                return
             edges_2d.append(Part.makeLine(p1, p2))
             edge_stats["Line"] += 1
 
