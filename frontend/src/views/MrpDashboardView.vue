@@ -1461,6 +1461,14 @@ defineExpose({ openNestModal })
                 </div>
               </div>
             </div>
+
+            <!-- Delete Project (at bottom of scrollable area) -->
+            <div class="delete-project-section">
+              <button class="danger-btn" @click="deleteProject">
+                <i class="pi pi-trash"></i>
+                Delete Project
+              </button>
+            </div>
           </div>
 
           <!-- Panel Footer Actions -->
@@ -1472,7 +1480,7 @@ defineExpose({ openNestModal })
                 :disabled="generatingPacket"
               >
                 <i :class="generatingPacket ? 'pi pi-spin pi-spinner' : 'pi pi-print'"></i>
-                {{ generatingPacket ? 'Generating...' : 'Generate Print Packet' }}
+                {{ generatingPacket ? 'Generating...' : 'Print Packet' }}
               </button>
               <button
                 v-if="packetUrl"
@@ -1482,29 +1490,23 @@ defineExpose({ openNestModal })
                 <i class="pi pi-download"></i>
                 Download PDF
               </button>
-              <!-- Nest DXF button hidden - functionality preserved but not ready for production
               <button
                 class="primary-btn nest-btn"
                 @click="openNestModal"
                 :disabled="loadingParts"
               >
                 <i class="pi pi-th-large"></i>
-                Nest DXF
+                Nest DXFs
               </button>
-              -->
               <button
                 class="primary-btn"
                 @click="downloadProjectDXFs"
                 :disabled="downloadingDXFs || loadingParts"
               >
                 <i :class="downloadingDXFs ? 'pi pi-spin pi-spinner' : 'pi pi-download'"></i>
-                {{ downloadingDXFs ? 'Downloading...' : 'Download DXFs' }}
+                {{ downloadingDXFs ? 'Downloading...' : 'Download All DXFs' }}
               </button>
             </div>
-            <button class="danger-btn" @click="deleteProject">
-              <i class="pi pi-trash"></i>
-              Delete
-            </button>
           </div>
         </template>
       </div>
@@ -2409,17 +2411,36 @@ defineExpose({ openNestModal })
 
 /* Panel Footer */
 .panel-footer {
-  padding: 16px;
+  padding: 12px;
   border-top: 1px solid #1e293b;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .footer-left {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex: 1;
+}
+
+.footer-left button {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.2;
+  padding: 8px 6px;
+  text-align: center;
+}
+
+.delete-project-section {
+  padding: 16px;
+  margin-top: 24px;
+}
+
+.delete-project-section .danger-btn {
+  width: 100%;
 }
 
 /* Modal */
