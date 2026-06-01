@@ -162,6 +162,10 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
         curve_type = edge.Curve.TypeId
 
         if 'Line' in curve_type:
+            # Skip degenerate line edges with fewer than 2 vertices
+            if len(edge.Vertexes) < 2:
+                edge_stats["Skipped"] += 1
+                return
             p1 = get_2d_coords(edge.Vertexes[0].Point)
             p2 = get_2d_coords(edge.Vertexes[1].Point)
             # Skip zero-length edges (identical points)
