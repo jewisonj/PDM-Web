@@ -14,6 +14,7 @@
 3. [Authentication Issues](#authentication-issues)
 4. [File Upload Failures](#file-upload-failures)
 5. [BOM Upload Issues](#bom-upload-issues)
+   - [Step 5: Incorrect BOM Quantities in MRP Project Parts](#step-5-incorrect-bom-quantities-in-mrp-project-parts)
 6. [Database Connection Problems](#database-connection-problems)
 7. [Data Issues](#data-issues)
 8. [Upload Bridge Problems](#upload-bridge-problems)
@@ -349,6 +350,104 @@ GET /api/bom/{item_number}/tree?max_depth=20
 
 This is expected behavior. Items with the `zzz` prefix are reference-only and are intentionally skipped during BOM upload. See `backend/app/routes/bom.py` bulk upload logic.
 
+### Step 5: Incorrect BOM Quantities in MRP Project Parts
+
+**Symptom:** MRP Dashboard shows incorrect quantities for parts (e.g., vinyl decal shows 16 needed instead of 12).
+
+**Root Cause:** Stale BOM export data from CAD system. The MLBOM.txt file has outdated quantity data that doesn't match the current CAD assembly structure.
+
+**Example Case (WM_0513):**
+- MRP Dashboard showed `stp00260` (vinyl decal) quantity as 16
+- CAD assembly (`STA01080`) only has 1 instance of `JBA00020` (FRONT COVER)
+- Stale MLBOM export had `STA01080 → JBA00020` with quantity 2 (should be 1)
+- BOM parser counted duplicates and multiplied: 2 × 2 × 4 = 16 instead of 1 × 2 × 4 = 8
+
+**Diagnostic Steps:**
+
+1. **Check BOM data in database:**
+
+```sql
+SELECT parent_item_id, child_item_id, quantity, source_file
+FROM bom
+WHERE parent_item_id IN (
+  SELECT id FROM items WHERE item_number = 'sta01080'
+)
+AND child_item_id IN (
+  SELECT id FROM items WHERE item_number = 'jba00020'
+);
+```
+
+Expected result: quantity should match CAD assembly structure.
+
+2. **Verify in CAD assembly:**
+   - Open the parent assembly in Creo Parametric
+   - Check how many instances of the child part exist (Model Tree)
+   - Compare with BOM quantity in database
+
+3. **Check MLBOM export timestamp:**
+   - Look at `source_file` field in BOM records
+   - Verify when MLBOM.txt was last exported from CAD
+   - If old, re-export is needed
+
+**How BOM Upload Works:**
+
+The BOM upload pipeline (`scripts/pdm-upload/`) uses a full-replacement strategy:
+
+1. **Parse MLBOM.txt** (`PDM-BOM-Parser.ps1`):
+   - Uses indentation to detect parent-child relationships
+   - Counts duplicate child entries under same parent
+   - Increments quantity for each duplicate found
+
+2. **Upload to API** (`PDM-Upload-Functions.ps1` → `/api/bom/bulk`):
+   - Backend endpoint (`backend/app/routes/bom.py` line ~197)
+   - **DELETES** all existing BOM entries for the parent
+   - **INSERTS** new BOM entries from parsed data
+   - This ensures a clean update with no stale data carryover
+
+3. **MRP Parts Rollup** (`frontend/src/views/MrpDashboardView.vue`):
+   - `explodeBomRecursive()` function (lines 657-687) traverses BOM tree
+   - Multiplies quantities at each level to calculate total needed
+   - Inserts results into `mrp_project_parts` table (is_manual=false)
+
+**Resolution Steps:**
+
+1. **Re-export MLBOM from CAD:**
+   - Open top-level assembly in Creo Parametric
+   - Tools → Table → Tree
+   - Include columns: Model Name, DESCRIPTION, PROJECT, PRO_MP_MASS, PTC_MASTER_MATERIAL, CUT_LENGTH, SMT_THICKNESS, CUT_TIME, PRICE_EST
+   - Save as `MLBOM.txt`
+
+2. **Re-upload via PowerShell scripts:**
+   - Ensure PDM Upload Service is running
+   - Copy `MLBOM.txt` to `C:\PDM-Upload`
+   - Service automatically parses and uploads to `/api/bom/bulk`
+   - Check log for success: `SUCCESS: Uploaded BOM - Parent: wma20120, Children: 15`
+
+3. **Update MRP project parts:**
+   - Open MRP Dashboard for the project
+   - Navigate to **Assemblies** section
+   - Click **Update** button next to affected assembly
+   - This triggers `updateBom()` function (line 494):
+     - Deletes BOM-derived parts (is_manual=false)
+     - Re-explodes assembly with new BOM data
+     - Inserts corrected quantities into mrp_project_parts
+
+4. **Verify corrected quantities:**
+   - Check MRP Dashboard parts list
+   - Confirm quantities match CAD assembly structure
+   - If still incorrect, check for circular BOM references or missing parts
+
+**Prevention:**
+
+- Always re-export MLBOM when making assembly changes in CAD
+- Use version control or timestamps on MLBOM exports to track staleness
+- The BOM upload process is safe to re-run (full replacement, idempotent)
+- MRP Dashboard "Update" button is a cache refresh trigger (always safe to click)
+
+**See Also:**
+- `Documentation/05-POWERSHELL-SCRIPTS-INDEX.md` -- BOM parser details
+- `Documentation/20-COMMON-WORKFLOWS.md` -- Section 4: Uploading a BOM
+
 ---
 
 ## Database Connection Problems
@@ -625,6 +724,6 @@ When something is not working, run through this checklist:
 
 ---
 
-**Last Updated:** 2025-01-29
-**Version:** 3.0
-**Related:** [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md), [18-GLOSSARY-TERMS.md](18-GLOSSARY-TERMS.md)
+**Last Updated:** 2026-06-02
+**Version:** 3.1
+**Related:** [15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md](15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md), [18-GLOSSARY-TERMS.md](18-GLOSSARY-TERMS.md), [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md)

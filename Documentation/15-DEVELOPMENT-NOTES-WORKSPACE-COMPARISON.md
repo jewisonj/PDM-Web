@@ -1671,8 +1671,59 @@ for i in range(len(points_3d) - 1):
 
 **Commit:** 3ac1a85
 
+### 42. Incorrect MRP Part Quantities from Stale BOM Exports
+
+**Symptom:** MRP Dashboard shows incorrect part quantities. For example, project WM_0513 showed vinyl decal (stp00260) quantity as 16 instead of 12.
+
+**Root Cause:** Stale MLBOM export data from the CAD system. The MLBOM.txt file contained outdated BOM relationships that didn't match the current assembly structure in Creo.
+
+**Example Case (WM_0513):**
+- MRP Dashboard showed `stp00260` (vinyl decal) quantity as 16
+- CAD assembly `STA01080` only had 1 instance of `JBA00020` (FRONT COVER)
+- Stale MLBOM export had `STA01080 → JBA00020` with quantity 2 instead of 1
+- BOM rollup calculation: 2 × 2 × 4 = 16 (should have been 1 × 2 × 4 = 8)
+
+**Diagnosis:**
+1. Checked `bom` table for parent-child relationship between STA01080 and JBA00020
+2. Found quantity was 2 in the database
+3. Verified in Creo that only 1 instance exists in the assembly
+4. Checked `source_file` column - MLBOM export was weeks old
+5. Realized the BOM upload had used stale export data
+
+**How BOM Upload Works:**
+
+The upload pipeline uses a full-replacement strategy:
+1. **Parse MLBOM.txt** (`PDM-BOM-Parser.ps1`) - Uses indentation to detect parent-child relationships and counts duplicate children to determine quantities
+2. **Upload to API** (`/api/bom/bulk`) - Backend **DELETES** all existing BOM entries for the parent, then **INSERTS** new entries from parsed data
+3. **MRP Parts Rollup** (`MrpDashboardView.vue` `explodeBomRecursive()`) - Traverses BOM tree and multiplies quantities at each level to calculate total part requirements
+
+**Fix:**
+1. Re-exported MLBOM.txt from Creo (Tools → Table → Tree)
+2. Re-uploaded via PowerShell upload service (copy to `C:\PDM-Upload`)
+3. Clicked **Update** button in MRP Dashboard assemblies section to recalculate `mrp_project_parts`
+4. Verified corrected quantities (16 → 12)
+
+**Files Involved:**
+- `scripts/pdm-upload/PDM-BOM-Parser.ps1` - Parses indented BOM text files
+- `scripts/pdm-upload/PDM-Upload-Functions.ps1` - Calls `/api/bom/bulk`
+- `backend/app/routes/bom.py` (line ~197) - DELETE then INSERT strategy
+- `frontend/src/views/MrpDashboardView.vue` (lines 657-687) - `explodeBomRecursive()` function
+
+**Prevention:**
+- **Always re-export MLBOM after assembly changes** - Don't rely on old exports
+- **The BOM upload is safe to re-run** - Full-replacement strategy prevents partial updates
+- **MRP Dashboard "Update" button is a cache refresh** - Always click after BOM changes
+- **Check `source_file` timestamp** - The `bom.source_file` column can help identify stale data
+
+**Key Lesson:** MRP project parts (`mrp_project_parts`) is a calculated cache derived from the BOM tree. It does not auto-update when the BOM changes. You must manually trigger the recalculation via the "Update" button in the MRP Dashboard.
+
+**Related Docs:**
+- `Documentation/05-POWERSHELL-SCRIPTS-INDEX.md` - BOM parser details
+- `Documentation/19-TROUBLESHOOTING-DECISION-TREE.md` - Step 5: Incorrect BOM Quantities
+- `Documentation/20-COMMON-WORKFLOWS.md` - Section 4: Uploading a BOM
+
 ---
 
-**Last Updated:** 2026-05-28
-**Version:** 3.7.6
+**Last Updated:** 2026-06-02
+**Version:** 3.7.7
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

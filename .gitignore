@@ -90,6 +90,12 @@ logs/
 *.log
 
 ########################
+# CAD exports / project data
+########################
+MLBOM.txt
+*.mlbom
+
+########################
 # CAD binaries (belt + suspenders)
 ########################
 *.prt
