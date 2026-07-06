@@ -77,6 +77,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/mrp/tracker/:projectCode',
+      name: 'mrp-build-tracker',
+      component: () => import('../views/MrpBuildTrackerView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/mrp/materials',
       name: 'mrp-materials',
       component: () => import('../views/MrpRawMaterialsView.vue'),

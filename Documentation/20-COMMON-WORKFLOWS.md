@@ -1128,6 +1128,41 @@ completionChannel.value = supabase
 
 ---
 
+## 16. Printing a Shop-Floor Build Tracker Sheet
+
+**Where:** MRP Project Tracking (`/mrp/tracking`) -> **Print Build Tracker Sheet** button -> `/mrp/tracker/:projectCode`
+
+**Full reference:** [31-BUILD-TRACKER-SHEET.md](31-BUILD-TRACKER-SHEET.md)
+
+The Build Tracker Sheet is a printable, whole-project progress sheet for the shop floor -- fab parts grouped under their parent weldment with a checkbox per station, a weldments/assemblies matrix, derived build milestones with plan dates, a purchased-parts receive checklist, a daily log, and a shortages block.
+
+### Steps
+
+1. Open **MRP Project Tracking** and select a project.
+2. Click **Print Build Tracker Sheet**. This opens `/mrp/tracker/{projectCode}` in the tracker view.
+3. Choose a format in the toolbar:
+   - **11x17 (tabloid):** whole project on one page when it fits
+   - **Letter (8.5x11 landscape):** parts pages followed by a dedicated "Assemblies & Status" page
+4. Toggle **Pre-fill recorded progress**:
+   - **On** (default): stations already recorded complete in `part_completion` print as solid boxes, so a reprint mid-project resumes where the shop left off
+   - **Off:** prints a fully blank sheet, useful for a first run or a fresh copy
+5. Click **Print** (or use the browser's print command). The page's `@page` size is set automatically to match the selected format -- the browser print dialog does the rest.
+
+### Marking Convention
+
+- Mark a completed box with a heavy X in pen.
+- For a partial completion, write the completed quantity next to/inside the box instead of an X.
+- The shaded ▸STG (Part Staging) column is a gate marking "ready to move to fab/weld" -- it always shows a box even if Part Staging isn't explicitly in the item's routing.
+
+### Notes
+
+- The sheet regenerates from live data every time it's printed -- there is no saved/stale version to worry about.
+- Completion semantics match `MrpShopView` exactly: one `part_completion` row per (project, item, station); a box reads "done" when the recorded quantity covers the item's full project quantity.
+- Purchased items (`mmc`/`spn` prefixes, or receive-only routing) get a compact ORD/RCV receive checklist instead of per-station boxes.
+- See [31-BUILD-TRACKER-SHEET.md](31-BUILD-TRACKER-SHEET.md) for item classification rules, station-column definitions, milestone derivation, pagination behavior, and known limitations (part-level weld ops, Plumbing/Wiring folded into ASM, BOM flat-quantity vs. tree-rollup).
+
+---
+
 ## Quick Reference: API Endpoints for Common Tasks
 
 | Task | Method | Endpoint |

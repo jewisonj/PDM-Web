@@ -93,7 +93,21 @@
       "WebFetch(domain:www.mcadcentral.com)",
       "WebFetch(domain:www.eng-tips.com)",
       "WebFetch(domain:creomapkeys.wordpress.com)",
-      "Bash(points\" crashes\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(points\" crashes\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "WebFetch(domain:remarksoftware.com)",
+      "WebFetch(domain:help.dbamanufacturing.com)",
+      "WebFetch(domain:community.openai.com)",
+      "WebFetch(domain:static1.abbyy.com)",
+      "WebFetch(domain:pyramidsolutions.com)",
+      "WebFetch(domain:sgsystemsglobal.com)",
+      "WebFetch(domain:imagetotable.ai)",
+      "WebFetch(domain:www.lean.org)",
+      "WebFetch(domain:proshoperp.com)",
+      "Skill(artifact-design)",
+      "Skill(artifact-design:*)",
+      "PowerShell($urls = @\\('http://localhost:5174/src/views/MrpBuildTrackerView.vue', 'http://localhost:5174/src/utils/buildTracker.ts', 'http://localhost:5174/src/router/index.ts', 'http://localhost:5174/src/views/MrpProjectTrackingView.vue'\\); foreach \\($u in $urls\\) { try { $r = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 30; $snippet = \\($r.Content.Substring\\(0, [Math]::Min\\(80, $r.Content.Length\\)\\) -replace \"`n\", ' '\\); Write-Output \"$\\($r.StatusCode\\) $u :: $snippet\" } catch { Write-Output \"FAIL $u :: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell(Get-NetTCPConnection -LocalPort 8001 -State Listen -ErrorAction SilentlyContinue)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri 'http://localhost:5174/api/auth/me' -UseBasicParsing -TimeoutSec 20; Write-Output \"STATUS $\\($r.StatusCode\\): $\\($r.Content\\)\" } catch { $resp = $_.Exception.Response; if \\($resp\\) { Write-Output \"STATUS $\\([int]$resp.StatusCode\\) \\(expected 401/403 = chain works\\)\" } else { Write-Output \"NO RESPONSE: $\\($_.Exception.Message\\)\" } })"
     ],
     "deny": []
   },

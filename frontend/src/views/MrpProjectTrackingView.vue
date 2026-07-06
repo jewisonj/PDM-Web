@@ -497,6 +497,11 @@ function goToDashboard() {
   router.push('/mrp/dashboard')
 }
 
+function openBuildTracker() {
+  if (!selectedProjectCode.value) return
+  router.push(`/mrp/tracker/${selectedProjectCode.value}`)
+}
+
 onMounted(async () => {
   await loadProjects()
   loading.value = false
@@ -523,6 +528,13 @@ onUnmounted(() => {
             {{ p.project_code }} - {{ p.description || p.customer || '' }}
           </option>
         </select>
+        <button
+          v-if="selectedProjectCode"
+          class="btn btn-secondary"
+          @click="openBuildTracker"
+        >
+          🖨 Build Tracker Sheet
+        </button>
         <button class="btn btn-secondary" @click="goToDashboard">
           &larr; Dashboard
         </button>

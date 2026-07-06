@@ -7,9 +7,98 @@
 
 ## Current Version
 
-### v3.7.6 (2026-05-28) -- PDF Measurement Tool
+### v3.8 (2026-07-05) -- Shop-Floor Build Tracker Sheet
 
 **Status:** Current Production Release
+
+**Summary:** Added a printable per-project Build Tracker sheet for shop-floor progress marking on paper. Fab parts are grouped under their parent weldment with per-station checkboxes, a weldments/assemblies matrix, derived build milestones with plan dates, a purchased-parts receive checklist, a daily log, and a shortages block. The sheet regenerates from live data on every print, with already-completed stations pre-filled as solid boxes so a mid-project reprint resumes where the shop left off.
+
+#### Features Added
+
+**Build Tracker Sheet**
+
+A new printable view gives the shop floor a paper twin of the same completion data already tracked digitally in the Gantt (Project Tracking) and Shop view:
+
+- **Access:** MRP Project Tracking (`/mrp/tracking`) -> select a project -> "Print Build Tracker Sheet" button -> `/mrp/tracker/:projectCode`
+- **Per-station checkboxes:** Fab parts get a box per routing station (SAW/WJ/BRK/BND/DBR/INS/STG), not a single "fab complete" box
+- **Assembly matrix:** Second table with JIG/TIG/DS/WCU/ASM/INS columns for weldments and assemblies, ordered by DFS post-order traversal from the project's top assembly
+- **Milestones:** 7 standard build milestones (op 10-70: purchased ordered, purchased received, all cut/deburred, all welded, assembly complete, final inspection, ship) with plan dates derived from the existing scheduling engine
+- **Purchased parts checklist:** Compact receive checklist; long-lead (`spn`, receive-only) items get ORD+RCV columns, `mmc` stock hardware gets RCV only
+- **Pre-fill toggle:** "Pre-fill recorded progress" checkbox in the toolbar; off prints a blank sheet, on prints already-recorded stations as solid boxes with partials shown as a handwritten tally
+- **Two print formats:** 11x17 tabloid (whole project on one page when it fits) or 8.5x11 landscape letter (parts pages followed by a dedicated "Assemblies & Status" page); a dynamic `@page` CSS rule matches the browser print dialog to the selected format
+- **Photo-capture groundwork (future phase):** every row carries a stable printed ID (`F##`/`A##`/`P##`/`M##`), three corner anchor squares, a QR code encoding the tracker's own URL, and dropout-gray shading -- none of this is wired to a capture pipeline yet, but the layout is built so a later Claude-vision photo-sync phase doesn't require reworking the sheet
+
+**Completion Semantics**
+
+Matches `MrpShopView` exactly: one `part_completion` row per (project, item, station), upserted with `qty_complete`. A station reads as "done" on the sheet when the recorded quantity covers the item's full project quantity. Duplicate rows of the same item (used both directly on a parent and inside a sub-assembly) allocate partial completion across rows in printed order so the same inventory isn't double-counted as done twice.
+
+#### Frontend Changes
+
+**New Module:** `frontend/src/utils/buildTracker.ts`
+
+Pure data-shaping logic with no Supabase access (so the same logic can later back a photo-sync pipeline):
+- Item classification (assembly / made / purchased / reference `zz*`) based on item number prefix and routing station groups
+- DFS post-order assembly ordering from `mrp_projects.top_assembly_id`
+- Per-parent part grouping with quantity computed as `bom.quantity x parent project quantity` (sidesteps known BOM flat-quantity rollup disagreements by working from the BOM tree directly)
+- Station-column mapping (`PART_COLUMNS`, `ASM_COLUMNS` constants)
+- Pre-fill logic reading `part_completion`, with partial-quantity allocation across duplicate item rows
+- Format-aware pagination (tabloid: 48 rows/column with rail reserve; letter: 32 rows/column plus dedicated status page)
+
+**New Test File:** `frontend/src/utils/buildTracker.test.ts` -- 15 Vitest unit tests against a fixture project. Run with `cd frontend && npx vitest run`.
+
+**New View:** `frontend/src/views/MrpBuildTrackerView.vue`
+
+- Loads `mrp_projects`, `mrp_project_parts`, `bom`, `routing`, `part_completion`, `workstations` via Supabase (same query pattern as `MrpProjectTrackingView`)
+- Runs `calculateSchedule()` for milestone plan dates
+- Renders paper pages using CSS Grid area layouts (`t-main`/`t-cont`/`l-parts`/`l-status`)
+- Injects a dynamic `@page` size `<style>` block per selected format
+- Computes a live fit-to-width scale factor for on-screen preview (display only, does not affect the printed page size)
+- Renders a QR code via the new `qrcode` npm dependency
+
+**Modified:** `frontend/src/router/index.ts` -- new route `mrp-build-tracker` at `/mrp/tracker/:projectCode` (`requiresAuth: true`)
+
+**Modified:** `frontend/src/views/MrpProjectTrackingView.vue` -- added "Print Build Tracker Sheet" button and `openBuildTracker()` navigation helper
+
+**New Dependency:** `qrcode` (+ `@types/qrcode`) added to `frontend/package.json`
+
+**New Dev Config:** `.claude/launch.json` -- new dev-server launch configuration for the frontend (port 5174)
+
+#### Design Decisions (User-Confirmed)
+
+- Per-station boxes, not one box per phase, matching how the shop actually signs off work station by station
+- Heavy-X-in-pen marking convention on paper, with quantity handwritten for partial completions
+- Purchased items get a compact receive checklist rather than per-station boxes
+- Web print view is phase 1; tablet-based interactive marking and a Claude-vision photo-sync pipeline are explicitly deferred future phases
+- Approved visual mockup: https://claude.ai/code/artifact/0f926826-c666-4904-a92b-7889314006f7
+
+#### Known Issues / Notes
+
+- Pre-existing `PdfMeasure.vue` TypeScript errors still fail `npm run build` -- unrelated to this feature, flagged separately
+- `mrp_project_parts` flat quantities can disagree with the BOM-tree cost rollup (known issue, see `06-BOM-COST-ROLLUP-GUIDE.md`); the tracker avoids this by grouping from the BOM tree directly
+- Part-level weld operations in a part's own routing (e.g. `csp00210` having JIG/TIG steps directly) are not shown as fab-part columns -- only reflected at the assembly-matrix level
+- Plumbing and Wiring stations both fold into the single ASM column on the assembly matrix
+
+#### Files Changed Summary
+
+- `frontend/src/utils/buildTracker.ts` (new) -- Data-shaping module
+- `frontend/src/utils/buildTracker.test.ts` (new) -- 15 unit tests
+- `frontend/src/views/MrpBuildTrackerView.vue` (new) -- Printable sheet view
+- `frontend/src/router/index.ts` -- New route registration
+- `frontend/src/views/MrpProjectTrackingView.vue` -- Added launch button
+- `frontend/package.json` -- Added `qrcode` dependency
+- `.claude/launch.json` (new) -- Frontend dev-server launch config
+
+#### Related Documentation
+
+- [31-BUILD-TRACKER-SHEET.md](31-BUILD-TRACKER-SHEET.md) -- Full reference: classification rules, station columns, pre-fill semantics, milestones, pagination, photo-capture readiness
+- [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md) -- Section 15 (Project Scheduling) -- consumed for milestone plan dates
+- [06-BOM-COST-ROLLUP-GUIDE.md](06-BOM-COST-ROLLUP-GUIDE.md) -- BOM flat-quantity vs. tree-rollup caveat referenced by the tracker's grouping logic
+
+---
+
+### v3.7.6 (2026-05-28) -- PDF Measurement Tool
+
+**Status:** Previous Release (superseded by v3.8)
 
 **Summary:** Added interactive PDF measurement tool allowing shop floor to measure dimensions on drawings. Includes calibration mode, measurement mode, and magnifier overlay.
 

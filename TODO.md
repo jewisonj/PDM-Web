@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-05-28
-**Current Version:** v3.7.6
+**Last Updated:** 2026-07-05
+**Current Version:** v3.8
 **Project Status:** Active Development / Production Use
 
 ---
@@ -14,7 +14,20 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.3 - v3.7.6)
+## Recently Completed (v3.3 - v3.8)
+
+### v3.8 (2026-07-05) - Shop-Floor Build Tracker Sheet
+- [x] New printable per-project Build Tracker sheet: `/mrp/tracking` -> "Print Build Tracker Sheet" -> `/mrp/tracker/:projectCode`
+- [x] Fab parts grouped under parent weldment with per-station checkboxes (SAW/WJ/BRK/BND/DBR/INS/STG)
+- [x] Weldments/assemblies matrix (JIG/TIG/DS/WCU/ASM/INS columns), DFS post-order assembly ordering
+- [x] 7 derived build milestones (op 10-70) with plan dates from the existing scheduling engine
+- [x] Purchased-parts receive checklist (ORD/RCV, long-lead flag for spn/receive-only vs. mmc)
+- [x] Pre-fill toggle: already-completed stations print as solid boxes for mid-project reprints; toggle off for a blank sheet
+- [x] Two print formats: 11x17 tabloid (one page) or 8.5x11 landscape letter (parts pages + status page), dynamic `@page` CSS per format
+- [x] Photo-capture groundwork for a future phase: printed row IDs (F##/A##/P##/M##), corner anchor squares, QR code, dropout-gray shading
+- [x] New pure data-shaping module `frontend/src/utils/buildTracker.ts` with 15 Vitest unit tests (first unit tests besides `scheduling.test.ts`)
+- [x] New dependency: `qrcode`
+- [x] Full reference: `Documentation/31-BUILD-TRACKER-SHEET.md`
 
 ### v3.7.6 (2026-05-28) - PDF Measurement Tool
 - [x] Added PDF measurement tool to Part Lookup and Shop Terminal views
