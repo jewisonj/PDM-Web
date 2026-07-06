@@ -1,9 +1,9 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-05-28
+**Last Updated:** 2026-07-05
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.7.6
+**Current Version:** v3.8
 
 ---
 
@@ -46,6 +46,7 @@ New to PDM-Web? Read these in order:
 | 06 | `06-BOM-COST-ROLLUP-GUIDE.md` | BOM cost calculation and rollup procedures. |
 | 07 | `07-PDM-DATABASE-CLEANUP-GUIDE.md` | Database maintenance and orphaned record cleanup. |
 | 30 | `waterjet-cutting-speeds.md` | Waterjet cutting speed reference tables, machinability indices, material-specific speeds, quality multipliers. |
+| 31 | `31-BUILD-TRACKER-SHEET.md` | Shop-floor Build Tracker print sheet: item classification, station columns, pre-fill/completion semantics, milestones, pagination, photo-capture readiness. |
 
 ### Section 5: Frontend Application
 
@@ -125,6 +126,12 @@ New to PDM-Web? Read these in order:
 1. `12-FREECAD-AUTOMATION.md` -- FreeCAD Docker setup
 2. `13-LOCAL-PDM-SERVICES-GUIDE.md` -- upload bridge
 
+### MRP / Shop Floor
+1. `20-COMMON-WORKFLOWS.md` (sections 13-15) -- Part Lookup, Routing Editor, Project Scheduling
+2. `29-NESTING-AUTOMATION.md` -- DXF nesting worker
+3. `31-BUILD-TRACKER-SHEET.md` -- printable shop-floor Build Tracker sheet
+4. `06-BOM-COST-ROLLUP-GUIDE.md` -- BOM cost rollup
+
 ### Troubleshooting
 1. `19-TROUBLESHOOTING-DECISION-TREE.md` -- diagnosis
 2. `04-SERVICES-REFERENCE.md` -- service details
@@ -157,7 +164,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 31
+**Total Documentation Files:** 32
 **Status:** Current
 
 ---
