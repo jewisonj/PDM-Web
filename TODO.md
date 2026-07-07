@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-07-05
-**Current Version:** v3.8
+**Last Updated:** 2026-07-07
+**Current Version:** v3.9.1
 **Project Status:** Active Development / Production Use
 
 ---
@@ -14,7 +14,31 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.3 - v3.8)
+## Recently Completed (v3.3 - v3.9.1)
+
+### v3.9.1 (2026-07-07) - Build Book Section Print Sets, Document Items, Purchased Display
+- [x] New Build Book toolbar print-set dropdown (Reference / Work packages / Kits optgroups) + "Download prints" button
+- [x] New endpoint `POST /api/mrp/projects/{id}/section-prints` -- task-sized PDF of one section's prints, qty-stamped, with a cover page flagging missing prints
+- [x] `generate_section_prints()` in `backend/app/services/build_book.py`: parallel PDF download, white-backed QTY stamp on each print's first page, pypdf merge
+- [x] Verified: PKG 03 (Waterjet) = 27 pages/26 prints/6.9MB in ~11s; Design Reference set = 4 pages/10.9MB
+- [x] Supersedes the full-book PDF button for day-to-day use (full book = 107 pages/62 prints/54MB, exceeds Supabase's ~50MB storage cap, no longer has a UI button but still works via API)
+- [x] Per-kit "PULL PRINTS" reference line (drawing numbers + revisions) -- `BookKit.printRefs` in `buildBook.ts`
+- [x] Document items convention formalized: third-letter-`d` item numbers (csd00010) are controlled documents, excluded from work rows, listed on Build Book cover as "REFERENCE PRINTS -- READ FIRST" -- `isDocumentItem()` in `buildTracker.ts`
+- [x] Purchased-item display convention formalized: shop documents show supplier PN + SOURCE column instead of internal mmc/spn item numbers -- `purchasedDisplay()`/`purchasedSource()` in `buildTracker.ts`
+- [x] Routing/data notes: csa00080 gained Plumbing step; csa00010 became Weld Cleanup -> Mech Assembly (doors) -> Vinyl Wrap (new station 047) -> Inspection; routing.notes render inline in kit sequences
+- [x] Engineering notes recorded: never StreamingResponse over in-memory PDF bytes (~80KB/s vs plain Response), reportlab Helvetica/WinAnsi is ASCII-only (no checkmark/arrow glyphs)
+- [x] `buildBook.test.ts` grew 11 -> 14 tests, `buildTracker.test.ts` grew 15 -> 17 tests
+- [x] Full reference: `Documentation/32-BUILD-BOOK.md` (Section Print Sets, Document Items, Purchased-Item Display Convention)
+
+### v3.9 (2026-07-06) - Manufacturing Build Book (Phase 1, Web Print View)
+- [x] New day-by-day manufacturing Build Book per project: `/mrp/tracking` -> "Build Book" or from Build Tracker toolbar -> `/mrp/book/:projectCode`
+- [x] Cover/plan page, day-by-day station-loading calendar, Part I work packages (`PKG NN` sequence order), Part II kit/weld sheets
+- [x] Sequence-first, dates-advisory design: PKG numbers govern order, printed days are guidance only
+- [x] Recorded-complete rendering matches Tracker/Shop view (`part_completion`, no separate book-completion concept)
+- [x] New pure data-shaping module `frontend/src/utils/buildBook.ts`, composes on top of `buildTrackerSheet()` and `calculateSchedule()`
+- [x] New view `frontend/src/views/MrpBuildBookView.vue`, letter-portrait print layout
+- [x] `buildBook.test.ts` -- 11 Vitest unit tests (39 tests total across scheduling/buildTracker/buildBook at time of release)
+- [x] Full reference: `Documentation/32-BUILD-BOOK.md`
 
 ### v3.8 (2026-07-05) - Shop-Floor Build Tracker Sheet
 - [x] New printable per-project Build Tracker sheet: `/mrp/tracking` -> "Print Build Tracker Sheet" -> `/mrp/tracker/:projectCode`

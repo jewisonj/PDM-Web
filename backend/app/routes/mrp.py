@@ -2,7 +2,7 @@
 
 import logging
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from uuid import UUID
 import io
@@ -542,6 +542,81 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
         "cost_breakdown_chart": chart_data,
         "cost_breakdown_chart_grouped": chart_data_grouped,
     }
+
+
+class BuildBookRequest(BaseModel):
+    """BuildBook structure computed by the frontend (frontend/src/utils/buildBook.ts)."""
+    book: dict
+
+
+class SectionPrintsRequest(BaseModel):
+    """One book section's print set: label + ordered items with quantities."""
+    label: str
+    items: list[dict]
+
+
+@router.post("/projects/{project_id}/section-prints")
+async def create_section_prints(project_id: UUID, payload: SectionPrintsRequest):
+    """
+    Combined PDF of one Build Book section's prints (a work package, a kit, or
+    the design reference docs), each print stamped with its quantity in a
+    white-backed box in the top-right margin. Small and fast — the shop pulls
+    just the set they're about to work.
+    """
+    try:
+        from ..services.build_book import generate_section_prints
+        result = generate_section_prints(str(project_id), payload.label, payload.items)
+        safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in payload.label)[:60]
+        return Response(
+            content=result["pdf"],
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{result["project_code"]}_{safe}.pdf"',
+                "X-Pages": str(result["pages"]),
+                "X-Prints-Bound": str(result["prints_bound"]),
+                "X-Missing": str(len(result["missing"])),
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Section prints generation failed")
+        raise HTTPException(status_code=500, detail=f"Failed to generate section prints: {str(e)}")
+
+
+@router.post("/projects/{project_id}/build-book")
+async def create_build_book(project_id: UUID, payload: BuildBookRequest):
+    """
+    Generate the Build Book PDF for an MRP project.
+
+    The frontend computes the book structure (packages, kits, milestones) from
+    the live schedule and posts it here; this endpoint renders the pages and
+    binds reference-document prints behind the cover plus each kit's prints
+    behind its chapter. Streams the finished PDF back (a full book with prints
+    can exceed the storage upload limit); a copy is stored in print-packets
+    when it fits.
+    """
+    try:
+        from ..services.build_book import generate_build_book
+        result = generate_build_book(str(project_id), payload.book)
+        filename = f"{result['project_code']}_build_book.pdf"
+        # plain Response, not StreamingResponse: the bytes are already in memory, and
+        # Starlette iterates a BytesIO line-by-line (binary "lines"), which is glacial
+        return Response(
+            content=result["pdf"],
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Pages": str(result["pages"]),
+                "X-Prints-Bound": str(result["prints_bound"]),
+                "X-Stored-Path": result["stored_path"] or "",
+            },
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Build book generation failed")
+        raise HTTPException(status_code=500, detail=f"Failed to generate build book: {str(e)}")
 
 
 @router.post("/projects/{project_id}/print-packet")

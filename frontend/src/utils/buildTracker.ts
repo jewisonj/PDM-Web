@@ -31,7 +31,7 @@ export interface TrackerColumn {
 export const PART_COLUMNS: TrackerColumn[] = [
   { key: 'SAW', label: 'SAW', stations: ['Saw'] },
   { key: 'WJ', label: 'WJ', stations: ['Waterjet'] },
-  { key: 'BRK', label: 'BRK', stations: ['Press Brake'] },
+  { key: 'BRK', label: 'PB', stations: ['Press Brake'] },
   { key: 'BND', label: 'BND', stations: ['Pipe Bending', 'Hole Punch - Iron Worker'] },
   { key: 'DBR', label: 'DBR', stations: ['Deburr'] },
   { key: 'INS', label: 'INS', stations: ['Inspection'] },
@@ -43,7 +43,7 @@ export const ASM_COLUMNS: TrackerColumn[] = [
   { key: 'TIG', label: 'TIG', stations: ['Tig Welding'] },
   { key: 'DS', label: 'DS', stations: ['Dual Shield Weld'] },
   { key: 'WCU', label: 'WCU', stations: ['Weld Cleanup'] },
-  { key: 'ASM', label: 'ASM', stations: ['Mechanical Assembly', 'Plumbing', 'Wiring'] },
+  { key: 'ASM', label: 'ASM', stations: ['Mechanical Assembly', 'Plumbing', 'Wiring', 'Vinyl Wrap'] },
   { key: 'INS', label: 'INS', stations: ['Inspection'] },
 ]
 
@@ -71,7 +71,31 @@ export interface TrackerPartInput {
     description?: string | null
     thickness?: number | null
     material?: string | null
+    supplier_pn?: string | null
+    supplier_name?: string | null
+    revision?: string | null
   } | null
+}
+
+/**
+ * Shop-facing part number for purchased items: the mmc/spn prefixes are PDM
+ * bookkeeping — the floor sees the supplier's own PN (supplier_pn when set,
+ * else the item number with the prefix stripped, uppercased).
+ */
+export function purchasedDisplay(itemNumber: string, supplierPn?: string | null): string {
+  const n = itemNumber.toLowerCase()
+  if (n.startsWith('mmc') || n.startsWith('spn')) {
+    return (supplierPn || itemNumber.slice(3)).toUpperCase()
+  }
+  return itemNumber
+}
+
+export function purchasedSource(itemNumber: string, supplierName?: string | null): string {
+  if (supplierName) return supplierName
+  const n = itemNumber.toLowerCase()
+  if (n.startsWith('mmc')) return 'McMaster-Carr'
+  if (n.startsWith('spn')) return 'Supplier'
+  return '—'
 }
 
 export interface TrackerBomInput {
@@ -84,6 +108,7 @@ export interface TrackerRoutingInput {
   item_id: string
   station_id: string
   sequence: number
+  notes?: string | null
   workstations: { station_code: string; station_name: string } | null
 }
 
@@ -157,7 +182,9 @@ export interface TrackerAsmRow {
 
 export interface TrackerPurchasedRow {
   rid: string
-  item_number: string
+  item_number: string      // internal PDM number (photo-sync key, not printed)
+  displayNumber: string    // shop-facing PN (supplier_pn / prefix stripped)
+  source: string           // McMaster-Carr, supplier name, or '—'
   name: string
   qty: number
   longLead: boolean
@@ -245,7 +272,14 @@ function fmtActual(iso: string | null | undefined): string {
 // MAIN
 // ============================================================================
 
-type ItemClass = 'assembly' | 'made' | 'purchased' | 'ref'
+type ItemClass = 'assembly' | 'made' | 'purchased' | 'ref' | 'doc'
+
+/** Third-letter-'d' items (csd0001, wmd0100...) are controlled documents — design books,
+ *  build references — not physical parts. They never appear as tracker/book work rows;
+ *  the Build Book lists them as reference prints instead. */
+export function isDocumentItem(itemNumber: string): boolean {
+  return /^[a-z]{2}d\d/i.test(itemNumber)
+}
 
 const PAGE_ROW_CAP_TABLOID = 48 // data rows + group header rows per part column
 const PAGE_ROW_CAP_LETTER = 32
@@ -255,13 +289,18 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
   const format: TrackerFormat = inp.format ?? 'tabloid'
 
   // ---- lookups --------------------------------------------------------
-  const info = new Map<string, { item_number: string; name: string }>()
+  const info = new Map<
+    string,
+    { item_number: string; name: string; supplier_pn: string | null; supplier_name: string | null }
+  >()
   const projQty = new Map<string, number>()
   for (const p of inp.parts) {
     if (!p.items) continue
     info.set(p.item_id, {
       item_number: p.items.item_number,
       name: p.items.name || p.items.description || '',
+      supplier_pn: p.items.supplier_pn ?? null,
+      supplier_name: p.items.supplier_name ?? null,
     })
     projQty.set(p.item_id, p.quantity)
   }
@@ -329,6 +368,8 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
     let cls: ItemClass
     if (num.startsWith('zz')) {
       cls = 'ref'
+    } else if (isDocumentItem(num)) {
+      cls = 'doc'
     } else if (num.startsWith('mmc') || num.startsWith('spn')) {
       cls = 'purchased'
     } else if (children.has(id) && (hasWeldOrAsm || childrenLookMade(id))) {
@@ -519,6 +560,8 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
     return {
       rid: `P${String(i + 1).padStart(2, '0')}`,
       item_number: inf.item_number,
+      displayNumber: purchasedDisplay(inf.item_number, inf.supplier_pn),
+      source: purchasedSource(inf.item_number, inf.supplier_name),
       name: inf.name,
       qty,
       longLead: !inf.item_number.toLowerCase().startsWith('mmc'),

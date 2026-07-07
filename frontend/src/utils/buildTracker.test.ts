@@ -34,8 +34,14 @@ const WS = [
 ]
 const wsByName = new Map(WS.map(w => [w.station_name, w]))
 
-function item(id: string, num: string, name: string) {
-  return { id, item_number: num, name, description: null, thickness: null, material: null }
+function item(
+  id: string,
+  num: string,
+  name: string,
+  supplier_pn: string | null = null,
+  supplier_name: string | null = null
+) {
+  return { id, item_number: num, name, description: null, thickness: null, material: null, supplier_pn, supplier_name }
 }
 
 const ITEMS = {
@@ -47,9 +53,10 @@ const ITEMS = {
   csp21: item('i-csp21', 'csp00210', 'CABINET FLOOR'),
   csp63: item('i-csp63', 'csp00630', 'LATCH BAR'),
   cspro: item('i-cspro', 'csp00230', 'ELEC BOX'),
-  mmc1: item('i-mmc1', 'mmc90098a036', 'WASHER'),
+  mmc1: item('i-mmc1', 'mmc90098a036', 'WASHER', '90098A036', 'McMaster-Carr'),
   spn1: item('i-spn1', 'spntank', 'PUMP'),
   zzz1: item('i-zzz1', 'zzz1071a59a', 'REF ITEM'),
+  csd1: { ...item('i-csd1', 'csd00010', 'SPA BUILD DESIGN BOOK'), revision: 'B' },
 }
 
 const parts = [
@@ -64,9 +71,11 @@ const parts = [
   { item_id: ITEMS.mmc1.id, quantity: 4, items: ITEMS.mmc1 },
   { item_id: ITEMS.spn1.id, quantity: 1, items: ITEMS.spn1 },
   { item_id: ITEMS.zzz1.id, quantity: 2, items: ITEMS.zzz1 },
+  { item_id: ITEMS.csd1.id, quantity: 1, items: ITEMS.csd1 },
 ]
 
 const bom = [
+  { parent_item_id: ITEMS.csa10.id, child_item_id: ITEMS.csd1.id, quantity: 1 },
   { parent_item_id: ITEMS.csa10.id, child_item_id: ITEMS.csa20.id, quantity: 1 },
   { parent_item_id: ITEMS.csa10.id, child_item_id: ITEMS.csp63.id, quantity: 1 },
   { parent_item_id: ITEMS.csa10.id, child_item_id: ITEMS.mmc1.id, quantity: 4 },
@@ -214,6 +223,25 @@ describe('buildTrackerSheet', () => {
     const pump = sheet.purchased.find(p => p.item_number === 'spntank')!
     expect(pump.longLead).toBe(true)
     expect(pump.rcvDone).toBe(false)
+  })
+
+  it('excludes document items (third-letter d) from all work rows', () => {
+    const rows = sheet.pages.flatMap(p => [...p.colA, ...p.colB]).flatMap(g => g.rows)
+    expect(rows.every(r => r.item_number !== 'csd00010')).toBe(true)
+    expect(sheet.purchased.every(p => p.item_number !== 'csd00010')).toBe(true)
+    expect(sheet.asmRows.every(a => a.item_number !== 'csd00010')).toBe(true)
+    expect(sheet.fabTotal).toBe(5) // unchanged by the document item
+  })
+
+  it('shows shop-facing part numbers for purchased items (PDM prefixes dropped)', () => {
+    const mmc = sheet.purchased.find(p => p.item_number === 'mmc90098a036')!
+    expect(mmc.displayNumber).toBe('90098A036') // supplier_pn preferred
+    expect(mmc.source).toBe('McMaster-Carr')
+    const pump = sheet.purchased.find(p => p.item_number === 'spntank')!
+    expect(pump.displayNumber).toBe('TANK') // prefix stripped + uppercased fallback
+    expect(pump.source).toBe('Supplier')
+    const shopItem = sheet.purchased.find(p => p.item_number === 'csp00230')!
+    expect(shopItem.displayNumber).toBe('csp00230') // internal numbers untouched
   })
 
   it('pre-fills the assembly matrix from completion', () => {

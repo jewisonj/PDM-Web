@@ -502,6 +502,11 @@ function openBuildTracker() {
   router.push(`/mrp/tracker/${selectedProjectCode.value}`)
 }
 
+function openBuildBook() {
+  if (!selectedProjectCode.value) return
+  router.push(`/mrp/book/${selectedProjectCode.value}`)
+}
+
 onMounted(async () => {
   await loadProjects()
   loading.value = false
@@ -534,6 +539,13 @@ onUnmounted(() => {
           @click="openBuildTracker"
         >
           🖨 Build Tracker Sheet
+        </button>
+        <button
+          v-if="selectedProjectCode"
+          class="btn btn-secondary"
+          @click="openBuildBook"
+        >
+          📖 Build Book
         </button>
         <button class="btn btn-secondary" @click="goToDashboard">
           &larr; Dashboard

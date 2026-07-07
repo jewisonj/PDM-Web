@@ -1,9 +1,9 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-07-05
+**Last Updated:** 2026-07-07
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.8
+**Current Version:** v3.9.1
 
 ---
 
@@ -47,6 +47,7 @@ New to PDM-Web? Read these in order:
 | 07 | `07-PDM-DATABASE-CLEANUP-GUIDE.md` | Database maintenance and orphaned record cleanup. |
 | 30 | `waterjet-cutting-speeds.md` | Waterjet cutting speed reference tables, machinability indices, material-specific speeds, quality multipliers. |
 | 31 | `31-BUILD-TRACKER-SHEET.md` | Shop-floor Build Tracker print sheet: item classification, station columns, pre-fill/completion semantics, milestones, pagination, photo-capture readiness. |
+| 32 | `32-BUILD-BOOK.md` | Manufacturing Build Book: day-by-day work packages, kit/weld chapters, sequence-first design rationale, station abbreviations, section print sets (v3.9.1), document items, purchased-item display, full-book PDF endpoint. |
 
 ### Section 5: Frontend Application
 
@@ -127,10 +128,11 @@ New to PDM-Web? Read these in order:
 2. `13-LOCAL-PDM-SERVICES-GUIDE.md` -- upload bridge
 
 ### MRP / Shop Floor
-1. `20-COMMON-WORKFLOWS.md` (sections 13-15) -- Part Lookup, Routing Editor, Project Scheduling
+1. `20-COMMON-WORKFLOWS.md` (sections 13-17) -- Part Lookup, Routing Editor, Project Scheduling, Build Tracker Sheet, Build Book
 2. `29-NESTING-AUTOMATION.md` -- DXF nesting worker
 3. `31-BUILD-TRACKER-SHEET.md` -- printable shop-floor Build Tracker sheet
-4. `06-BOM-COST-ROLLUP-GUIDE.md` -- BOM cost rollup
+4. `32-BUILD-BOOK.md` -- day-by-day manufacturing Build Book (work packages + kit/weld sheets + section print sets)
+5. `06-BOM-COST-ROLLUP-GUIDE.md` -- BOM cost rollup
 
 ### Troubleshooting
 1. `19-TROUBLESHOOTING-DECISION-TREE.md` -- diagnosis
@@ -164,7 +166,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 32
+**Total Documentation Files:** 33
 **Status:** Current
 
 ---
