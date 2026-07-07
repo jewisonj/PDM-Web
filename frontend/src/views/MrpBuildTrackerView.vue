@@ -51,7 +51,7 @@ async function loadAll() {
 
     const { data: partsData, error: partsErr } = await supabase
       .from('mrp_project_parts')
-      .select('item_id, quantity, items (id, item_number, name, description, thickness, material)')
+      .select('item_id, quantity, items (id, item_number, name, description, thickness, material, supplier_pn, supplier_name)')
       .eq('project_id', project.id)
     if (partsErr) throw partsErr
 
@@ -182,6 +182,9 @@ onUnmounted(() => {
         <h1>{{ projectCode }} — Build Tracker</h1>
       </div>
       <div class="tb-right">
+        <button class="btn btn-secondary" @click="router.push(`/mrp/book/${projectCode}`)">
+          📖 Build Book
+        </button>
         <div class="seggroup" role="group" aria-label="Paper size">
           <button class="btn seg-btn" :class="{ active: format === 'tabloid' }" @click="setFormat('tabloid')">
             11×17 · 1 page
@@ -386,14 +389,15 @@ onUnmounted(() => {
               </div>
 
               <div class="sec">
-                <div class="sec-t">PURCHASED — RECEIVE CHECKLIST <small>mmc = McMASTER · spn = SUPPLIER</small></div>
+                <div class="sec-t">PURCHASED — RECEIVE CHECKLIST <small>SUPPLIER PART #s — PDM PREFIXES DROPPED</small></div>
                 <table class="pur-ll" v-if="sheet.purchased.some(p => p.longLead)">
                   <tbody>
-                    <tr><th class="rid">ID</th><th class="pn">ITEM #</th><th>DESCRIPTION — LONG LEAD</th><th class="q">QTY</th><th class="bx sm">ORD</th><th class="bx sm">RCV</th></tr>
+                    <tr><th class="rid">ID</th><th class="pn">PART #</th><th>DESCRIPTION — LONG LEAD</th><th class="src">SOURCE</th><th class="q">QTY</th><th class="bx sm">ORD</th><th class="bx sm">RCV</th></tr>
                     <tr v-for="p in sheet.purchased.filter(p => p.longLead)" :key="p.rid">
                       <td class="rid">{{ p.rid }}</td>
-                      <td class="pn">{{ p.item_number }}</td>
+                      <td class="pn">{{ p.displayNumber }}</td>
                       <td class="pd">{{ p.name }}</td>
+                      <td class="src">{{ p.source }}</td>
                       <td class="q">{{ p.qty }}</td>
                       <td class="bx sm"><span class="cb"></span></td>
                       <td class="bx sm"><span class="cb" :class="{ pfd: p.rcvDone }"><span v-if="p.rcvPartial" class="pf tally">{{ p.rcvPartial }}</span></span></td>
@@ -408,7 +412,7 @@ onUnmounted(() => {
                     <tbody>
                       <tr v-for="p in half" :key="p.rid">
                         <td class="rid">{{ p.rid }}</td>
-                        <td class="pn">{{ p.item_number }}</td>
+                        <td class="pn">{{ p.displayNumber }}</td>
                         <td class="pd">{{ p.name }}</td>
                         <td class="q">{{ p.qty }}</td>
                         <td class="bx sm"><span class="cb" :class="{ pfd: p.rcvDone }"><span v-if="p.rcvPartial" class="pf tally">{{ p.rcvPartial }}</span></span></td>
@@ -641,6 +645,8 @@ th.gate { border-left: 2px solid #16181a !important; }
 .ms tr.gate-row td { background: #e4e6e8; font-weight: bold; border-top: 1.5px solid #16181a; border-bottom: 1.5px solid #16181a; }
 
 .pur-ll td { height: 17px; font-size: 9px; }
+.pur-ll .pn { width: 84px; }
+.pur-ll .src { width: 68px; font-size: 8px; }
 .pur2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; margin-top: -0.75px; }
 .pur2 td { height: 17px; font-size: 8.5px; }
 .pur2 .pd { font-size: 8px; }

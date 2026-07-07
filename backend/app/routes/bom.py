@@ -13,10 +13,10 @@ router = APIRouter(prefix="/bom", tags=["bom"])
 @router.get("/{item_number}", response_model=list[BOMEntry])
 async def get_bom(item_number: str):
     """Get single-level BOM for an item (direct children only)."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Get parent item ID
-    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).single().execute()
+    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).maybe_single().execute()
 
     if not item_result.data:
         raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
@@ -30,10 +30,10 @@ async def get_bom(item_number: str):
 @router.get("/{item_number}/tree")
 async def get_bom_tree(item_number: str, max_depth: int = 10):
     """Get full BOM tree (recursive) for an item."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Get parent item
-    item_result = supabase.table("items").select("*").eq("item_number", item_number.lower()).single().execute()
+    item_result = supabase.table("items").select("*").eq("item_number", item_number.lower()).maybe_single().execute()
 
     if not item_result.data:
         raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
@@ -49,7 +49,7 @@ async def get_bom_tree(item_number: str, max_depth: int = 10):
         children = []
         for entry in bom_result.data:
             # Get child item details
-            child_result = supabase.table("items").select("*").eq("id", entry["child_item_id"]).single().execute()
+            child_result = supabase.table("items").select("*").eq("id", entry["child_item_id"]).maybe_single().execute()
 
             if child_result.data:
                 child_node = {
@@ -71,10 +71,10 @@ async def get_bom_tree(item_number: str, max_depth: int = 10):
 @router.get("/{item_number}/where-used")
 async def get_where_used(item_number: str):
     """Get list of assemblies that contain this item."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Get item ID
-    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).single().execute()
+    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).maybe_single().execute()
 
     if not item_result.data:
         raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
@@ -84,7 +84,7 @@ async def get_where_used(item_number: str):
 
     parents = []
     for entry in bom_result.data:
-        parent_result = supabase.table("items").select("*").eq("id", entry["parent_item_id"]).single().execute()
+        parent_result = supabase.table("items").select("*").eq("id", entry["parent_item_id"]).maybe_single().execute()
         if parent_result.data:
             parents.append({
                 "item": parent_result.data,

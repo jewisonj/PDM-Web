@@ -1163,6 +1163,59 @@ The Build Tracker Sheet is a printable, whole-project progress sheet for the sho
 
 ---
 
+## 17. Printing a Manufacturing Build Book
+
+**Where:** MRP Project Tracking (`/mrp/tracking`) -> **📖 Build Book** button -> `/mrp/book/:projectCode` (also reachable from the **📖 Build Book** cross-link in the Build Tracker Sheet toolbar)
+
+**Full reference:** [32-BUILD-BOOK.md](32-BUILD-BOOK.md)
+
+The Build Book is a day-by-day manufacturing work-order packet for the whole project: a cover/plan page, a station-loading calendar, sequence-numbered work packages for every part operation in dependency order, and one kit/weld sheet per assembly with a stock-pull list, weld sequence, and print-availability status. It is the sibling deliverable to the Build Tracker Sheet (workflow 16) -- the Tracker is a checkbox grid the shop marks up over time, the Book is a work packet you hand to the floor to work through in order.
+
+### Steps
+
+1. Open **MRP Project Tracking** and select a project.
+2. Click **📖 Build Book**. This opens `/mrp/book/{projectCode}` in the book view (or click the same button from an already-open Build Tracker Sheet to cross over without reselecting the project).
+3. Read the cover page first: est hours, work days, package count, milestones with plan dates, a **REFERENCE PRINTS -- READ FIRST** table of any controlled documents in the project (see below), hours by station area, and the project-wide stock pull summary.
+4. Work **Part I -- Work Packages** in `PKG NN` order. Each package card tells you: what stock to pull (only listed at the part's first operation), which parts to run, how many minutes each should take, where each part goes next (`NEXT ->`), and which kit(s) it feeds (`FOR KIT`).
+5. When a package's parts are finished, check the line boxes and sign the **COMPLETED BY** line at the bottom of the card. If the package produces a part in its final routed state, it also lists **STAGE KITS** -- move that stock to staging for the named assembly.
+6. Move to **Part II -- Kit & Weld Sheets** once a kit's parts are ready. Each kit card lists required sub-assemblies, a kit parts table with **READY BY** (which package + day produced each part), the weld/assembly sequence with estimated minutes (with any assembly-method notes from the Routing Editor printed inline under the relevant step), a **PULL PRINTS** line listing which drawing numbers + revisions to physically go get, and an **INSPECTED BY** sign-off line.
+7. Click **Print (8.5x11 portrait)** in the toolbar (or use the browser's print command) for the whole book on-screen/on-paper. The page is letter portrait only -- there is no format toggle like the Build Tracker has.
+
+### Downloading a Section Print Set (v3.9.1)
+
+**Where:** Build Book toolbar -> **"— Print set —"** dropdown -> select a set -> **"⬇ Download prints"**
+
+Rather than dealing with the whole project's drawings, pull just the prints for what you're about to work:
+
+1. Open the dropdown. It's grouped into three sections:
+   - **Reference** -- one entry covering every controlled document (`csd*`/`??d*` items) in the project
+   - **Work packages** -- one entry per `PKG NN`
+   - **Kits** -- one entry per assembly/weldment
+2. Pick a set and click **⬇ Download prints**. The button shows "Gathering…" while the backend pulls, stamps, and merges the prints (a work package or kit set generates in roughly 10-15 seconds; times scale with prints in the set).
+3. The browser downloads a PDF named `{PROJECT_CODE}_{set label}.pdf`. It opens with:
+   - A cover page listing every part in the set, its quantity, and whether a print was found (`MISSING` if not -- check this before heading to the machine)
+   - Each print that *was* found, with a white-backed **QTY N** box stamped in the top-right corner of its first page (skipped for the reference set, since quantity doesn't apply to a document)
+4. A status message appears next to the button after generation (e.g. "26 prints" or "24 prints · 2 missing") so you know immediately if something's not on file.
+
+This supersedes the old "download the whole book as one bound PDF" workflow for day-to-day shop use -- that full-book PDF endpoint still exists (`POST /api/mrp/projects/{id}/build-book`) and can produce a complete archival copy with every print bound in, but it has no button in the UI: a full book with prints can run 100+ pages and exceed Supabase's storage upload limit (~50 MB), and it's unwieldy to carry to a single station for one operation. Section print sets are purpose-sized for the task in front of you.
+
+### Sequence Governs, Not the Printed Date
+
+- **`PKG NN` numbers are the order to work in.** The planned day/date printed on each package card is guidance only, not a hard deadline -- the cover page states this directly ("WORK THE PACKAGES IN ORDER — PKG numbers govern, printed days are the plan").
+- This is intentional: the schedule is a live projection that drifts the moment real shop conditions change. Package sequence still respects true dependency order regardless of when work actually happens, so following `PKG 01, PKG 02, PKG 03...` in order stays safe even after the schedule has moved.
+- If you reprint the book after a schedule shift, package numbers can change. Always work from the most recently generated book -- don't try to reconcile old `PKG` numbers against a new printout.
+
+### Notes
+
+- The book regenerates from live data every time it's opened/printed -- there is no saved/stale version.
+- Completion rendering matches the Build Tracker and `MrpShopView` exactly: `part_completion` rows drive filled checkboxes and, at the package level, a "RECORDED COMPLETE" badge. There is no pre-fill toggle -- recorded completion always shows, since the book is meant to be regenerated as work progresses rather than marked up by hand.
+- Print availability on kit sheets ("PRINTS: assembly ✓/— · parts n/m") is a status indicator on the web view only -- the PDF pages themselves are not embedded there. To get the actual print pages, use a section print set (above) or the full-book PDF endpoint.
+- Controlled documents (item numbers with a third-letter `d`, e.g. `csd00010`) never appear as work rows on the Book or Tracker -- they're excluded from classification and instead listed on the cover page under "REFERENCE PRINTS -- READ FIRST". See [32-BUILD-BOOK.md](32-BUILD-BOOK.md) "Document Items" for how they get attached to a project.
+- Purchased items print the supplier's own part number (or the item number with its `mmc`/`spn` prefix stripped) instead of the internal PDM item number, plus a SOURCE column on the Tracker showing where the part comes from -- see [32-BUILD-BOOK.md](32-BUILD-BOOK.md) "Purchased-Item Display Convention".
+- See [32-BUILD-BOOK.md](32-BUILD-BOOK.md) for how work packages and kit chapters are derived, the `STATION_ABBREV` mapping (note: differs from the Build Tracker's own station-column abbreviations), the section print sets implementation, and the full-book PDF endpoint.
+
+---
+
 ## Quick Reference: API Endpoints for Common Tasks
 
 | Task | Method | Endpoint |
@@ -1184,5 +1237,7 @@ The Build Tracker Sheet is a printable, whole-project progress sheet for the sho
 | Get nest job | GET | `/api/nesting/jobs/{id}` |
 | Download nested sheet | GET | `/api/nesting/jobs/{id}/sheets/{n}/download` |
 | Get project cost report | GET | `/api/mrp/projects/{id}/cost-report` |
+| Download Build Book section print set | POST | `/api/mrp/projects/{id}/section-prints` |
+| Download full Build Book PDF (no UI button) | POST | `/api/mrp/projects/{id}/build-book` |
 | API docs | GET | `/docs` |
 | Health check | GET | `/health` |

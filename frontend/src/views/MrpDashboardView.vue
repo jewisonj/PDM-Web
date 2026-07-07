@@ -773,12 +773,17 @@ async function downloadProjectDXFs() {
       throw new Error(data.detail || 'Failed to download DXF files')
     }
 
+    // Extract filename from Content-Disposition header (single source of truth from backend)
+    const contentDisposition = response.headers.get('Content-Disposition')
+    const filenameMatch = contentDisposition?.match(/filename="(.+)"/)
+    const filename = filenameMatch?.[1] || `${selectedProject.value.project_code}_dxfs.zip`
+
     // Get the blob and trigger download
     const blob = await response.blob()
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `${selectedProject.value.project_code}_dxfs.zip`
+    link.download = filename
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

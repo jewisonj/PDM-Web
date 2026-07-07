@@ -7,9 +7,173 @@
 
 ## Current Version
 
-### v3.8 (2026-07-05) -- Shop-Floor Build Tracker Sheet
+### v3.9.1 (2026-07-07) -- Build Book Section Print Sets, Document Items, Purchased Display
 
 **Status:** Current Production Release
+
+**Summary:** Follow-up release to v3.9's Build Book. The headline change is **section print sets**: instead of downloading the whole project's prints as one large bound PDF, the shop can now pull a small, task-sized PDF for exactly one section -- the reference docs, a single work package, or a single kit -- from a new toolbar dropdown. Also formalizes two conventions used across the Tracker and Book: **document items** (controlled-document item numbers, excluded from work rows and listed as reference prints instead) and **purchased-item display** (shop-facing documents show the supplier's own part number and source, not the internal PDM item number). Includes routing/data notes from the Spa project that shaped kit sequence rendering, and three engineering gotchas worth remembering for future backend-PDF work.
+
+#### Features Added
+
+**Section Print Sets (Build Book toolbar)**
+
+- **UI:** `MrpBuildBookView.vue` toolbar gained a **"— Print set —"** dropdown (`optgroup`s: Reference / Work packages / Kits) and a **"⬇ Download prints"** button, alongside the existing "Print (8.5x11 portrait)" button
+- **Endpoint:** `POST /api/mrp/projects/{project_id}/section-prints` with body `{ label, items: [{ item_number, qty | null }] }`, returns the PDF directly (`application/pdf`, `Content-Disposition: attachment`) plus `X-Pages` / `X-Prints-Bound` / `X-Missing` response headers the UI reads for a status message
+- **Backend:** `generate_section_prints()` in `backend/app/services/build_book.py` -- dedupes items by item number (summing quantities), resolves each item's newest PDF via the same `files`-table lookup the full book uses, downloads every resolvable PDF **in parallel** (`ThreadPoolExecutor(max_workers=8)`), renders a cover page (item list with quantity and a `MISSING` flag for anything with no print on file), stamps each print's first page with a white-backed **QTY N** box in the top-right margin (small section-label text underneath; skipped for reference-doc entries since quantity doesn't apply), merges everything with `pypdf`, and returns the bytes directly
+- **Verified sizes:** PKG 03 (Waterjet) = 27 pages / 26 prints / 6.9 MB in ~11s; Design Reference set (csd00010 project) = 4 pages / 10.9 MB
+- **Supersedes the full-book download as the day-to-day workflow:** the full `POST /projects/{id}/build-book` endpoint (`generate_build_book()`) still exists and still works (107 pages / 62 prints / 54 MB on the same test project) but **no longer has a UI button**. The 54 MB result exceeds Supabase's roughly 50 MB per-project storage upload cap (its own best-effort storage step silently skips anything over 45 MB), and a 100+ page bound book is unwieldy to carry to one machine for a single operation. Section print sets are purpose-sized for the task at hand.
+
+**Per-Kit "Pull Prints" References**
+
+- Each kit chapter in the web Build Book now lists the drawing numbers + revisions to pull before starting that kit -- `BookKit.printRefs` (`{ item_number, revision }[]`) in `frontend/src/utils/buildBook.ts`, rendered as a **PULL PRINTS** line on the kit sheet (`MrpBuildBookView.vue`)
+- Built from the assembly's own print (if on file) followed by each kit part's print (if on file), deduplicated by item within the kit
+
+**Document Items Convention**
+
+- Item numbers with a third letter `d` (e.g. `csd00010`, `wmd0100`) are **controlled documents** -- design books, build-reference PDFs -- not physical parts: `isDocumentItem()` in `frontend/src/utils/buildTracker.ts`, checked before purchased/assembly/made classification and assigned class `'doc'`
+- Document items are excluded from all work rows on both the Tracker and the Book (no station checkboxes, not counted in fab/assembly/purchased totals)
+- The Build Book cover page lists every project document item under **"REFERENCE PRINTS -- READ FIRST"** with item number, title, revision, and PDF-on-file status (`book.referenceDocs`)
+- **Check-in flow** (manual, no dedicated UI yet): create the item normally (`??d####` pattern), upload its PDF like any drawing, then attach it to the project via **MRP Dashboard -> manual part add**, which inserts an `mrp_project_parts` row with `is_manual = true` -- this survives every subsequent BOM reload for that project, since the reload logic only deletes `is_manual = false` rows
+
+**Purchased-Item Display Convention**
+
+- Shop-facing printed documents (Tracker, Build Book) now show the **supplier's own part number** for purchased items instead of the internal PDM item number, plus a new **SOURCE** column on the Tracker's purchased-parts checklist
+- `purchasedDisplay()` / `purchasedSource()` in `frontend/src/utils/buildTracker.ts`: displays `items.supplier_pn` if set, else the item number with its 3-letter `mmc`/`spn` prefix stripped and uppercased (e.g. `mmc91290a115` -> `91290A115`); source shows `items.supplier_name` if set, else "McMaster-Carr" for `mmc*`, "Supplier" for `spn*`, else `--`
+- Non-purchased items pass through unchanged (fab parts keep their real PDM item number on shop documents)
+
+#### Data / Routing Notes (Spa Project, Not Code)
+
+- `csa00080` gained a **Plumbing** routing step
+- `csa00010` routing sequence became **Weld Cleanup -> Mechanical Assembly (doors) -> Vinyl Wrap -> Inspection**; Vinyl Wrap is a new workstation, station code `047`
+- Assembly-method notes on individual routing steps (`routing.notes`) now render inline under the matching step in each kit's Build Book **SEQUENCE** table (`weldSeq[].notes`) -- e.g. door-hanging or wrap-application instructions print right where the shop needs them
+- The Build Tracker's printed Press Brake column label changed `BRK` -> `PB` to match the Build Book's and backend print packet's abbreviations; the Tracker's internal column key is still `BRK` in code (previously documented, carried here for continuity)
+
+#### Frontend Changes
+
+- `frontend/src/utils/buildBook.ts` -- `BookKit.printRefs` field and derivation; `BookReferenceDoc` filtering via `isDocumentItem()`
+- `frontend/src/utils/buildTracker.ts` -- `isDocumentItem()`, `purchasedDisplay()`, `purchasedSource()` exported; classifier checks `isDocumentItem()` before purchased/assembly/made; purchased-row builder uses `purchasedDisplay()`/`purchasedSource()` for `displayNumber`/`source` fields
+- `frontend/src/views/MrpBuildBookView.vue` -- print-set dropdown (`sections`/`sectionGroups` computed properties), `downloadSectionPrints()`, PULL PRINTS line on kit cards, weld-sequence step notes rendering, REFERENCE PRINTS table on cover
+- `frontend/src/views/MrpBuildTrackerView.vue` -- SOURCE column on the purchased-parts checklist table
+- `frontend/src/utils/buildBook.test.ts` -- grew from 11 to 14 tests (printRefs, referenceDocs coverage)
+- `frontend/src/utils/buildTracker.test.ts` -- grew from 15 to 17 tests (isDocumentItem, purchasedDisplay/purchasedSource coverage)
+- `frontend/scripts/emit-book.ts` (new, dev-only) -- computes the `BuildBook` payload with the backend service key from `backend/.env`, writes to JSON; for exercising `/build-book` or `/section-prints` outside a browser session (`npx tsx scripts/emit-book.ts [PROJECT_CODE] [OUT_PATH]`)
+
+#### Backend Changes
+
+- `backend/app/services/build_book.py` -- new `generate_section_prints()` function, `_stamp_qty()` helper (white-backed QTY box overlay via a one-page reportlab canvas merged onto the print's own `mediabox` size)
+- `backend/app/routes/mrp.py` -- new `POST /projects/{project_id}/section-prints` route (`SectionPrintsRequest` Pydantic model: `label: str`, `items: list[dict]`); both this and the existing `/build-book` route return a plain `fastapi.Response`, never `StreamingResponse`, over the in-memory PDF bytes
+
+#### Engineering Notes (For Future Backend-PDF Work)
+
+1. **Never use `StreamingResponse` over a `BytesIO` for a binary response.** Starlette iterates it line-by-line (binary "lines" split on stray `\n` bytes), observed at roughly 80 KB/s -- turns a multi-MB PDF into a multi-minute download. Use a plain `Response(content=pdf_bytes, media_type=...)` when the bytes are already fully assembled in memory.
+2. **reportlab's default Helvetica/WinAnsi encoding cannot render glyphs like `✓` or `▸`.** All backend-generated PDF text must be ASCII only -- use words ("YES"/"MISSING") instead of icons. Does not affect the Vue web UI, which renders in-browser with full Unicode support.
+3. `frontend/scripts/emit-book.ts` is a dev script for computing the Build Book payload with the service key, useful for endpoint testing without a browser session.
+
+#### Known Issues / Notes
+
+- The full-book PDF endpoint (`POST /build-book`) is not deleted or deprecated in code -- just has no UI button as of this release. May get a UI entry point again later (e.g. an end-of-project archival copy).
+- Pre-existing failing test in `buildBook.test.ts` (~line 181, a `next` station assertion) noted during this release's verification pass -- unrelated to the section-prints/document-item/purchased-display work; needs separate triage.
+- No format toggle for section print sets -- letter portrait cover page only, matching the rest of the Build Book.
+
+#### Files Changed Summary
+
+- `frontend/src/utils/buildBook.ts` -- `printRefs`, `referenceDocs` (isDocumentItem-based)
+- `frontend/src/utils/buildTracker.ts` -- `isDocumentItem()`, `purchasedDisplay()`, `purchasedSource()`
+- `frontend/src/views/MrpBuildBookView.vue` -- section print set dropdown/download, PULL PRINTS line, step notes, reference prints table
+- `frontend/src/views/MrpBuildTrackerView.vue` -- SOURCE column
+- `frontend/src/utils/buildBook.test.ts` -- 11 -> 14 tests
+- `frontend/src/utils/buildTracker.test.ts` -- 15 -> 17 tests
+- `frontend/scripts/emit-book.ts` (new) -- dev payload-emission script
+- `backend/app/services/build_book.py` -- `generate_section_prints()`, `_stamp_qty()`
+- `backend/app/routes/mrp.py` -- `POST /projects/{project_id}/section-prints` route
+
+#### Related Documentation
+
+- [32-BUILD-BOOK.md](32-BUILD-BOOK.md) -- Full reference, including new "Section Print Sets", "Document Items", and "Purchased-Item Display Convention" sections
+- [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md) -- Section 17 (Printing a Manufacturing Build Book), updated with the "Downloading a Section Print Set" sub-workflow
+- [31-BUILD-TRACKER-SHEET.md](31-BUILD-TRACKER-SHEET.md) -- `isDocumentItem()`/`purchasedDisplay()`/`purchasedSource()` live in `buildTracker.ts`, shared by both the Tracker and the Book
+
+---
+
+### v3.9 (2026-07-06) -- Manufacturing Build Book (Phase 1, Web Print View)
+
+**Status:** Previous Release (superseded by v3.9.1)
+
+**Summary:** Added a day-by-day manufacturing Build Book per MRP project, the sibling deliverable to the v3.8 Build Tracker Sheet. Where the Tracker is a checkbox grid the shop marks up over the life of a project, the Book is a work-order packet: a cover/plan page, a station-loading calendar, sequence-numbered work packages (`PKG 01`, `PKG 02`, ...) for every part operation in dependency order, and one kit/weld sheet per assembly with a stock-pull list, weld sequence, and print-availability status. It is generated live from the same capacity-constrained scheduler that drives the Gantt, and reuses the Tracker's classification, assembly ordering, and milestone logic rather than duplicating it.
+
+#### Features Added
+
+**Manufacturing Build Book**
+
+- **Access:** MRP Project Tracking (`/mrp/tracking`) -> select a project -> "📖 Build Book" button, or from the Build Tracker Sheet toolbar's own "📖 Build Book" cross-link -> `/mrp/book/:projectCode`
+- **Cover/plan page:** project summary stats (est hours, work days, package count, fab/assembly/purchased counts), milestones with plan dates (reused verbatim from the Tracker's milestone derivation), hours by station-group area, and a stock-pull summary aggregated from `routing_materials x project quantity`
+- **Day-by-day station loading calendar:** rows are working days with dates, columns are stations, cells show hours plus the package IDs occupying that day/station slot -- built directly from the scheduler's own `stationDays` grid, not a separate estimate
+- **Part I -- Work Packages:** one card per `(planned day, station)` group of part tasks, sequence-numbered in dependency order. Each card lists a stock pull (aggregated only at each part's first routed op, so the same material line doesn't repeat on every downstream package), line items (part, description, qty, est minutes, `NEXT ->` abbreviated next station, `FOR KIT` assembly refs), stage-for-kit refs on final-op packages, and a completed-by sign-off line
+- **Part II -- Kit & Weld Sheets:** one card per weldment/assembly in the same DFS post-order build sequence as the Tracker's assembly matrix -- required sub-assemblies, a kit parts table with `READY BY` (the package + day that produces each part), the assembly's own weld/assembly sequence with est minutes, an inspection sign-off line, and a print-availability line (assembly print yes/no + `n/m` part prints)
+- **Recorded-complete rendering:** packages, lines, and kit rows already recorded complete in `part_completion` print with filled checkboxes and, at the package level, a "RECORDED COMPLETE" badge -- same completion source and semantics as the Tracker and `MrpShopView` (no separate "book completion" concept, and no pre-fill toggle -- recorded completion always renders since the Book is meant to be regenerated as work progresses, not marked up by hand)
+- **Sequence-first, dates-advisory (key design decision):** `PKG NN` numbers govern the order the shop should work in; the printed planned day/date on each package is guidance only. The cover page states this directly. This keeps the book valid when the live schedule drifts from the plan -- see `32-BUILD-BOOK.md` for the full rationale
+- **Print layout:** letter portrait only (8.5in x 11in, 0.5in margins), no format toggle -- sections use `page-break-after: always`, cards use `break-inside: avoid` so a package/kit is never split across a page boundary
+
+#### Frontend Changes
+
+**New Module:** `frontend/src/utils/buildBook.ts`
+
+Pure data-shaping logic with no Supabase access, composing directly on top of `buildTrackerSheet()` (from `buildTracker.ts`) and a `ScheduleResult` (from `calculateSchedule()`):
+- Work packages: part tasks (excluding assembly-level tasks) grouped by `(start_day, station_id)`, sorted by day then station `sort_order`
+- Kit chapters: one per `sheet.asmRows` entry, reusing the Tracker's merged per-assembly part groups (`groupByRef`) to recover each kit's part list even though the Tracker may have split that group across print columns/pages
+- Calendar matrix: direct read of `schedule.stationDays[code][day].used_minutes`
+- Stock pull aggregation: `routing_materials` joined to `raw_materials`, multiplied by project quantity, aggregated at each item's first routed operation only
+- `STATION_ABBREV` map exported, deliberately mirroring the backend's `print_packet.py` `STATION_ABBREV` -- **keep both in sync if either changes**. Note this uses `PB` for Press Brake, while the Build Tracker's `PART_COLUMNS` uses `BRK` for the same station -- the two abbreviation schemes are independent
+
+**New Test File:** `frontend/src/utils/buildBook.test.ts` -- 11 Vitest unit tests against a fixture project mirroring `buildTracker.test.ts`'s fixture shape. Run with `cd frontend && npx vitest run` (39 tests total across `scheduling.test.ts` (13), `buildTracker.test.ts` (15), `buildBook.test.ts` (11)).
+
+**New View:** `frontend/src/views/MrpBuildBookView.vue`
+
+- Loads `mrp_projects`, `mrp_project_parts`, `bom`, `routing`, `part_completion`, `workstations` (same base query pattern as `MrpBuildTrackerView`), plus two new queries this feature added: `routing_materials` (+ `raw_materials` join, for stock pulls) and `files` (`file_type = 'PDF'`, for print availability)
+- Runs `calculateSchedule()` then `buildBook()` to produce the `BuildBook` structure
+- Renders flowing letter-portrait "sheet" divs (cover, calendar, packages, kits) with dark MRP toolbar chrome and cross-links to the Tracker Sheet
+
+**Modified:** `frontend/src/router/index.ts` -- new route `mrp-build-book` at `/mrp/book/:projectCode` (`requiresAuth: true`)
+
+**Modified:** `frontend/src/views/MrpProjectTrackingView.vue` -- added "📖 Build Book" button and `openBuildBook()` navigation helper
+
+**Modified:** `frontend/src/views/MrpBuildTrackerView.vue` -- added "📖 Build Book" cross-link button in the toolbar
+
+#### Design Decisions (User-Confirmed, 2026-07-06)
+
+- Structure = plan page + work packages + kit chapters, all three sections shipped together as phase-1 scope, not staged in incrementally
+- Sequence-first, dates-advisory: `PKG NN` numbers are the operative ordering; planned days are guidance (see dedicated rationale in `32-BUILD-BOOK.md`)
+- Prints are shown as availability status only in phase 1 (checkmark + `n/m` ratio); actually embedding PDF pages into the book is deferred to a planned phase 2 backend PDF endpoint
+- Delivery order: web view first (this release), backend PDF-rendering endpoint next (not yet built)
+
+#### Known Issues / Notes
+
+- Calls `buildTrackerSheet()` internally with `format: 'tabloid'` purely to satisfy that function's required parameter -- no tabloid-specific pagination fields from the returned sheet are used, so this has no effect on the Book's own letter-only layout
+- Inherits every classification/ordering caveat already documented for the Build Tracker (`31-BUILD-TRACKER-SHEET.md`): `mrp_project_parts` flat-quantity vs. BOM-tree rollup disagreement, part-level weld ops not surfacing outside the assembly context, Plumbing/Wiring folding into a single station bucket at the assembly level
+- No format toggle and no pre-fill toggle -- both deliberate simplifications versus the Tracker for phase 1
+- Pre-existing `PdfMeasure.vue` TypeScript errors still fail `npm run build` -- unrelated, previously flagged in v3.8
+
+#### Files Changed Summary
+
+- `frontend/src/utils/buildBook.ts` (new) -- Data-shaping module (packages, kits, calendar, stock summary)
+- `frontend/src/utils/buildBook.test.ts` (new) -- 11 unit tests
+- `frontend/src/views/MrpBuildBookView.vue` (new) -- Printable book view
+- `frontend/src/router/index.ts` -- New route registration
+- `frontend/src/views/MrpProjectTrackingView.vue` -- Added launch button
+- `frontend/src/views/MrpBuildTrackerView.vue` -- Added cross-link button to the Book
+
+#### Related Documentation
+
+- [32-BUILD-BOOK.md](32-BUILD-BOOK.md) -- Full reference: work package/kit chapter derivation, station abbreviations, sequence-vs-dates rationale, phase 2 plan
+- [31-BUILD-TRACKER-SHEET.md](31-BUILD-TRACKER-SHEET.md) -- Sibling feature; classification, DFS assembly ordering, and milestone derivation are reused directly by the Book via `buildTrackerSheet()`
+- [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md) -- Section 15 (Project Scheduling) for `calculateSchedule()`; new Section 17 (Printing a Build Book)
+- [06-BOM-COST-ROLLUP-GUIDE.md](06-BOM-COST-ROLLUP-GUIDE.md) -- BOM flat-quantity vs. tree-rollup caveat, same one inherited from the Tracker
+
+---
+
+### v3.8 (2026-07-05) -- Shop-Floor Build Tracker Sheet
+
+**Status:** Previous Release (superseded by v3.9)
 
 **Summary:** Added a printable per-project Build Tracker sheet for shop-floor progress marking on paper. Fab parts are grouped under their parent weldment with per-station checkboxes, a weldments/assemblies matrix, derived build milestones with plan dates, a purchased-parts receive checklist, a daily log, and a shortages block. The sheet regenerates from live data on every print, with already-completed stations pre-filled as solid boxes so a mid-project reprint resumes where the shop left off.
 
