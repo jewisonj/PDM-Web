@@ -16,7 +16,6 @@ const emit = defineEmits<{
 }>()
 
 // Canvas refs
-const containerRef = ref<HTMLDivElement | null>(null)
 const pdfCanvasRef = ref<HTMLCanvasElement | null>(null)
 const overlayCanvasRef = ref<HTMLCanvasElement | null>(null)
 
@@ -89,8 +88,6 @@ async function renderPage() {
     const viewport = page.getViewport({ scale: scale.value })
 
     const canvas = pdfCanvasRef.value
-    const context = canvas.getContext('2d')
-    if (!context) return
 
     // Set canvas dimensions
     canvas.width = viewport.width
@@ -106,10 +103,10 @@ async function renderPage() {
       overlayCanvasRef.value.style.height = viewport.height + 'px'
     }
 
-    // Render PDF page
+    // Render PDF page (pdfjs-dist 5.x takes the canvas directly)
     const renderContext = {
-      canvasContext: context,
-      viewport: viewport
+      canvas,
+      viewport
     }
 
     await page.render(renderContext).promise
@@ -133,7 +130,7 @@ function drawMeasurements() {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
   // Draw stored measurements
-  measurements.value.forEach((m, i) => {
+  measurements.value.forEach((m) => {
     drawLine(ctx, m.start, m.end, '#22c55e', `${m.distance.toFixed(3)} ${m.unit}`)
   })
 
@@ -515,7 +512,7 @@ watch(() => props.pdfUrl, () => {
     </div>
 
     <!-- Canvas area -->
-    <div class="canvas-container" ref="containerRef">
+    <div class="canvas-container">
       <div v-if="loading" class="loading-overlay">
         <div class="spinner"></div>
         <span>Loading PDF...</span>
