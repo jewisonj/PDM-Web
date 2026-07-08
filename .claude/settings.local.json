@@ -152,7 +152,9 @@
       "Bash(taskkill /F /FI \"WINDOWTITLE eq *uvicorn*\")",
       "Bash(python -m uvicorn:*)",
       "Bash(python -m pip install:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   },
