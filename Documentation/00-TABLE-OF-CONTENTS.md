@@ -71,7 +71,8 @@ New to PDM-Web? Read these in order:
 |---|------|-------------|
 | 13 | `13-LOCAL-PDM-SERVICES-GUIDE.md` | Local upload bridge integration with the PDM-Web API. |
 | 14 | `14-SKILL-DEFINITION.md` | AI assistant skill definition for PDM-Web context (Claude Code agent). |
-| 33 | `33-AI-ASSISTANT.md` | PDM AI Assistant: Claude-powered conversational interface for querying parts, BOMs, files. SSE streaming chat, 6 read-only tools, prompt caching, tool status indicators. |
+| 33 | `33-AI-ASSISTANT.md` | PDM AI Assistant: Claude-powered conversational interface for querying parts, BOMs, files, MRP projects, costs, and tasks. SSE streaming chat, 17 read-only tools, approval-gated write actions, guarded SQL, persistent conversations. |
+| 34 | `34-AI-ASSISTANT-ROADMAP.md` | Future assistant work: McMaster-Carr price lookups (API + cache + sync actions) and print content extraction (PDF text + search + vision fallback). |
 
 ### Section 8: Development and Reference
 

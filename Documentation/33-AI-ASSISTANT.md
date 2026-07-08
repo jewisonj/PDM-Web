@@ -82,7 +82,7 @@ system=[{
 
 #### 2. Tool Implementations (`backend/app/services/assistant_tools.py`)
 
-Thirteen read-only tools for querying PDM and MRP data via Supabase admin client:
+Seventeen read-only tools plus four approval-gated write actions, via Supabase admin client:
 
 **PDM tools:**
 
@@ -108,6 +108,36 @@ Thirteen read-only tools for querying PDM and MRP data via Supabase admin client
 | `list_raw_materials` | Raw material prices and stock levels | "What's CS sheet running per pound?" |
 
 MRP project tools accept a `project_code` (exact or partial, case-insensitive). Cost estimate results are truncated to the top N line items by extended cost (default 20) to control token usage; totals always include all items.
+
+**Analysis tools (added 2026-07):**
+
+| Tool | Description | Example Use |
+|------|-------------|-------------|
+| `audit_project` | Pre-flight check: missing routing, PDF prints, DXFs (sheet metal), raw materials, supplier prices | "Is RX0203 ready for the shop?" |
+| `get_time_analysis` | Estimated routing time vs actual logged time per item+station | "How accurate are our waterjet estimates?" |
+| `list_low_stock_materials` | Materials where on-hand + on-order <= reorder point | "What do we need to order?" |
+| `query_database` | Guarded read-only SQL SELECT for arbitrary cross-table questions | "Total steel mass across active projects" |
+
+`query_database` executes through the `assistant_query` Postgres function (see `backend/migrations/2026-07-08_assistant_v2.sql`): a security-definer function **owned by the `assistant_readonly` role**, which has SELECT-only grants. Writes fail at the permission layer even if a query slips past the application-level keyword filter. Single statement only, 5s timeout, 500-row hard cap, callable only by `service_role`.
+
+**Write actions (approval required):**
+
+| Action | Effect after approval |
+|--------|----------------------|
+| `requeue_failed_task` | Resets a failed work queue task to `pending` for retry |
+| `update_material_price` | Sets `raw_materials.price_per_unit` |
+| `update_routing_time` | Sets `routing.est_time_min` for one step |
+| `update_cost_setting` | Sets a `cost_settings` value (labor rate, overhead, etc.) |
+
+Action flow: Claude calls the action tool → backend does NOT execute it, stores it as a pending action and emits an `action` SSE event → frontend renders an approval card (Approve / Decline) → `POST /api/assistant/actions/{action_id}` executes (or declines) it → a hidden system note is appended to the conversation so the model knows the outcome on its next turn. Pending actions live in server memory and expire on restart.
+
+**Conversation persistence:**
+
+Conversations are stored in `assistant_conversations` / `assistant_messages` (Supabase), with the in-memory LRU as a cache. Chats survive backend restarts; the History dropdown in the UI lists the 20 most recent threads and can reload any of them. Tool results and action outcome notes are stored with `hidden=true` - the model sees them, the UI does not. Endpoints: `GET /api/assistant/conversations`, `GET /api/assistant/conversations/{id}/messages`, `DELETE /api/assistant/chat/{id}`.
+
+**Page context:**
+
+The chat request accepts an optional `context` string (e.g. "The user opened the assistant from MRP project WM2121"), injected as a second (uncached) system block. The assistant view reads `?project=` / `?item=` query params; Project Tracking has an "Ask PDM" button that passes the selected project.
 
 **Tool Execution Flow:**
 1. Claude calls tool via `tool_use` block

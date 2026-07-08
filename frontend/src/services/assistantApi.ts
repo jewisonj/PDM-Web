@@ -5,20 +5,45 @@
  */
 
 export interface SSEEvent {
-  event: 'start' | 'text' | 'tool' | 'done' | 'error'
+  event: 'start' | 'text' | 'tool' | 'action' | 'done' | 'error'
   data: {
     conversation_id?: string
     delta?: string
     name?: string
     summary?: string
     message?: string
+    action_id?: string
+    description?: string
+    params?: Record<string, unknown>
   }
+}
+
+export interface ActionProposal {
+  id: string
+  name: string
+  description: string
+  params: Record<string, unknown>
+  status: 'pending' | 'approved' | 'declined' | 'error'
+  result?: string
+}
+
+export interface ConversationSummary {
+  id: string
+  title: string | null
+  updated_at: string
+}
+
+export interface ConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
+  created_at: string
 }
 
 export interface ChatCallbacks {
   onStart?: (conversationId: string) => void
   onText?: (delta: string) => void
   onTool?: (name: string, summary: string) => void
+  onAction?: (actionId: string, name: string, description: string, params: Record<string, unknown>) => void
   onDone?: () => void
   onError?: (message: string) => void
 }
@@ -29,12 +54,14 @@ export interface ChatCallbacks {
  * @param message - The user's message
  * @param conversationId - Optional existing conversation ID
  * @param callbacks - Event callbacks for streaming updates
+ * @param context - Optional page context (e.g. "Viewing MRP project WM2121")
  * @returns Promise that resolves when stream completes
  */
 export async function sendChatMessage(
   message: string,
   conversationId: string | null,
-  callbacks: ChatCallbacks
+  callbacks: ChatCallbacks,
+  context?: string | null
 ): Promise<void> {
   const response = await fetch('/api/assistant/chat', {
     method: 'POST',
@@ -44,6 +71,7 @@ export async function sendChatMessage(
     body: JSON.stringify({
       conversation_id: conversationId,
       message,
+      context: context || null,
     }),
   })
 
@@ -101,6 +129,16 @@ export async function sendChatMessage(
                   callbacks.onTool(parsed.name, parsed.summary)
                 }
                 break
+              case 'action':
+                if (parsed.action_id && parsed.name && callbacks.onAction) {
+                  callbacks.onAction(
+                    parsed.action_id,
+                    parsed.name,
+                    parsed.description || parsed.name,
+                    parsed.params || {}
+                  )
+                }
+                break
               case 'done':
                 if (callbacks.onDone) {
                   callbacks.onDone()
@@ -124,6 +162,53 @@ export async function sendChatMessage(
   } finally {
     reader.releaseLock()
   }
+}
+
+/**
+ * Approve or decline a proposed write action.
+ */
+export async function respondToAction(
+  actionId: string,
+  approve: boolean
+): Promise<{ approved: boolean; description: string; result: Record<string, unknown> }> {
+  const response = await fetch(`/api/assistant/actions/${actionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approve }),
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || `HTTP ${response.status}`)
+  }
+
+  return response.json()
+}
+
+/**
+ * List recent conversations.
+ */
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const response = await fetch('/api/assistant/conversations')
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+  const data = await response.json()
+  return data.conversations || []
+}
+
+/**
+ * Get the displayable messages of a past conversation.
+ */
+export async function getConversationMessages(
+  conversationId: string
+): Promise<ConversationMessage[]> {
+  const response = await fetch(`/api/assistant/conversations/${conversationId}/messages`)
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+  const data = await response.json()
+  return data.messages || []
 }
 
 /**

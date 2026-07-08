@@ -277,8 +277,202 @@ TOOL_DEFINITIONS = [
             },
             "required": []
         }
+    },
+    {
+        "name": "audit_project",
+        "description": (
+            "Run a pre-flight audit on an MRP project. Finds parts with no routing, parts missing "
+            "prints (PDF) or flat patterns (DXF), supplier parts with no unit price (these show as "
+            "$0 in cost estimates), and parts with no raw material assigned. Call this when the "
+            "user asks if a project is ready, what's missing, or before releasing a job to the shop."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_code": {
+                    "type": "string",
+                    "description": "The project code (exact or partial, case-insensitive)"
+                }
+            },
+            "required": ["project_code"]
+        }
+    },
+    {
+        "name": "get_time_analysis",
+        "description": (
+            "Compare estimated routing times against actual logged shop time for an MRP project. "
+            "Returns per item+station: estimated min/part, quantity completed, total actual minutes, "
+            "and actual min/part. Call this when the user asks how accurate time estimates are, "
+            "which operations are over/under estimate, or how much time was logged."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_code": {
+                    "type": "string",
+                    "description": "The project code (exact or partial, case-insensitive)"
+                }
+            },
+            "required": ["project_code"]
+        }
+    },
+    {
+        "name": "list_low_stock_materials",
+        "description": (
+            "List raw materials at or below their reorder point (considering on-hand plus on-order). "
+            "Call this when the user asks what needs to be ordered or what's running low."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    {
+        "name": "query_database",
+        "description": (
+            "Run a read-only SQL SELECT query against the PDM database for questions the other "
+            "tools can't answer (cross-table aggregates, custom filters, counts, sums). "
+            "Use the other purpose-built tools first when they fit. "
+            "Postgres syntax. Results are capped at 200 rows; always aggregate or LIMIT rather "
+            "than dumping raw tables. Writes are blocked at the database level.\n"
+            "Tables (key columns):\n"
+            "- items(id, item_number, name, revision, lifecycle_state, project_id, material, mass, "
+            "thickness, cut_length, is_supplier_part, unit_price)\n"
+            "- files(id, item_id, file_type, file_name, revision, iteration, created_at)\n"
+            "- bom(parent_item_id, child_item_id, quantity)\n"
+            "- projects(id, name, status) -- PDM design projects\n"
+            "- mrp_projects(id, project_code, description, customer, status, start_date, due_date, top_assembly_id)\n"
+            "- mrp_project_parts(project_id, item_id, quantity)\n"
+            "- routing(item_id, station_id, sequence, est_time_min, cost_override)\n"
+            "- workstations(id, station_code, station_name, hourly_rate, is_outsourced, outsourced_cost_default)\n"
+            "- routing_materials(item_id, material_id, qty_required)\n"
+            "- raw_materials(id, material_code, material_type, description, profile, weight_lb_per_ft, "
+            "price_per_unit, qty_on_hand, qty_on_order, reorder_point)\n"
+            "- time_logs(project_id, item_id, station_id, worker, time_min, logged_at)\n"
+            "- part_completion(project_id, item_id, station_id, qty_complete, completed_by, completed_at)\n"
+            "- work_queue(id, item_id, file_id, task_type, status, error_message, created_at, completed_at)\n"
+            "- cost_settings(setting_key, setting_value, description)\n"
+            "- lifecycle_history(item_id, old_state, new_state, changed_by, changed_at)"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sql": {
+                    "type": "string",
+                    "description": "A single SELECT statement (Postgres). No semicolons, no writes."
+                },
+                "max_rows": {
+                    "type": "integer",
+                    "description": "Row cap (default 200, max 500)",
+                    "default": 200
+                }
+            },
+            "required": ["sql"]
+        }
     }
 ]
+
+
+# =============================================================================
+# Action Tools (write operations - require user approval before execution)
+# =============================================================================
+#
+# When Claude calls one of these, the backend does NOT execute it. Instead it
+# stores a pending action, emits an `action` SSE event, and tells Claude the
+# action is awaiting user approval. The frontend renders Approve/Decline
+# buttons; approval executes the action via POST /assistant/actions/{id}.
+
+ACTION_TOOL_DEFINITIONS = [
+    {
+        "name": "requeue_failed_task",
+        "description": (
+            "Propose re-queuing a failed work queue task so the worker retries it (e.g., a failed "
+            "DXF flatten). The user must approve before it executes. Get the task id from "
+            "list_work_queue_tasks first."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_id": {
+                    "type": "string",
+                    "description": "The work queue task ID (UUID) from list_work_queue_tasks"
+                }
+            },
+            "required": ["task_id"]
+        }
+    },
+    {
+        "name": "update_material_price",
+        "description": (
+            "Propose updating the price_per_unit of a raw material. The user must approve before "
+            "it executes. For sheet metal (SM) the price is $/lb; for tube it is $/ft."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "material_code": {
+                    "type": "string",
+                    "description": "The raw material code (from list_raw_materials)"
+                },
+                "new_price": {
+                    "type": "number",
+                    "description": "The new price per unit"
+                }
+            },
+            "required": ["material_code", "new_price"]
+        }
+    },
+    {
+        "name": "update_routing_time",
+        "description": (
+            "Propose changing the estimated time of one routing step. The user must approve before "
+            "it executes. Identify the step by item number and sequence (from get_item_routing)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "item_number": {
+                    "type": "string",
+                    "description": "The item whose routing step to change"
+                },
+                "sequence": {
+                    "type": "integer",
+                    "description": "The routing step sequence number"
+                },
+                "new_time_min": {
+                    "type": "number",
+                    "description": "The new estimated time in minutes"
+                }
+            },
+            "required": ["item_number", "sequence", "new_time_min"]
+        }
+    },
+    {
+        "name": "update_cost_setting",
+        "description": (
+            "Propose changing a global cost setting (e.g., default_labor_rate, overhead_multiplier, "
+            "default_cs_price_per_lb). The user must approve before it executes. See "
+            "get_pricing_settings for current values and available keys."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "setting_key": {
+                    "type": "string",
+                    "description": "The cost setting key"
+                },
+                "new_value": {
+                    "type": "number",
+                    "description": "The new numeric value"
+                }
+            },
+            "required": ["setting_key", "new_value"]
+        }
+    }
+]
+
+ACTION_TOOL_NAMES = {t["name"] for t in ACTION_TOOL_DEFINITIONS}
 
 
 # =============================================================================
@@ -699,7 +893,7 @@ def list_work_queue_tasks(
     limit = min(limit, 50)
 
     query = supabase.table("work_queue").select(
-        "task_type, status, error_message, created_at, started_at, completed_at, "
+        "id, task_type, status, error_message, created_at, started_at, completed_at, "
         "items(item_number)"
     )
 
@@ -737,6 +931,244 @@ def get_pricing_settings() -> dict[str, Any]:
     }
 
 
+def audit_project(project_code: str) -> dict[str, Any]:
+    """Pre-flight audit: find missing routing, files, prices, and materials."""
+    supabase = get_supabase_admin()
+
+    project = _find_mrp_project(project_code)
+    if project is None:
+        return {"error": f"MRP project '{project_code}' not found"}
+    if "_ambiguous" in project:
+        return {
+            "error": f"Multiple projects match '{project_code}'",
+            "matches": project["_ambiguous"]
+        }
+
+    pid = project["id"]
+
+    parts_result = supabase.table("mrp_project_parts").select(
+        "item_id, quantity, items(item_number, name, thickness, is_supplier_part, unit_price)"
+    ).eq("project_id", pid).execute()
+
+    parts = parts_result.data or []
+    if not parts:
+        return {"error": f"Project '{project['project_code']}' has no parts"}
+
+    item_ids = [p["item_id"] for p in parts]
+
+    # Which items have routing?
+    routing_result = supabase.table("routing").select("item_id").in_("item_id", item_ids).execute()
+    routed_ids = {r["item_id"] for r in (routing_result.data or [])}
+
+    # Which items have raw materials assigned?
+    rm_result = supabase.table("routing_materials").select("item_id").in_("item_id", item_ids).execute()
+    material_ids = {r["item_id"] for r in (rm_result.data or [])}
+
+    # File types per item
+    files_result = supabase.table("files").select("item_id, file_type").in_("item_id", item_ids).execute()
+    file_types_by_item: dict[str, set] = {}
+    for f in (files_result.data or []):
+        file_types_by_item.setdefault(f["item_id"], set()).add(f.get("file_type"))
+
+    missing_routing = []
+    missing_pdf = []
+    missing_dxf = []
+    missing_material = []
+    unpriced_supplier_parts = []
+
+    for part in parts:
+        item = part.get("items") or {}
+        item_id = part["item_id"]
+        ref = {"item_number": item.get("item_number"), "name": item.get("name")}
+        file_types = file_types_by_item.get(item_id, set())
+
+        if item.get("is_supplier_part"):
+            if not item.get("unit_price"):
+                unpriced_supplier_parts.append(ref)
+            continue
+
+        if item_id not in routed_ids:
+            missing_routing.append(ref)
+        if item_id not in material_ids:
+            missing_material.append(ref)
+        if "PDF" not in file_types:
+            missing_pdf.append(ref)
+        # Sheet metal parts (thickness set) should have a DXF flat pattern
+        if item.get("thickness") and "DXF" not in file_types:
+            missing_dxf.append(ref)
+
+    return {
+        "project_code": project["project_code"],
+        "part_line_count": len(parts),
+        "issues": {
+            "parts_missing_routing": missing_routing,
+            "parts_missing_pdf_print": missing_pdf,
+            "sheet_metal_parts_missing_dxf": missing_dxf,
+            "parts_missing_raw_material": missing_material,
+            "supplier_parts_with_no_unit_price": unpriced_supplier_parts,
+        },
+        "issue_counts": {
+            "missing_routing": len(missing_routing),
+            "missing_pdf": len(missing_pdf),
+            "missing_dxf": len(missing_dxf),
+            "missing_raw_material": len(missing_material),
+            "unpriced_supplier_parts": len(unpriced_supplier_parts),
+        },
+        "clean": not any([missing_routing, missing_pdf, missing_dxf,
+                          missing_material, unpriced_supplier_parts]),
+    }
+
+
+def get_time_analysis(project_code: str) -> dict[str, Any]:
+    """Compare estimated routing times vs actual logged time per item+station."""
+    supabase = get_supabase_admin()
+
+    project = _find_mrp_project(project_code)
+    if project is None:
+        return {"error": f"MRP project '{project_code}' not found"}
+    if "_ambiguous" in project:
+        return {
+            "error": f"Multiple projects match '{project_code}'",
+            "matches": project["_ambiguous"]
+        }
+
+    pid = project["id"]
+
+    logs_result = supabase.table("time_logs").select(
+        "item_id, station_id, time_min, items(item_number, name), "
+        "workstations(station_code, station_name)"
+    ).eq("project_id", pid).execute()
+
+    logs = logs_result.data or []
+    if not logs:
+        return {
+            "project_code": project["project_code"],
+            "message": "No shop time has been logged for this project yet.",
+            "rows": []
+        }
+
+    # Actual minutes per (item, station)
+    actual: dict[tuple, dict] = {}
+    for log in logs:
+        key = (log["item_id"], log["station_id"])
+        if key not in actual:
+            item = log.get("items") or {}
+            ws = log.get("workstations") or {}
+            actual[key] = {
+                "item_number": item.get("item_number"),
+                "name": item.get("name"),
+                "station": ws.get("station_name") or ws.get("station_code"),
+                "actual_total_min": 0.0,
+            }
+        actual[key]["actual_total_min"] += float(log.get("time_min") or 0)
+
+    item_ids = list({k[0] for k in actual})
+
+    # Estimated min/part per (item, station)
+    routing_result = supabase.table("routing").select(
+        "item_id, station_id, est_time_min"
+    ).in_("item_id", item_ids).execute()
+    est_map = {
+        (r["item_id"], r["station_id"]): float(r.get("est_time_min") or 0)
+        for r in (routing_result.data or [])
+    }
+
+    # Quantity completed per (item, station)
+    completion_result = supabase.table("part_completion").select(
+        "item_id, station_id, qty_complete"
+    ).eq("project_id", pid).execute()
+    qty_map: dict[tuple, int] = {}
+    for c in (completion_result.data or []):
+        key = (c["item_id"], c["station_id"])
+        qty_map[key] = qty_map.get(key, 0) + (c.get("qty_complete") or 0)
+
+    rows = []
+    for key, row in actual.items():
+        est_per_part = est_map.get(key)
+        qty = qty_map.get(key, 0)
+        actual_total = row["actual_total_min"]
+        actual_per_part = round(actual_total / qty, 2) if qty > 0 else None
+        rows.append({
+            **row,
+            "est_min_per_part": est_per_part,
+            "qty_completed": qty,
+            "actual_total_min": round(actual_total, 2),
+            "actual_min_per_part": actual_per_part,
+        })
+
+    rows.sort(key=lambda r: (r["item_number"] or "", r["station"] or ""))
+
+    return {
+        "project_code": project["project_code"],
+        "rows": rows,
+        "note": (
+            "est_min_per_part comes from routing; actual_min_per_part = logged time / qty "
+            "completed at that station. Comparison is only meaningful where qty_completed > 0."
+        )
+    }
+
+
+def list_low_stock_materials() -> dict[str, Any]:
+    """List raw materials at or below reorder point (on-hand + on-order)."""
+    supabase = get_supabase_admin()
+
+    result = supabase.table("raw_materials").select(
+        "material_code, material_type, description, qty_on_hand, qty_on_order, "
+        "reorder_point, price_per_unit"
+    ).not_.is_("reorder_point", "null").execute()
+
+    low = []
+    for m in result.data or []:
+        on_hand = m.get("qty_on_hand") or 0
+        on_order = m.get("qty_on_order") or 0
+        reorder = m.get("reorder_point") or 0
+        if on_hand + on_order <= reorder:
+            m["available_plus_on_order"] = on_hand + on_order
+            low.append(m)
+
+    return {"count": len(low), "materials": low}
+
+
+# SQL keywords that should never appear in a read-only query. The database
+# function and read-only role are the real enforcement; this is a fast-fail.
+_SQL_FORBIDDEN = (
+    "insert", "update", "delete", "drop", "alter", "create", "truncate",
+    "grant", "revoke", "vacuum", "copy", "call", "do", "set", "reset",
+    "listen", "notify", "refresh", "reindex", "cluster", "comment",
+)
+
+
+def query_database(sql: str, max_rows: int = 200) -> dict[str, Any]:
+    """Run a read-only SELECT via the assistant_query database function."""
+    import re
+
+    supabase = get_supabase_admin()
+
+    stripped = sql.strip().rstrip(";").strip()
+    if not re.match(r"^(select|with)\b", stripped, re.IGNORECASE):
+        return {"error": "Only SELECT queries are allowed"}
+    if ";" in stripped:
+        return {"error": "Multiple statements are not allowed"}
+
+    words = set(re.findall(r"[a-z_]+", stripped.lower()))
+    forbidden = words & set(_SQL_FORBIDDEN)
+    if forbidden:
+        return {"error": f"Query contains forbidden keywords: {sorted(forbidden)}"}
+
+    max_rows = min(max(max_rows, 1), 500)
+
+    try:
+        result = supabase.rpc("assistant_query", {
+            "sql": stripped,
+            "max_rows": max_rows
+        }).execute()
+    except Exception as e:
+        return {"error": f"Query failed: {str(e)}"}
+
+    rows = result.data if result.data is not None else []
+    return {"row_count": len(rows), "rows": rows}
+
+
 def list_raw_materials(
     query: Optional[str] = None,
     material_type: Optional[str] = None,
@@ -765,6 +1197,113 @@ def list_raw_materials(
 
 
 # =============================================================================
+# Action Executors (run only after explicit user approval)
+# =============================================================================
+
+def _execute_requeue_failed_task(task_id: str) -> dict[str, Any]:
+    supabase = get_supabase_admin()
+
+    result = supabase.table("work_queue").update({
+        "status": "pending",
+        "error_message": None,
+        "started_at": None,
+        "completed_at": None,
+    }).eq("id", task_id).eq("status", "failed").execute()
+
+    if not result.data:
+        return {"error": "Task not found or is not in 'failed' state"}
+    return {"status": "requeued", "task_id": task_id}
+
+
+def _execute_update_material_price(material_code: str, new_price: float) -> dict[str, Any]:
+    supabase = get_supabase_admin()
+
+    result = supabase.table("raw_materials").update({
+        "price_per_unit": new_price
+    }).eq("material_code", material_code).execute()
+
+    if not result.data:
+        return {"error": f"Material '{material_code}' not found"}
+    return {"status": "updated", "material_code": material_code, "new_price": new_price}
+
+
+def _execute_update_routing_time(item_number: str, sequence: int, new_time_min: float) -> dict[str, Any]:
+    supabase = get_supabase_admin()
+
+    normalized = item_number.lower().strip()
+
+    try:
+        item_result = supabase.table("items").select("id").eq(
+            "item_number", normalized
+        ).single().execute()
+    except Exception:
+        return {"error": f"Item '{item_number}' not found"}
+
+    if not item_result.data:
+        return {"error": f"Item '{item_number}' not found"}
+
+    result = supabase.table("routing").update({
+        "est_time_min": new_time_min
+    }).eq("item_id", item_result.data["id"]).eq("sequence", sequence).execute()
+
+    if not result.data:
+        return {"error": f"No routing step with sequence {sequence} on '{normalized}'"}
+    return {
+        "status": "updated",
+        "item_number": normalized,
+        "sequence": sequence,
+        "new_time_min": new_time_min
+    }
+
+
+def _execute_update_cost_setting(setting_key: str, new_value: float) -> dict[str, Any]:
+    supabase = get_supabase_admin()
+
+    result = supabase.table("cost_settings").update({
+        "setting_value": new_value
+    }).eq("setting_key", setting_key).execute()
+
+    if not result.data:
+        return {"error": f"Cost setting '{setting_key}' not found"}
+    return {"status": "updated", "setting_key": setting_key, "new_value": new_value}
+
+
+ACTION_EXECUTORS = {
+    "requeue_failed_task": _execute_requeue_failed_task,
+    "update_material_price": _execute_update_material_price,
+    "update_routing_time": _execute_update_routing_time,
+    "update_cost_setting": _execute_update_cost_setting,
+}
+
+
+def describe_action(name: str, arguments: dict[str, Any]) -> str:
+    """Human-readable description of a proposed action, shown on the approval card."""
+    if name == "requeue_failed_task":
+        return f"Re-queue failed task {arguments.get('task_id', '?')}"
+    if name == "update_material_price":
+        return (f"Set price of material {arguments.get('material_code', '?')} "
+                f"to ${arguments.get('new_price', '?')}")
+    if name == "update_routing_time":
+        return (f"Set routing step {arguments.get('sequence', '?')} on "
+                f"{arguments.get('item_number', '?')} to "
+                f"{arguments.get('new_time_min', '?')} min")
+    if name == "update_cost_setting":
+        return (f"Set cost setting '{arguments.get('setting_key', '?')}' "
+                f"to {arguments.get('new_value', '?')}")
+    return f"{name}({json.dumps(arguments)})"
+
+
+def execute_action(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Execute an approved action. Only called from the approval endpoint."""
+    if name not in ACTION_EXECUTORS:
+        return {"error": f"Unknown action: {name}"}
+    try:
+        return ACTION_EXECUTORS[name](**arguments)
+    except Exception as e:
+        return {"error": f"Action '{name}' failed: {str(e)}"}
+
+
+# =============================================================================
 # Tool Dispatcher
 # =============================================================================
 
@@ -782,6 +1321,10 @@ TOOL_FUNCTIONS = {
     "list_work_queue_tasks": list_work_queue_tasks,
     "get_pricing_settings": get_pricing_settings,
     "list_raw_materials": list_raw_materials,
+    "audit_project": audit_project,
+    "get_time_analysis": get_time_analysis,
+    "list_low_stock_materials": list_low_stock_materials,
+    "query_database": query_database,
 }
 
 # Human-readable summaries for SSE status events
@@ -799,6 +1342,14 @@ TOOL_SUMMARIES = {
     "list_work_queue_tasks": "Checking work queue...",
     "get_pricing_settings": "Loading pricing settings...",
     "list_raw_materials": "Listing raw materials...",
+    "audit_project": "Auditing project...",
+    "get_time_analysis": "Comparing estimated vs actual time...",
+    "list_low_stock_materials": "Checking stock levels...",
+    "query_database": "Running database query...",
+    "requeue_failed_task": "Proposing task re-queue...",
+    "update_material_price": "Proposing price update...",
+    "update_routing_time": "Proposing routing time update...",
+    "update_cost_setting": "Proposing cost setting update...",
 }
 
 
@@ -839,5 +1390,9 @@ def get_tool_summary(name: str, arguments: dict[str, Any]) -> str:
         return f"Calculating cost estimate for {arguments['project_code']}..."
     elif name == "get_item_routing" and "item_number" in arguments:
         return f"Looking up routing for {arguments['item_number']}..."
+    elif name == "audit_project" and "project_code" in arguments:
+        return f"Auditing project {arguments['project_code']}..."
+    elif name == "get_time_analysis" and "project_code" in arguments:
+        return f"Analyzing time for {arguments['project_code']}..."
 
     return base

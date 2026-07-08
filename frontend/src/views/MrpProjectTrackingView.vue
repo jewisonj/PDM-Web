@@ -547,6 +547,13 @@ onUnmounted(() => {
         >
           📖 Build Book
         </button>
+        <button
+          v-if="selectedProjectCode"
+          class="btn btn-secondary"
+          @click="router.push({ path: '/mrp/assistant', query: { project: selectedProjectCode } })"
+        >
+          ✨ Ask PDM
+        </button>
         <button class="btn btn-secondary" @click="goToDashboard">
           &larr; Dashboard
         </button>
