@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { supabase, API_BASE_URL } from '../services/supabase'
 import NestConfigModal from '../components/NestConfigModal.vue'
 import type { NestGroup, NestJob, NestSheet } from '../types'
+import { isDocumentItem } from '../utils/buildTracker'
 
 const router = useRouter()
 
@@ -54,6 +55,10 @@ const showDetailPanel = ref(false)
 const addAssemblyInput = ref('')
 const addingAssembly = ref(false)
 const updatingBom = ref(false)
+const refDocSearch = ref('')
+const refDocResults = ref<Array<{ id: string; item_number: string; name: string | null; revision: string | null }>>([])
+const searchingRefDocs = ref(false)
+const attachingRefDoc = ref(false)
 const addPartInput = ref('')
 const addingPart = ref(false)
 const generatingPacket = ref(false)
@@ -101,11 +106,16 @@ const assemblies = computed(() =>
 )
 
 const parts = computed(() =>
-  projectParts.value.filter(p => !p.is_assembly)
+  projectParts.value.filter(p => !p.is_assembly && !isDocumentItem(p.item_number))
 )
 
 const unroutedParts = computed(() =>
-  projectParts.value.filter(p => !p.has_routing && !p.is_assembly)
+  projectParts.value.filter(p => !p.has_routing && !p.is_assembly && !isDocumentItem(p.item_number))
+)
+
+// Controlled documents (third-letter 'd' item numbers) attached as reference prints
+const referenceDocs = computed(() =>
+  projectParts.value.filter(p => isDocumentItem(p.item_number))
 )
 
 const totalParts = computed(() => projectParts.value.length)
@@ -125,13 +135,6 @@ const remainingHours = computed(() => {
     completedByItem.get(c.item_id)!.add(c.station_id)
   }
 
-  // Debug logging
-  console.log('Completion data count:', completionData.value.length)
-  console.log('Items with completion:', completedByItem.size)
-  if (completionData.value.length > 0) {
-    console.log('Sample completion records:', completionData.value.slice(0, 3))
-  }
-
   // Sum time for parts that are NOT complete
   let remainingMinutes = 0
   let completeParts = 0
@@ -146,7 +149,6 @@ const remainingHours = computed(() => {
       remainingMinutes += part.quantity * part.est_time_min
     }
   }
-  console.log(`Complete parts: ${completeParts}/${projectParts.value.length}, Remaining minutes: ${remainingMinutes}`)
   return Math.round(remainingMinutes / 60 * 10) / 10
 })
 
@@ -491,6 +493,71 @@ async function updateAssemblyQty(assemblyId: string, newQty: number) {
   }
 }
 
+// --- Reference documents (design books, build references) ---
+let refDocSearchTimer: ReturnType<typeof setTimeout> | null = null
+function onRefDocSearchInput() {
+  if (refDocSearchTimer) clearTimeout(refDocSearchTimer)
+  refDocSearchTimer = setTimeout(searchRefDocs, 250)
+}
+
+async function searchRefDocs() {
+  const q = refDocSearch.value.trim()
+  if (q.length < 1) {
+    refDocResults.value = []
+    return
+  }
+  searchingRefDocs.value = true
+  try {
+    // Document items: third letter 'd' (e.g. csd00010). Match on number or name.
+    const { data, error: searchError } = await supabase
+      .from('items')
+      .select('id, item_number, name, revision')
+      .ilike('item_number', '__d%')
+      .or(`item_number.ilike.%${q}%,name.ilike.%${q}%`)
+      .order('item_number')
+      .limit(20)
+    if (searchError) throw searchError
+    refDocResults.value = (data || []).filter(i => isDocumentItem(i.item_number))
+  } catch (e: any) {
+    error.value = e.message || 'Reference document search failed'
+  } finally {
+    searchingRefDocs.value = false
+  }
+}
+
+async function attachRefDoc(item: { id: string; item_number: string }) {
+  if (!selectedProject.value || attachingRefDoc.value) return
+  attachingRefDoc.value = true
+  error.value = ''
+  try {
+    if (projectParts.value.some(p => p.item_id === item.id)) {
+      throw new Error(`"${item.item_number}" is already attached`)
+    }
+    // is_manual = true so it survives BOM rebuilds (same as manually added parts)
+    const { error: insertError } = await supabase
+      .from('mrp_project_parts')
+      .insert({
+        project_id: selectedProject.value.id,
+        item_id: item.id,
+        quantity: 1,
+        is_manual: true,
+      })
+    if (insertError) {
+      if ((insertError as any).code === '23505') {
+        throw new Error(`"${item.item_number}" is already attached`)
+      }
+      throw insertError
+    }
+    refDocSearch.value = ''
+    refDocResults.value = []
+    await loadProjectParts(selectedProject.value.id)
+  } catch (e: any) {
+    error.value = e.message || 'Failed to attach reference document'
+  } finally {
+    attachingRefDoc.value = false
+  }
+}
+
 async function updateBom() {
   if (!selectedProject.value) return
 
@@ -515,21 +582,66 @@ async function updateBom() {
 
     if (deleteError) throw deleteError
 
-    // 2. Add top-level assemblies as parts (they are produced items too)
+    // 2. Load ALL BOM relationships in a single query (avoids N+1 problem)
+    const { data: allBomData } = await supabase
+      .from('bom')
+      .select('parent_item_id, child_item_id, quantity')
+
+    // Build in-memory BOM lookup: parent_item_id -> children[]
+    const bomMap = new Map<string, Array<{ child_item_id: string, quantity: number }>>()
+    for (const b of allBomData || []) {
+      if (!bomMap.has(b.parent_item_id)) {
+        bomMap.set(b.parent_item_id, [])
+      }
+      bomMap.get(b.parent_item_id)!.push({
+        child_item_id: b.child_item_id,
+        quantity: b.quantity
+      })
+    }
+
+    // 3. Add top-level assemblies as parts (they are produced items too)
     const allParts = new Map<string, { item_id: string, quantity: number }>()
 
     for (const asm of assemblies) {
       allParts.set(asm.item_id, { item_id: asm.item_id, quantity: asm.quantity })
     }
 
-    // 3. Recursively explode all assemblies (skip top assemblies in BOM children to avoid double-counting)
+    // 4. Recursively explode all assemblies in memory (no database calls)
     const topAssemblyIds = new Set(assemblies.map(a => a.item_id))
 
-    for (const asm of assemblies) {
-      await explodeBomRecursive(asm.item_id, asm.quantity, allParts, topAssemblyIds)
+    function explodeBomLocal(
+      parentId: string,
+      parentQty: number,
+      visited: Set<string> = new Set()
+    ) {
+      // Circular reference protection
+      if (visited.has(parentId)) return
+      visited.add(parentId)
+
+      const children = bomMap.get(parentId) || []
+      for (const child of children) {
+        const totalQty = child.quantity * parentQty
+
+        // Skip top-level assemblies (they're tracked separately)
+        if (topAssemblyIds.has(child.child_item_id)) continue
+
+        const existing = allParts.get(child.child_item_id)
+        if (existing) {
+          existing.quantity += totalQty
+        } else {
+          allParts.set(child.child_item_id, { item_id: child.child_item_id, quantity: totalQty })
+        }
+
+        // Recurse into children (in memory, no await)
+        explodeBomLocal(child.child_item_id, totalQty, new Set(visited))
+      }
     }
 
-    // 4. Get manual parts to avoid conflicts
+    for (const asm of assemblies) {
+      explodeBomLocal(asm.item_id, asm.quantity)
+    }
+
+    // 5. Get manual parts to avoid conflicts
     const { data: manualParts } = await supabase
       .from('mrp_project_parts')
       .select('item_id')
@@ -538,7 +650,7 @@ async function updateBom() {
 
     const manualItemIds = new Set((manualParts || []).map(p => p.item_id))
 
-    // 5. Insert BOM-derived parts (skip items that exist as manual)
+    // 6. Insert BOM-derived parts (skip items that exist as manual)
     const newParts = Array.from(allParts.entries())
       .filter(([itemId]) => !manualItemIds.has(itemId))
       .map(([_, part]) => ({
@@ -556,7 +668,7 @@ async function updateBom() {
       if (insertError) throw insertError
     }
 
-    // 6. Update top_assembly_id for backward compat
+    // 7. Update top_assembly_id for backward compat
     if (assemblies[0]) {
       await supabase
         .from('mrp_projects')
@@ -651,38 +763,6 @@ async function updatePartQty(partId: string, newQty: number) {
     if (part) part.quantity = newQty
   } catch (e: any) {
     error.value = e.message || 'Failed to update quantity'
-  }
-}
-
-async function explodeBomRecursive(
-  parentId: string,
-  parentQty: number,
-  parts: Map<string, { item_id: string, quantity: number }>,
-  excludeIds?: Set<string>
-) {
-  const { data: bomEntries } = await supabase
-    .from('bom')
-    .select('child_item_id, quantity')
-    .eq('parent_item_id', parentId)
-
-  if (!bomEntries || bomEntries.length === 0) return
-
-  for (const entry of bomEntries) {
-    const totalQty = entry.quantity * parentQty
-
-    // Skip top-level assemblies (they're tracked separately)
-    if (excludeIds && excludeIds.has(entry.child_item_id)) continue
-
-    const existing = parts.get(entry.child_item_id)
-
-    if (existing) {
-      existing.quantity += totalQty
-    } else {
-      parts.set(entry.child_item_id, { item_id: entry.child_item_id, quantity: totalQty })
-    }
-
-    // Recurse into children
-    await explodeBomRecursive(entry.child_item_id, totalQty, parts, excludeIds)
   }
 }
 
@@ -841,6 +921,10 @@ function goToCostSettings() {
 function goToCostReport() {
   const projectQuery = selectedProject.value ? `?project=${selectedProject.value.id}` : ''
   router.push(`/mrp/cost-report${projectQuery}`)
+}
+
+function goToAssistant() {
+  router.push('/mrp/assistant')
 }
 
 // === Nesting Functions ===
@@ -1056,6 +1140,10 @@ defineExpose({ openNestModal })
         <button class="nav-btn settings" @click="goToCostSettings">
           <span class="nav-dot settings"></span>
           Cost Settings
+        </button>
+        <button class="nav-btn assistant" @click="goToAssistant">
+          <span class="nav-dot assistant"></span>
+          Ask PDM
         </button>
         <button class="refresh-btn" @click="refreshDashboard" :disabled="loading">
           <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"></i>
@@ -1275,6 +1363,53 @@ defineExpose({ openNestModal })
                   <i v-if="updatingBom" class="pi pi-spin pi-spinner"></i>
                   <span v-else>Update</span>
                 </button>
+              </div>
+            </div>
+
+            <!-- Reference Documents -->
+            <div class="assembly-section">
+              <div class="section-label">Reference Documents</div>
+
+              <div v-if="referenceDocs.length > 0" class="assembly-list">
+                <div v-for="doc in referenceDocs" :key="doc.id" class="assembly-item">
+                  <span class="assembly-number">{{ doc.item_number }}</span>
+                  <span class="assembly-name">{{ doc.name || 'Document' }}</span>
+                  <button class="icon-btn danger" @click="removeProjectPart(doc.id)" title="Detach document">
+                    <i class="pi pi-times"></i>
+                  </button>
+                </div>
+              </div>
+              <div v-else class="empty-assembly-hint">
+                No reference documents attached
+              </div>
+
+              <div class="add-assembly-row refdoc-search-row">
+                <input
+                  v-model="refDocSearch"
+                  placeholder="Search documents (e.g. csd, or 'design book')"
+                  @input="onRefDocSearchInput"
+                  @keyup.enter="searchRefDocs"
+                />
+                <i v-if="searchingRefDocs" class="pi pi-spin pi-spinner refdoc-spin"></i>
+              </div>
+
+              <div v-if="refDocResults.length > 0" class="refdoc-results">
+                <button
+                  v-for="r in refDocResults"
+                  :key="r.id"
+                  class="refdoc-result"
+                  :disabled="attachingRefDoc || projectParts.some(p => p.item_id === r.id)"
+                  @click="attachRefDoc(r)"
+                >
+                  <span class="refdoc-num">{{ r.item_number }}</span>
+                  <span class="refdoc-name">{{ r.name || 'Document' }}</span>
+                  <span v-if="r.revision" class="refdoc-rev">Rev {{ r.revision }}</span>
+                  <span v-if="projectParts.some(p => p.item_id === r.id)" class="refdoc-tag attached">Attached</span>
+                  <span v-else class="refdoc-tag add">+ Attach</span>
+                </button>
+              </div>
+              <div v-else-if="refDocSearch.trim() && !searchingRefDocs" class="empty-assembly-hint">
+                No matching documents
               </div>
             </div>
 
@@ -1672,6 +1807,7 @@ defineExpose({ openNestModal })
 .nav-dot.tracking { background: #a855f7; }
 .nav-dot.settings { background: #10b981; }
 .nav-dot.cost-report { background: #f472b6; }
+.nav-dot.assistant { background: #38bdf8; }
 
 .refresh-btn {
   display: flex;
@@ -2194,6 +2330,88 @@ defineExpose({ openNestModal })
 .add-assembly-row input:focus {
   outline: none;
   border-color: #38bdf8;
+}
+
+/* Reference document search */
+.refdoc-search-row {
+  align-items: center;
+  position: relative;
+}
+
+.refdoc-spin {
+  color: #38bdf8;
+  font-size: 14px;
+}
+
+.refdoc-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  border: 1px solid #1f2937;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.refdoc-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #020617;
+  border: none;
+  border-bottom: 1px solid #111827;
+  color: #e5e7eb;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.refdoc-result:last-child {
+  border-bottom: none;
+}
+
+.refdoc-result:hover:not(:disabled) {
+  background: #0f172a;
+}
+
+.refdoc-result:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.refdoc-num {
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.refdoc-name {
+  flex: 1;
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.refdoc-rev {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.refdoc-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 3px;
+}
+
+.refdoc-tag.add {
+  color: #38bdf8;
+  border: 1px solid #1e3a5f;
+}
+
+.refdoc-tag.attached {
+  color: #6b7280;
 }
 
 /* Sections */

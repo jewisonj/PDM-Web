@@ -63,9 +63,10 @@ Settings are loaded from environment variables (with `.env` file support via Pyd
 | `SUPABASE_ANON_KEY` | `""` | Supabase anonymous/public key |
 | `SUPABASE_SERVICE_KEY` | `""` | Supabase service role key (admin operations) |
 | `API_HOST` | `0.0.0.0` | Server bind address |
-| `API_PORT` | `8080` | Server port (8080 for production, 8000 for local dev) |
+| `API_PORT` | `8080` | Server port (8080 for production, 8001 for local dev) |
 | `DEBUG` | `false` | Enable debug mode and auto-reload |
 | `CORS_ALLOW_ALL` | `false` | Allow all CORS origins (set `true` for development) |
+| `ANTHROPIC_API_KEY` | `""` | Claude API key for AI assistant (optional, disables assistant if not set) |
 
 ### Supabase Clients
 
@@ -1282,6 +1283,130 @@ The deploy script reads Supabase credentials from `backend/.env` and passes them
 
 ---
 
+### AI Assistant (`/api/assistant`)
+
+**File:** `backend/app/routes/assistant.py`
+
+AI-powered conversational interface for querying PDM data using Claude Sonnet 4.5. Provides read-only access to items, BOMs, files, and projects through natural language chat.
+
+**See:** `33-AI-ASSISTANT.md` for complete feature documentation.
+
+#### POST /api/assistant/chat
+
+Send a chat message and receive a streaming response via Server-Sent Events (SSE).
+
+**Request Body (JSON):**
+```json
+{
+  "conversation_id": "abc123xyz",  // Optional - creates new if omitted
+  "message": "How many parts are in assembly csa00010?"
+}
+```
+
+**Response:** Server-Sent Events stream with the following event types:
+
+**Event: start**
+```json
+{
+  "conversation_id": "abc123xyz"
+}
+```
+
+**Event: text**
+```json
+{
+  "delta": "Assembly `csa00010` contains "
+}
+```
+
+**Event: tool**
+```json
+{
+  "name": "get_bom_tree",
+  "summary": "Expanding BOM for csa00010..."
+}
+```
+
+**Event: done**
+```json
+{}
+```
+
+**Event: error**
+```json
+{
+  "message": "Too many tool calls - please simplify your question"
+}
+```
+
+**Example (curl):**
+```bash
+curl -X POST "http://localhost:8001/api/assistant/chat" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Find parts with bracket in the name"}'
+```
+
+**Example (JavaScript/EventSource pattern):**
+```javascript
+const response = await fetch('/api/assistant/chat', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    conversation_id: conversationId,
+    message: userMessage
+  })
+});
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+
+  const chunk = decoder.decode(value);
+  // Parse SSE events (event: type\ndata: {...}\n\n)
+}
+```
+
+**Available Tools (Claude can call these automatically):**
+
+| Tool | Description |
+|------|-------------|
+| `search_items` | Search by item number or name fragment |
+| `get_item` | Get full details for a specific item |
+| `get_bom_tree` | Recursive BOM expansion with quantities |
+| `get_where_used` | Find parent assemblies (reverse BOM) |
+| `list_item_files` | List files for an item (with type filter) |
+| `get_file_download_link` | Generate signed download URL (1 hour expiry) |
+
+**Configuration:**
+- Requires `ANTHROPIC_API_KEY` in `backend/.env`
+- Model: `claude-sonnet-4-5-20250929`
+- Max 50 conversations cached (LRU eviction)
+- Max 8 tool calls per turn (prevents loops)
+- Prompt caching enabled for cost optimization
+
+**Response (503):** AI assistant not configured (missing API key).
+
+#### DELETE /api/assistant/chat/{conversation_id}
+
+Clear a conversation from the server's in-memory cache.
+
+**Example:**
+```bash
+curl -X DELETE "http://localhost:8001/api/assistant/chat/abc123xyz"
+```
+
+**Response (200):**
+```json
+{
+  "message": "Conversation cleared"
+}
+```
+
+---
+
 ## Error Handling
 
 All API endpoints return standard HTTP status codes:
@@ -1304,5 +1429,5 @@ Error responses follow the format:
 
 ---
 
-**Last Updated:** 2026-05-01
+**Last Updated:** 2026-07-07
 

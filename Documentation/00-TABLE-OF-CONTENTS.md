@@ -65,12 +65,13 @@ New to PDM-Web? Read these in order:
 | 12 | `12-FREECAD-AUTOMATION.md` | FreeCAD Docker container, DXF flat pattern generation, SVG bend drawing generation. |
 | 29 | `29-NESTING-AUTOMATION.md` | DXF nesting worker, Bottom-Left Fill algorithm, project-scoped sheet metal nesting. |
 
-### Section 7: Integration
+### Section 7: Integration and AI
 
 | # | File | Description |
 |---|------|-------------|
 | 13 | `13-LOCAL-PDM-SERVICES-GUIDE.md` | Local upload bridge integration with the PDM-Web API. |
-| 14 | `14-SKILL-DEFINITION.md` | AI assistant skill definition for PDM-Web context. |
+| 14 | `14-SKILL-DEFINITION.md` | AI assistant skill definition for PDM-Web context (Claude Code agent). |
+| 33 | `33-AI-ASSISTANT.md` | PDM AI Assistant: Claude-powered conversational interface for querying parts, BOMs, files. SSE streaming chat, 6 read-only tools, prompt caching, tool status indicators. |
 
 ### Section 8: Development and Reference
 
@@ -133,6 +134,7 @@ New to PDM-Web? Read these in order:
 3. `31-BUILD-TRACKER-SHEET.md` -- printable shop-floor Build Tracker sheet
 4. `32-BUILD-BOOK.md` -- day-by-day manufacturing Build Book (work packages + kit/weld sheets + section print sets)
 5. `06-BOM-COST-ROLLUP-GUIDE.md` -- BOM cost rollup
+6. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
 
 ### Troubleshooting
 1. `19-TROUBLESHOOTING-DECISION-TREE.md` -- diagnosis
@@ -166,7 +168,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 33
+**Total Documentation Files:** 34
 **Status:** Current
 
 ---

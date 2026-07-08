@@ -8,6 +8,11 @@ export default defineConfig({
     port: 5174,
     host: true, // Listen on all interfaces for Docker access
     proxy: {
+      '/api/assistant': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true,
+        timeout: 0, // No timeout for SSE streaming
+      },
       '/api': {
         target: 'http://127.0.0.1:8001',
         changeOrigin: true,

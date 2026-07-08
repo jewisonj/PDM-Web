@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     api_port: int = 8080  # Default for production (Fly.io)
     debug: bool = False  # Default to production-safe
 
+    # AI Assistant (Claude)
+    anthropic_api_key: str = ""
+
     # CORS - allow localhost and Tailnet (100.x.x.x) access
     cors_origins: list[str] = [
         "http://localhost:5174",

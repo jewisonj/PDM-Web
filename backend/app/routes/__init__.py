@@ -8,6 +8,7 @@ from .tasks import router as tasks_router
 from .mrp import router as mrp_router
 from .workspace import router as workspace_router
 from .nesting import router as nesting_router
+from .assistant import router as assistant_router
 
 __all__ = [
     "items_router",
@@ -19,4 +20,5 @@ __all__ = [
     "mrp_router",
     "workspace_router",
     "nesting_router",
+    "assistant_router",
 ]

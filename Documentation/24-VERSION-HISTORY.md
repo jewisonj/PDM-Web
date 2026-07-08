@@ -7,9 +7,133 @@
 
 ## Current Version
 
-### v3.9.1 (2026-07-07) -- Build Book Section Print Sets, Document Items, Purchased Display
+### v3.9.2 (2026-07-07) -- AI Assistant
 
 **Status:** Current Production Release
+
+**Summary:** Added Claude-powered AI assistant at `/mrp/assistant` for natural-language querying of PDM data. Users can ask questions like "How many parts are in assembly csa00010?" or "Pull me the print of csp00200" and receive immediate answers with data grounded in the database. This is a **read-only v1** implementation with no write operations, no authentication (uses admin Supabase client), and in-memory session storage. Features SSE streaming responses, tool status indicators, markdown rendering, and prompt caching for cost optimization.
+
+#### Features Added
+
+**AI Assistant Chat Interface**
+
+- **Frontend UI:** Full-screen chat view at `/mrp/assistant` with empty-state suggestions, message bubbles (user right/blue, assistant left/dark), markdown rendering with syntax highlighting, tool status indicators, typing animation, and auto-scroll
+- **Backend Endpoint:** `POST /api/assistant/chat` with SSE streaming response (events: `start`, `text`, `tool`, `done`, `error`)
+- **Agent Loop:** Server-side tool execution with max 8 iterations per turn to prevent runaway loops
+- **Session Management:** In-memory LRU cache for 50 conversations, max 40 messages per conversation (auto-trimmed)
+- **Model:** Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) with prompt caching enabled (90% cost reduction on cached turns)
+
+**Six Read-Only Tools**
+
+1. `search_items` - Search by item number or name fragment
+2. `get_item` - Get full details for a specific item
+3. `get_bom_tree` - Recursive BOM expansion with quantities
+4. `get_where_used` - Find parent assemblies (reverse BOM)
+5. `list_item_files` - List files for an item (with type filter)
+6. `get_file_download_link` - Generate signed download URL (1 hour expiry)
+
+**System Prompt Engineering**
+
+- Teaches BOM counting rule (multiply ancestor quantities, show math)
+- Guides multi-step file delivery workflow (list files → get download link)
+- Enforces grounding (never invent data) and concise responses
+- Lowercase item number display convention (`csp00200` not CSP00200)
+
+**Integration Points**
+
+- "Ask PDM" button in MRP dashboard navigation bar
+- Route: `/mrp/assistant` (requires auth)
+- Pinia store (`assistant.ts`) for conversation state
+- SSE client (`assistantApi.ts`) using fetch + ReadableStream
+- Markdown rendering with `marked` and `DOMPurify` (XSS safety)
+
+#### Configuration
+
+- New environment variable: `ANTHROPIC_API_KEY` in `backend/.env` (optional, disables assistant if not set)
+- New dependency: `anthropic>=0.50.0` in `backend/requirements.txt`
+- Frontend dependencies: `marked`, `dompurify` (already in package.json)
+
+#### Frontend Changes
+
+- `frontend/src/views/MrpAssistantView.vue` (new) -- chat UI with markdown rendering
+- `frontend/src/stores/assistant.ts` (new) -- Pinia store for messages and streaming state
+- `frontend/src/services/assistantApi.ts` (new) -- SSE client
+- `frontend/src/router/index.ts` -- added `/mrp/assistant` route
+- `frontend/src/views/MrpDashboardView.vue` -- "Ask PDM" navigation button
+
+#### Backend Changes
+
+- `backend/app/routes/assistant.py` (new) -- SSE chat endpoint with agent loop
+- `backend/app/services/assistant_tools.py` (new) -- 6 tool implementations + Anthropic schemas
+- `backend/app/config.py` -- added `anthropic_api_key` setting
+- `backend/app/main.py` -- registered assistant router
+- `backend/app/routes/__init__.py` -- imported assistant router
+- `backend/requirements.txt` -- added `anthropic>=0.50.0`
+
+#### Known Limitations (v1)
+
+- **No authentication** - Skipped JWT validation, uses Supabase admin client (bypasses RLS)
+- **In-memory sessions only** - Conversations lost on server restart
+- **No conversation history** - Cannot resume old conversations after clearing
+- **No rate limiting** - Could be abused if exposed publicly
+- **Read-only** - Cannot create/update/delete items, check out files, or trigger workflows
+
+#### Future Enhancements (v2+)
+
+- Add JWT authentication to `/api/assistant/chat`
+- Store conversations in `assistant_conversations` table
+- Add write tools (`create_checkout`, `submit_feedback`) with auth
+- Expand to project schedule queries, work queue status
+- Add conversation search/history view
+
+#### Performance & Cost
+
+- **Prompt caching:** System prompt cached after first turn (90% cost reduction)
+- **Typical query cost:** $0.003-0.005 per turn
+- **Monthly estimate (100 queries/day):** ~$9/month
+- **Token logging:** Backend logs input/output/cached tokens for monitoring
+
+#### Testing
+
+- Manual testing checklist included in documentation
+- Example test queries for all 6 tools
+- Edge cases covered (no results, not found, wrong type)
+
+#### Related Documentation
+
+- [33-AI-ASSISTANT.md](33-AI-ASSISTANT.md) -- Complete feature reference (architecture, tools, system prompt, examples, troubleshooting)
+- [04-SERVICES-REFERENCE.md](04-SERVICES-REFERENCE.md) -- Updated with `/api/assistant/*` endpoints
+- [00-TABLE-OF-CONTENTS.md](00-TABLE-OF-CONTENTS.md) -- Updated with doc 33
+
+#### Files Changed Summary
+
+**Backend:**
+- `backend/app/routes/assistant.py` (new)
+- `backend/app/services/assistant_tools.py` (new)
+- `backend/app/config.py` (modified)
+- `backend/app/main.py` (modified)
+- `backend/app/routes/__init__.py` (modified)
+- `backend/requirements.txt` (modified)
+
+**Frontend:**
+- `frontend/src/views/MrpAssistantView.vue` (new)
+- `frontend/src/stores/assistant.ts` (new)
+- `frontend/src/services/assistantApi.ts` (new)
+- `frontend/src/router/index.ts` (modified)
+- `frontend/src/views/MrpDashboardView.vue` (modified)
+- `frontend/package.json` (modified - added marked, dompurify if not present)
+
+**Documentation:**
+- `Documentation/33-AI-ASSISTANT.md` (new)
+- `Documentation/00-TABLE-OF-CONTENTS.md` (modified)
+- `Documentation/04-SERVICES-REFERENCE.md` (modified)
+- `Documentation/24-VERSION-HISTORY.md` (modified - this entry)
+
+---
+
+### v3.9.1 (2026-07-07) -- Build Book Section Print Sets, Document Items, Purchased Display
+
+**Status:** Previous Release
 
 **Summary:** Follow-up release to v3.9's Build Book. The headline change is **section print sets**: instead of downloading the whole project's prints as one large bound PDF, the shop can now pull a small, task-sized PDF for exactly one section -- the reference docs, a single work package, or a single kit -- from a new toolbar dropdown. Also formalizes two conventions used across the Tracker and Book: **document items** (controlled-document item numbers, excluded from work rows and listed as reference prints instead) and **purchased-item display** (shop-facing documents show the supplier's own part number and source, not the internal PDM item number). Includes routing/data notes from the Spa project that shaped kit sequence rendering, and three engineering gotchas worth remembering for future backend-PDF work.
 

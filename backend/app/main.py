@@ -19,6 +19,7 @@ from .routes import (
     mrp_router,
     workspace_router,
     nesting_router,
+    assistant_router,
 )
 
 settings = get_settings()
@@ -50,6 +51,7 @@ app.include_router(tasks_router, prefix="/api")
 app.include_router(mrp_router, prefix="/api")
 app.include_router(workspace_router, prefix="/api")
 app.include_router(nesting_router, prefix="/api")
+app.include_router(assistant_router, prefix="/api")
 
 
 @app.get("/health")

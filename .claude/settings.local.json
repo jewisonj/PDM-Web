@@ -140,7 +140,19 @@
       "Bash(ls frontend/scripts)",
       "PowerShell(try { $r = Invoke-WebRequest -Uri 'http://localhost:5174/src/views/MrpBuildBookView.vue' -UseBasicParsing -TimeoutSec 20; Write-Output \"vite: $\\($r.StatusCode\\)\" } catch { Write-Output \"vite: FAIL $\\($_.Exception.Message\\)\" })",
       "PowerShell(Set-Location J:\\\\PDM-Web\\\\frontend; npx vitest run src/utils/buildBook.test.ts 2>&1 | Select-String -Pattern 'Tests|✓|×|FAIL' | Select-Object -Last 4; try { $r = Invoke-WebRequest -Uri 'http://localhost:5174/src/views/MrpBuildBookView.vue' -UseBasicParsing -TimeoutSec 20; Write-Output \"vite: $\\($r.StatusCode\\)\" } catch { Write-Output 'vite: FAIL' })",
-      "PowerShell(foreach \\($u in @\\('http://localhost:5174/src/views/MrpBuildBookView.vue', 'http://localhost:5174/src/utils/buildBook.ts'\\)\\) { try { $r = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 20; Write-Output \"$\\($r.StatusCode\\) $u \\($\\([math]::Round\\($r.Content.Length/1024,1\\)\\) KB\\)\" } catch { Write-Output \"FAIL $u :: $\\($_.Exception.Message\\)\" } })"
+      "PowerShell(foreach \\($u in @\\('http://localhost:5174/src/views/MrpBuildBookView.vue', 'http://localhost:5174/src/utils/buildBook.ts'\\)\\) { try { $r = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 20; Write-Output \"$\\($r.StatusCode\\) $u \\($\\([math]::Round\\($r.Content.Length/1024,1\\)\\) KB\\)\" } catch { Write-Output \"FAIL $u :: $\\($_.Exception.Message\\)\" } })",
+      "PowerShell(Start-Sleep -Seconds 2; try { $r = Invoke-WebRequest -Uri 'http://localhost:5174/src/views/MrpBuildBookView.vue' -UseBasicParsing -TimeoutSec 25; $hasRef = $r.Content -match 'Design Reference Prints'; Write-Output \"server OK \\($\\($r.StatusCode\\)\\) - serves 'Design Reference Prints': $hasRef\" } catch { Write-Output \"FAIL: $\\($_.Exception.Message\\)\" })",
+      "Bash(npm install)",
+      "Bash(timeout 15 curl:*)",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri 'http://localhost:5174/src/views/MrpDashboardView.vue' -UseBasicParsing -TimeoutSec 30; if \\($r.Content -match 'Internal Server Error|Transform failed|Parse failure|\\\\[plugin:vite'\\) { Write-Output \"COMPILE ERROR:\"; \\($r.Content -split \"`n\" | Select-String -Pattern 'error|failed' | Select-Object -First 5\\) } else { Write-Output \"OK $\\($r.StatusCode\\) - dashboard compiles \\($\\([math]::Round\\($r.Content.Length/1024,1\\)\\) KB\\), refDoc code present: $\\($r.Content -match 'attachRefDoc'\\)\" } } catch { Write-Output \"FAIL: $\\($_.Exception.Message\\)\" })",
+      "Bash(npm run dev:*)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(python -c:*)",
+      "Bash(pip show:*)",
+      "Bash(taskkill /F /FI \"WINDOWTITLE eq *uvicorn*\")",
+      "Bash(python -m uvicorn:*)",
+      "Bash(python -m pip install:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   },

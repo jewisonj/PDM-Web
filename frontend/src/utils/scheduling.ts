@@ -147,15 +147,10 @@ export function buildDependencyGraph(
 ): Map<string, PartSchedule> {
   const parts = new Map<string, PartSchedule>()
 
-  console.log('=== BUILD DEPENDENCY GRAPH ===')
-  console.log('Parts count:', partsData.length)
-  console.log('BOM relationships count:', bomData.length)
-
   // Create PartSchedule for each project part
   for (const p of partsData) {
     const item = p.items
     if (!item) {
-      console.warn('Part missing items data:', p)
       continue
     }
 
@@ -190,11 +185,6 @@ export function buildDependencyGraph(
       }
     }
   }
-  console.log('BOM relationships matched (both in project):', bomMatchCount)
-
-  // Log assemblies found
-  const assemblies = [...parts.values()].filter(p => p.is_assembly)
-  console.log('Assemblies found:', assemblies.map(a => `${a.item_number} (${a.child_item_ids.length} children)`))
 
   // Recursively calculate all descendants for each assembly
   function getDescendants(itemId: string, visited: Set<string> = new Set()): string[] {
@@ -236,13 +226,6 @@ export function buildDependencyGraph(
     part.bom_depth = calculateDepth(itemId, depthMemo)
   }
 
-  // Log assembly descendants
-  for (const [, part] of parts) {
-    if (part.is_assembly) {
-      console.log(`Assembly ${part.item_number}: depth=${part.bom_depth}, children=${part.child_item_ids.length}, all_descendants=${part.all_descendant_ids.length}`)
-    }
-  }
-
   return parts
 }
 
@@ -255,9 +238,6 @@ export function createScheduledTasks(
   routingData: RoutingData[],
   completionData: CompletionData[]
 ): ScheduledTask[] {
-  console.log('=== CREATE SCHEDULED TASKS ===')
-  console.log('Routing records count:', routingData.length)
-
   const tasks: ScheduledTask[] = []
 
   // Build completion lookup: item_id -> Set of completed station_ids
@@ -282,17 +262,6 @@ export function createScheduledTasks(
   for (const [, routing] of routingByItem) {
     routing.sort((a, b) => a.sequence - b.sequence)
   }
-
-  console.log('Parts with routing:', routingByItem.size)
-
-  // Check for empty station codes
-  let emptyStationCodes = 0
-  for (const r of routingData) {
-    if (!r.workstations?.station_code) {
-      emptyStationCodes++
-    }
-  }
-  console.log('Routing records with empty station_code:', emptyStationCodes)
 
   // Create tasks for each part
   for (const [itemId, part] of parts) {
@@ -349,24 +318,12 @@ export function createScheduledTasks(
       prevTaskId = taskId
     }
 
-    // Log assembly predecessors for debugging
-    if (part.is_assembly && part.tasks.length > 0) {
-      const firstTask = part.tasks[0]!
-      console.log(`Assembly ${part.item_number}: ${firstTask.predecessors.length} predecessors for first task`)
-    }
-
     // Calculate part status
     const totalOps = part.tasks.length
     const completedOps = part.tasks.filter(t => t.is_complete).length
     part.status = completedOps === 0 ? 'not-started' :
                   completedOps >= totalOps ? 'complete' : 'in-progress'
   }
-
-  // Summary logging
-  const tasksWithPreds = tasks.filter(t => t.predecessors.length > 0)
-  console.log('Total tasks created:', tasks.length)
-  console.log('Tasks with predecessors:', tasksWithPreds.length)
-  console.log('Tasks with no predecessors (can start Day 0):', tasks.length - tasksWithPreds.length)
 
   return tasks
 }
@@ -429,20 +386,6 @@ export function scheduleWithCapacity(
 ): ScheduleResult {
   // Prioritize tasks
   const prioritizedTasks = prioritizeTasks(tasks, parts)
-
-  // Debug: Log station capacity summary
-  const stationWorkload = new Map<string, number>()
-  for (const t of tasks) {
-    const code = t.station_code || 'EMPTY'
-    stationWorkload.set(code, (stationWorkload.get(code) || 0) + t.duration_min)
-  }
-  console.log('Station workload (minutes):', Object.fromEntries(stationWorkload))
-  console.log('Station capacities:', Object.fromEntries(
-    [...stationWorkload.keys()].map(code => [
-      code,
-      getStationCapacity(code)
-    ])
-  ))
 
   // Task lookup by ID
   const taskMap = new Map(tasks.map(t => [t.id, t]))
@@ -535,11 +478,6 @@ export function scheduleWithCapacity(
     // Find first day with available capacity (starting from startDay)
     currentDay = findAvailableDay(task.station_code, startDay, Math.min(remainingDuration, 1))
 
-    // Log when a task gets pushed to a later day due to capacity
-    if (currentDay > startDay) {
-      console.log(`Task ${task.item_number} @${task.station_code}: pushed from day ${startDay} to day ${currentDay} (no capacity)`)
-    }
-
     task.start_day = currentDay
     const startSlot = getStationSlot(task.station_code, currentDay)
     task.start_hour = startSlot.used_minutes / 60
@@ -587,7 +525,6 @@ export function scheduleWithCapacity(
 
     if (readyIndex === -1) {
       // No ready tasks - might have circular dependencies or missing predecessors
-      console.warn('Scheduling: No ready tasks found, remaining:', pending.length)
       // Force schedule the first pending task to break deadlock
       const task = pending.shift()!
       scheduleTask(task, 0)
@@ -602,10 +539,6 @@ export function scheduleWithCapacity(
     scheduleTask(task, earliestDay)
   }
 
-  if (iterations >= maxIterations) {
-    console.error('Scheduling: Max iterations reached, possible circular dependencies')
-  }
-
   // Calculate total days
   let totalDays = 0
   for (const task of tasks) {
@@ -614,21 +547,6 @@ export function scheduleWithCapacity(
     }
   }
   totalDays++ // Convert from 0-indexed to count
-
-  // Debug: Log final station utilization
-  console.log('Final station utilization by day:')
-  for (const [stationCode, slots] of stationDays.entries()) {
-    const utilization = slots.map(s => `Day ${s.day}: ${s.used_minutes}/${s.total_minutes} min`)
-    console.log(`  ${stationCode || 'EMPTY'}:`, utilization.join(', '))
-  }
-  console.log('Total scheduled days:', totalDays)
-
-  // Debug: Sample of scheduled tasks
-  const tasksByDay = new Map<number, number>()
-  for (const t of tasks) {
-    tasksByDay.set(t.start_day, (tasksByDay.get(t.start_day) || 0) + 1)
-  }
-  console.log('Tasks starting per day:', Object.fromEntries(tasksByDay))
 
   return {
     parts,
