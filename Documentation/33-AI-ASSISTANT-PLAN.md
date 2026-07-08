@@ -28,7 +28,7 @@ Vue Chat View ──POST /api/assistant/chat (SSE)──▶ FastAPI assistant ro
 1. **The agent loop runs server-side in FastAPI.** The Anthropic API key never reaches the browser. The frontend only sends chat text and receives streamed events.
 2. **Claude gets a fixed set of read-only tools, NOT raw SQL access.** No `execute_sql` tool. Each tool is a Python function wrapping the same query logic the existing routes use. This bounds what the assistant can do to safe reads.
 3. **Data reads use `get_supabase_admin()`** — same convention as every existing read route (RLS `SELECT` is restricted to the `authenticated` role, and the anon client returns 0 rows; see comment at `backend/app/routes/items.py:61-64`).
-4. **The endpoint itself requires a logged-in user.** Add a real FastAPI auth dependency (the codebase currently has none — `get_current_user` in `auth.py` is a route handler, not a `Depends`).
+4. **No JWT auth on the endpoint for v1.** JWT verification has been a pain point in this project, so the assistant endpoint follows the same convention as every other backend route: no server-side auth, relying on network trust (the frontend route still has `meta: { requiresAuth: true }` for UI gating). Adding a `require_user` dependency is documented as future hardening in §7.
 5. **Model: `claude-opus-4-8`** with adaptive thinking and streaming. (Sonnet 5 is a cheaper fallback if cost becomes a concern, but default to Opus.)
 6. **Conversation state lives on the backend** in an in-memory session dict keyed by `conversation_id` (single server, 3 users — no need for persistence in v1). The full message array including `tool_use`/`tool_result` blocks stays server-side; the client only ever sees text.
 
@@ -36,7 +36,8 @@ Vue Chat View ──POST /api/assistant/chat (SSE)──▶ FastAPI assistant ro
 
 ## 2. Prerequisites / User Action Required
 
-- **`ANTHROPIC_API_KEY`** must be added to `backend/.env`. Jack said he has an API key from the VetBox-Pro project and will supply it. The implementation must fail gracefully (HTTP 503 with a clear message) if the key is unset, not crash at import time.
+- **`backend/.env.example` is committed** with all variable names (Supabase URL/anon key pre-filled; secrets as placeholders). Jack: copy it to `backend/.env` on your machine and paste in the `SUPABASE_SERVICE_KEY` and your **`ANTHROPIC_API_KEY`** (already created — paste it into the local file only, never into chat/commits; `backend/.env` is gitignored).
+- The implementation must fail gracefully (HTTP 503 with a clear message) if `ANTHROPIC_API_KEY` is unset, not crash at import time.
 - Add `anthropic>=0.50` to `backend/requirements.txt` (`httpx` is already present; the SDK manages its own HTTP).
 
 ---
@@ -51,20 +52,9 @@ Add one field to `Settings`:
 anthropic_api_key: str = ""   # ANTHROPIC_API_KEY in .env
 ```
 
-### 3.2 Auth dependency — `backend/app/routes/assistant.py` (or a new `app/dependencies.py`)
+### 3.2 Auth — skipped for v1
 
-Reuse the token-verification logic from `auth.py:13-29` as a proper dependency:
-
-```python
-async def require_user(authorization: str = Header(...)) -> dict:
-    """Verify Supabase JWT from the Authorization header; 401 on failure."""
-    token = authorization.removeprefix("Bearer ").strip()
-    supabase = get_supabase_client()
-    user = supabase.auth.get_user(token)   # raises / returns None on bad token
-    if not user or not user.user:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-    return {"auth_id": user.user.id, "email": user.user.email}
-```
+No JWT verification on the assistant endpoints (deliberate — see decision #4). Do not add a `Depends` auth dependency. The route is registered like every other unauthenticated backend route.
 
 ### 3.3 Tools — `backend/app/services/assistant_tools.py` (new file)
 
@@ -173,45 +163,43 @@ Store as a module constant. Content to include:
 
 | File | Purpose |
 |---|---|
-| `src/views/AssistantView.vue` | Chat page: message list, input box, streaming render |
+| `src/views/MrpAssistantView.vue` | Chat page (MRP dark theme): message list, input box, streaming render |
 | `src/stores/assistant.ts` | Pinia store: `messages[]`, `conversationId`, `sendMessage()`, `clear()` |
 | `src/services/assistantApi.ts` | SSE client (can't reuse `apiCall` — it calls `.json()`) |
 
 ### 4.2 SSE client
 
-Reuse the token logic from `services/supabase.ts` (`apiCall`), but read the body stream:
+Plain fetch-streaming against the relative `/api` path (Vite proxy in dev). No auth header — JWT is skipped for v1:
 
 ```ts
-const { data: { session } } = await supabase.auth.getSession()
 const res = await fetch('/api/assistant/chat', {
   method: 'POST',
-  headers: { 'Content-Type': 'application/json',
-             Authorization: `Bearer ${session?.access_token}` },
+  headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ conversation_id, message }),
 })
 // read res.body via ReadableStream reader, split on newlines, parse `data:` JSON lines
 ```
 
-(Native `EventSource` doesn't support POST bodies or auth headers — hence fetch-streaming.)
+(Native `EventSource` doesn't support POST bodies — hence fetch-streaming.)
 
-### 4.3 Chat UI (AssistantView.vue)
+### 4.3 Chat UI (MrpAssistantView.vue)
 
-- **Light PDM theme** (this is a PDM-wide feature, not MRP-specific) — tokens from `.claude/agents/style.md`; PrimeVue components + scoped CSS, no Tailwind.
+- **Dark MRP theme** — this lives on the MRP side. Use the dark tokens from `.claude/agents/style.md` (`--bg-page: #020617`, `--bg-card: #0f172a`, `--text-primary: #e5e7eb`, etc.); match the layout/header patterns of the other `Mrp*View` files. PrimeVue components + scoped CSS, no Tailwind.
 - Message bubbles (user right / assistant left), an inline muted status line while a `tool` event is active ("Looking up BOM for csa00010…"), auto-scroll, disabled input while streaming, "New conversation" button.
 - **Render assistant text as markdown** (add `marked` + `dompurify`, ~5 KB) so file links and BOM tables work. Links open in a new tab (`target="_blank" rel="noopener"`). Sanitize with DOMPurify — the text includes tool data, treat as untrusted HTML.
 - Suggested empty-state prompts: "How many parts are in assembly …?", "Pull me the print of …", "What's the lifecycle state of …?"
 
 ### 4.4 Wiring
 
-- Route in `src/router/index.ts`: `{ path: '/assistant', name: 'assistant', component: () => import('../views/AssistantView.vue'), meta: { requiresAuth: true } }`.
-- Nav card in `HomeView.vue` `tools` array ("AI Assistant — ask questions about parts, BOMs, and prints").
-- Delegate a review pass to the **style** agent after the view is built.
+- Route in `src/router/index.ts` alongside the other MRP routes: `{ path: '/mrp/assistant', name: 'mrp-assistant', component: () => import('../views/MrpAssistantView.vue'), meta: { requiresAuth: true } }`.
+- Nav entry in `MrpDashboardView.vue` following its existing pattern (`router.push('/mrp/assistant')` handler + button/card next to the Shop/Materials/Tracking/Settings entries, ~line 826-843).
+- Delegate a review pass to the **style** agent (and **mrp** agent for placement) after the view is built.
 
 ---
 
 ## 5. Implementation Order
 
-1. **Backend foundation** — `anthropic` dep, `Settings.anthropic_api_key`, `require_user` dependency. *(delegate to `supabase` agent if touching auth conventions)*
+1. **Backend foundation** — `anthropic` dep, `Settings.anthropic_api_key` (reads from `backend/.env`, template in `backend/.env.example`).
 2. **Tools** — `assistant_tools.py` with the 6 tools + unit-testable `run_tool()` dispatcher.
 3. **Chat route** — SSE endpoint with agent loop, session store, prompt caching.
 4. **Backend smoke test** — `curl -N` the SSE endpoint with the two canonical questions (pipe hangers count; csp00200 print) against real data.
@@ -224,16 +212,17 @@ const res = await fetch('/api/assistant/chat', {
 - [ ] "Pull me the print of csp00200" → working signed-URL markdown link, expiry mentioned.
 - [ ] Item that doesn't exist → graceful "not found", no hallucinated data.
 - [ ] Multi-turn follow-up ("what about its where-used?") uses conversation context.
-- [ ] Request without a valid JWT → 401. Missing API key → 503 with clear message.
+- [ ] Missing API key → 503 with clear message (not an import-time crash).
 - [ ] Deep assembly (max_depth) doesn't blow token limits (tree trimming works).
 - [ ] Second question in a session shows `cache_read_input_tokens > 0` (log usage per turn).
 
-## 7. Explicit Non-Goals (v1)
+## 7. Explicit Non-Goals (v1) / Future Hardening
 
 - No write operations (lifecycle changes, checkouts, BOM edits) — read-only.
 - No raw SQL tool for the model.
+- **No JWT verification on the endpoint** (skipped per Jack — JWT has been an ongoing pain point). Future hardening: a `require_user` dependency wrapping the token check from `auth.py:13-29`. Until then the assistant is as exposed as every other backend route; acceptable on a trusted LAN, revisit before any internet exposure (an open endpoint spends real Anthropic API dollars).
 - No persistent chat history across server restarts.
-- No MRP-specific tools (routing, costing) — natural phase 2 once v1 works.
+- No MRP-specific tools (routing, costing) — natural phase 2 once v1 works (the assistant living in the MRP UI makes these an obvious next step).
 - No floating chat widget on other pages — dedicated view only for now.
 
 ## 8. Cost Note
