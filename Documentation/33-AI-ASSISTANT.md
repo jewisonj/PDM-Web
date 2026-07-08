@@ -4,7 +4,7 @@
 **Version:** v3.9.1+
 **Location:** `/mrp/assistant` (MRP side navigation)
 **Model:** Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`)
-**Access:** Read-only tools for PDM data
+**Access:** Read-only tools for PDM and MRP data (items, BOMs, files, projects/timelines, costs, routing, materials, work queue)
 
 ---
 
@@ -82,7 +82,9 @@ system=[{
 
 #### 2. Tool Implementations (`backend/app/services/assistant_tools.py`)
 
-Six read-only tools for querying PDM data via Supabase admin client:
+Seventeen read-only tools plus four approval-gated write actions, via Supabase admin client:
+
+**PDM tools:**
 
 | Tool | Description | Example Use |
 |------|-------------|-------------|
@@ -92,6 +94,50 @@ Six read-only tools for querying PDM data via Supabase admin client:
 | `get_where_used` | Find parent assemblies (reverse BOM) | "Where is csp00100 used?" |
 | `list_item_files` | List files for an item (with type filter) | "What files are for stp02810?" |
 | `get_file_download_link` | Generate signed download URL (1 hour expiry) | "Pull me the print of csp00200" |
+
+**MRP tools (added 2026-07):**
+
+| Tool | Description | Example Use |
+|------|-------------|-------------|
+| `list_mrp_projects` | List MRP projects with timelines (status, start/due dates) | "What projects are due soon?" |
+| `get_mrp_project` | One project's detail + completion progress by station | "How is WM2121 going?" |
+| `get_project_cost_estimate` | Full cost estimate (labor/material/outsourced/purchased + overhead); reuses `services/cost_estimate.py`, same math as the MRP cost page | "What does project RX0203 cost?" |
+| `get_item_routing` | Manufacturing routing steps with stations and times | "How is csp00200 made?" |
+| `list_work_queue_tasks` | Background task queue with status/errors | "Any failed DXF tasks?" |
+| `get_pricing_settings` | Cost settings + workstation hourly rates | "What's our overhead multiplier?" |
+| `list_raw_materials` | Raw material prices and stock levels | "What's CS sheet running per pound?" |
+
+MRP project tools accept a `project_code` (exact or partial, case-insensitive). Cost estimate results are truncated to the top N line items by extended cost (default 20) to control token usage; totals always include all items.
+
+**Analysis tools (added 2026-07):**
+
+| Tool | Description | Example Use |
+|------|-------------|-------------|
+| `audit_project` | Pre-flight check: missing routing, PDF prints, DXFs (sheet metal), raw materials, supplier prices | "Is RX0203 ready for the shop?" |
+| `get_time_analysis` | Estimated routing time vs actual logged time per item+station | "How accurate are our waterjet estimates?" |
+| `list_low_stock_materials` | Materials where on-hand + on-order <= reorder point | "What do we need to order?" |
+| `query_database` | Guarded read-only SQL SELECT for arbitrary cross-table questions | "Total steel mass across active projects" |
+
+`query_database` executes through the `assistant_query` Postgres function (see `backend/migrations/2026-07-08_assistant_v2.sql`): a security-definer function **owned by the `assistant_readonly` role**, which has SELECT-only grants. Writes fail at the permission layer even if a query slips past the application-level keyword filter. Single statement only, 5s timeout, 500-row hard cap, callable only by `service_role`.
+
+**Write actions (approval required):**
+
+| Action | Effect after approval |
+|--------|----------------------|
+| `requeue_failed_task` | Resets a failed work queue task to `pending` for retry |
+| `update_material_price` | Sets `raw_materials.price_per_unit` |
+| `update_routing_time` | Sets `routing.est_time_min` for one step |
+| `update_cost_setting` | Sets a `cost_settings` value (labor rate, overhead, etc.) |
+
+Action flow: Claude calls the action tool → backend does NOT execute it, stores it as a pending action and emits an `action` SSE event → frontend renders an approval card (Approve / Decline) → `POST /api/assistant/actions/{action_id}` executes (or declines) it → a hidden system note is appended to the conversation so the model knows the outcome on its next turn. Pending actions live in server memory and expire on restart.
+
+**Conversation persistence:**
+
+Conversations are stored in `assistant_conversations` / `assistant_messages` (Supabase), with the in-memory LRU as a cache. Chats survive backend restarts; the History dropdown in the UI lists the 20 most recent threads and can reload any of them. Tool results and action outcome notes are stored with `hidden=true` - the model sees them, the UI does not. Endpoints: `GET /api/assistant/conversations`, `GET /api/assistant/conversations/{id}/messages`, `DELETE /api/assistant/chat/{id}`.
+
+**Page context:**
+
+The chat request accepts an optional `context` string (e.g. "The user opened the assistant from MRP project WM2121"), injected as a second (uncached) system block. The assistant view reads `?project=` / `?item=` query params; Project Tracking has an "Ask PDM" button that passes the selected project.
 
 **Tool Execution Flow:**
 1. Claude calls tool via `tool_use` block
@@ -108,7 +154,8 @@ Six read-only tools for querying PDM data via Supabase admin client:
 **Data Access:**
 - All tools use `get_supabase_admin()` (service role key)
 - No RLS policies enforced (v1 skips auth)
-- Queries directly against `items`, `files`, `bom`, `projects` tables
+- Queries directly against `items`, `files`, `bom`, `projects`, `mrp_projects`, `mrp_project_parts`, `routing`, `routing_materials`, `workstations`, `raw_materials`, `cost_settings`, `part_completion`, and `work_queue` tables
+- Everything is strictly read-only - no tool inserts, updates, or deletes data
 
 #### 3. Configuration (`backend/app/config.py`)
 

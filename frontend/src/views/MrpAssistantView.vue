@@ -1,15 +1,34 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useAssistantStore } from '../stores/assistant'
 
 const router = useRouter()
+const route = useRoute()
 const store = useAssistantStore()
 
 const inputMessage = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
+const showHistory = ref(false)
+
+async function toggleHistory() {
+  showHistory.value = !showHistory.value
+  if (showHistory.value) {
+    await store.loadConversations()
+  }
+}
+
+async function openConversation(id: string) {
+  showHistory.value = false
+  await store.loadConversation(id)
+}
+
+function formatConversationDate(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
 
 // Configure marked for safe rendering
 marked.setOptions({
@@ -28,7 +47,9 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 const suggestedPrompts = [
   'How many parts are in assembly csa00010?',
   'Pull me the print of csp00200',
-  "What's the lifecycle state of stp02810?",
+  'What projects are due soon?',
+  'What does project WM2121 cost?',
+  'Are there any failed tasks in the work queue?',
   'Where is csp00100 used?',
 ]
 
@@ -83,6 +104,17 @@ watch(
 )
 
 onMounted(() => {
+  // Page context: opened from a project or item page (e.g. ?project=WM2121)
+  const project = route.query.project as string | undefined
+  const item = route.query.item as string | undefined
+  if (project) {
+    store.pageContext = `The user opened the assistant from MRP project ${project}.`
+  } else if (item) {
+    store.pageContext = `The user opened the assistant from item ${item}.`
+  } else {
+    store.pageContext = null
+  }
+
   // Focus input on mount
   const input = document.querySelector('.chat-input textarea') as HTMLTextAreaElement
   if (input) input.focus()
@@ -101,15 +133,35 @@ onMounted(() => {
           <i class="pi pi-comments"></i>
           Ask PDM
         </h1>
-        <p>AI assistant for parts, BOMs, and files</p>
+        <p>AI assistant for parts, BOMs, files, projects, and costs</p>
       </div>
       <div class="header-actions">
+        <div class="history-wrapper">
+          <button class="clear-btn" @click="toggleHistory" :disabled="store.isStreaming">
+            <i class="pi pi-history"></i>
+            History
+          </button>
+          <div v-if="showHistory" class="history-dropdown">
+            <div v-if="!store.conversations.length" class="history-empty">
+              No saved conversations
+            </div>
+            <button
+              v-for="conv in store.conversations"
+              :key="conv.id"
+              class="history-item"
+              @click="openConversation(conv.id)"
+            >
+              <span class="history-title">{{ conv.title || 'Untitled conversation' }}</span>
+              <span class="history-date">{{ formatConversationDate(conv.updated_at) }}</span>
+            </button>
+          </div>
+        </div>
         <button
           class="clear-btn"
-          @click="store.clear()"
+          @click="store.newChat()"
           :disabled="!store.hasMessages || store.isStreaming"
         >
-          <i class="pi pi-trash"></i>
+          <i class="pi pi-plus"></i>
           New Chat
         </button>
       </div>
@@ -122,7 +174,7 @@ onMounted(() => {
           <i class="pi pi-sparkles"></i>
         </div>
         <h2>What can I help you find?</h2>
-        <p>Ask about parts, assemblies, BOMs, or request file downloads.</p>
+        <p>Ask about parts, BOMs, files, project timelines, costs, or shop tasks.</p>
 
         <div class="suggestions">
           <button
@@ -158,6 +210,39 @@ onMounted(() => {
               v-html="renderMarkdown(message.content)"
             ></div>
 
+            <!-- Proposed write actions (require approval) -->
+            <div
+              v-for="action in message.actions"
+              :key="action.id"
+              class="action-card"
+              :class="action.status"
+            >
+              <div class="action-header">
+                <i class="pi pi-shield"></i>
+                <span>Proposed change</span>
+              </div>
+              <div class="action-description">{{ action.description }}</div>
+              <div v-if="action.status === 'pending'" class="action-buttons">
+                <button class="action-approve" @click="store.respondAction(action.id, true)">
+                  <i class="pi pi-check"></i> Approve
+                </button>
+                <button class="action-decline" @click="store.respondAction(action.id, false)">
+                  <i class="pi pi-times"></i> Decline
+                </button>
+              </div>
+              <div v-else class="action-result">
+                <template v-if="action.status === 'approved'">
+                  <i class="pi pi-check-circle"></i> Approved &mdash; {{ action.result || 'executed' }}
+                </template>
+                <template v-else-if="action.status === 'declined'">
+                  <i class="pi pi-ban"></i> Declined
+                </template>
+                <template v-else>
+                  <i class="pi pi-exclamation-triangle"></i> {{ action.result || 'Failed' }}
+                </template>
+              </div>
+            </div>
+
             <!-- Tool status indicator -->
             <div v-if="message.toolStatus" class="tool-status">
               <i class="pi pi-spin pi-spinner"></i>
@@ -183,12 +268,18 @@ onMounted(() => {
         {{ store.error }}
       </div>
 
+      <!-- Page context chip -->
+      <div v-if="store.pageContext" class="context-chip">
+        <i class="pi pi-map-marker"></i>
+        {{ store.pageContext }}
+      </div>
+
       <!-- Input area -->
       <div class="chat-input">
         <textarea
           v-model="inputMessage"
           @keydown="handleKeydown"
-          placeholder="Ask about parts, BOMs, or files..."
+          placeholder="Ask about parts, BOMs, files, projects, or costs..."
           :disabled="store.isStreaming"
           rows="1"
         ></textarea>
@@ -613,5 +704,169 @@ onMounted(() => {
 
 .send-btn i {
   font-size: 1.1rem;
+}
+
+/* --- Action approval cards --- */
+.action-card {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-left: 3px solid #f59e0b;
+  border-radius: 8px;
+}
+
+.action-card.approved {
+  border-left-color: #22c55e;
+}
+
+.action-card.declined,
+.action-card.error {
+  border-left-color: #ef4444;
+  opacity: 0.85;
+}
+
+.action-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin-bottom: 0.35rem;
+}
+
+.action-description {
+  font-size: 0.95rem;
+  color: #e5e7eb;
+  margin-bottom: 0.6rem;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.action-approve,
+.action-decline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.action-approve {
+  background: #16a34a;
+  color: #fff;
+}
+
+.action-approve:hover {
+  background: #15803d;
+}
+
+.action-decline {
+  background: transparent;
+  border-color: #475569;
+  color: #cbd5e1;
+}
+
+.action-decline:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.action-result {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.action-card.approved .action-result {
+  color: #4ade80;
+}
+
+/* --- Conversation history dropdown --- */
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.history-wrapper {
+  position: relative;
+}
+
+.history-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 340px;
+  max-height: 380px;
+  overflow-y: auto;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  z-index: 50;
+  padding: 0.35rem;
+}
+
+.history-empty {
+  padding: 1rem;
+  font-size: 0.85rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.history-item:hover {
+  background: #1e293b;
+}
+
+.history-title {
+  font-size: 0.85rem;
+  color: #e5e7eb;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.history-date {
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+/* --- Page context chip --- */
+.context-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 auto;
+  max-width: 800px;
+  width: 100%;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 </style>
