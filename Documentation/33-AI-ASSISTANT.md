@@ -4,7 +4,7 @@
 **Version:** v3.9.1+
 **Location:** `/mrp/assistant` (MRP side navigation)
 **Model:** Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`)
-**Access:** Read-only tools for PDM data
+**Access:** Read-only tools for PDM and MRP data (items, BOMs, files, projects/timelines, costs, routing, materials, work queue)
 
 ---
 
@@ -82,7 +82,9 @@ system=[{
 
 #### 2. Tool Implementations (`backend/app/services/assistant_tools.py`)
 
-Six read-only tools for querying PDM data via Supabase admin client:
+Thirteen read-only tools for querying PDM and MRP data via Supabase admin client:
+
+**PDM tools:**
 
 | Tool | Description | Example Use |
 |------|-------------|-------------|
@@ -92,6 +94,20 @@ Six read-only tools for querying PDM data via Supabase admin client:
 | `get_where_used` | Find parent assemblies (reverse BOM) | "Where is csp00100 used?" |
 | `list_item_files` | List files for an item (with type filter) | "What files are for stp02810?" |
 | `get_file_download_link` | Generate signed download URL (1 hour expiry) | "Pull me the print of csp00200" |
+
+**MRP tools (added 2026-07):**
+
+| Tool | Description | Example Use |
+|------|-------------|-------------|
+| `list_mrp_projects` | List MRP projects with timelines (status, start/due dates) | "What projects are due soon?" |
+| `get_mrp_project` | One project's detail + completion progress by station | "How is WM2121 going?" |
+| `get_project_cost_estimate` | Full cost estimate (labor/material/outsourced/purchased + overhead); reuses `services/cost_estimate.py`, same math as the MRP cost page | "What does project RX0203 cost?" |
+| `get_item_routing` | Manufacturing routing steps with stations and times | "How is csp00200 made?" |
+| `list_work_queue_tasks` | Background task queue with status/errors | "Any failed DXF tasks?" |
+| `get_pricing_settings` | Cost settings + workstation hourly rates | "What's our overhead multiplier?" |
+| `list_raw_materials` | Raw material prices and stock levels | "What's CS sheet running per pound?" |
+
+MRP project tools accept a `project_code` (exact or partial, case-insensitive). Cost estimate results are truncated to the top N line items by extended cost (default 20) to control token usage; totals always include all items.
 
 **Tool Execution Flow:**
 1. Claude calls tool via `tool_use` block
@@ -108,7 +124,8 @@ Six read-only tools for querying PDM data via Supabase admin client:
 **Data Access:**
 - All tools use `get_supabase_admin()` (service role key)
 - No RLS policies enforced (v1 skips auth)
-- Queries directly against `items`, `files`, `bom`, `projects` tables
+- Queries directly against `items`, `files`, `bom`, `projects`, `mrp_projects`, `mrp_project_parts`, `routing`, `routing_materials`, `workstations`, `raw_materials`, `cost_settings`, `part_completion`, and `work_queue` tables
+- Everything is strictly read-only - no tool inserts, updates, or deletes data
 
 #### 3. Configuration (`backend/app/config.py`)
 

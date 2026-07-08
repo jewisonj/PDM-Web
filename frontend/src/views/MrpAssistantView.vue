@@ -28,7 +28,9 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 const suggestedPrompts = [
   'How many parts are in assembly csa00010?',
   'Pull me the print of csp00200',
-  "What's the lifecycle state of stp02810?",
+  'What projects are due soon?',
+  'What does project WM2121 cost?',
+  'Are there any failed tasks in the work queue?',
   'Where is csp00100 used?',
 ]
 
@@ -101,7 +103,7 @@ onMounted(() => {
           <i class="pi pi-comments"></i>
           Ask PDM
         </h1>
-        <p>AI assistant for parts, BOMs, and files</p>
+        <p>AI assistant for parts, BOMs, files, projects, and costs</p>
       </div>
       <div class="header-actions">
         <button
@@ -122,7 +124,7 @@ onMounted(() => {
           <i class="pi pi-sparkles"></i>
         </div>
         <h2>What can I help you find?</h2>
-        <p>Ask about parts, assemblies, BOMs, or request file downloads.</p>
+        <p>Ask about parts, BOMs, files, project timelines, costs, or shop tasks.</p>
 
         <div class="suggestions">
           <button
@@ -188,7 +190,7 @@ onMounted(() => {
         <textarea
           v-model="inputMessage"
           @keydown="handleKeydown"
-          placeholder="Ask about parts, BOMs, or files..."
+          placeholder="Ask about parts, BOMs, files, projects, or costs..."
           :disabled="store.isStreaming"
           rows="1"
         ></textarea>
