@@ -165,12 +165,12 @@ npm run dev
 1. Open browser Developer Tools (F12)
 2. Go to the Network tab
 3. Look for failed API requests (red entries)
-4. Check the request URL -- it should point to `http://localhost:8000/api/`
+4. Check the request URL -- it should point to `http://localhost:8001/api/`
 
 **Fix:** Verify the API base URL in the frontend configuration. Check `frontend/.env` or `frontend/src/services/` for the API URL setting. It should point to the backend server:
 
 ```
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=http://localhost:8001
 ```
 
 Or if using the Supabase client directly, verify `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set.
@@ -255,7 +255,7 @@ Use browser Developer Tools (Network tab) or the FastAPI docs at `/docs` to test
 
 ```bash
 # Test with curl
-curl -X POST http://localhost:8000/api/files/upload \
+curl -X POST http://localhost:8001/api/files/upload \
   -F "file=@test.step" \
   -F "item_number=csp0030"
 ```
@@ -267,7 +267,7 @@ curl -X POST http://localhost:8000/api/files/upload \
 **Fix:** The item must exist in the `items` table before files can be uploaded to it. Create the item first:
 
 ```bash
-curl -X POST http://localhost:8000/api/items \
+curl -X POST http://localhost:8001/api/items \
   -H "Content-Type: application/json" \
   -d '{"item_number": "csp0030", "name": "CSP0030"}'
 ```
@@ -316,7 +316,7 @@ The upload endpoint handles this by falling back to an update operation. If this
 ### Step 1: Check BOM Endpoint Response
 
 ```bash
-curl -X POST http://localhost:8000/api/bom/bulk \
+curl -X POST http://localhost:8001/api/bom/bulk \
   -H "Content-Type: application/json" \
   -d '{
     "parent_item_number": "sta01000",
@@ -611,7 +611,7 @@ WHERE f.item_id NOT IN (SELECT id FROM items);
 
 ```powershell
 # Test API health
-Invoke-RestMethod -Uri "http://localhost:8000/health"
+Invoke-RestMethod -Uri "http://localhost:8001/health"
 # Should return: @{status=healthy}
 ```
 
@@ -656,7 +656,7 @@ $body = @{
     )
 } | ConvertTo-Json -Depth 3
 
-Invoke-RestMethod -Uri "http://localhost:8000/api/bom/bulk" `
+Invoke-RestMethod -Uri "http://localhost:8001/api/bom/bulk" `
     -Method POST `
     -ContentType "application/json" `
     -Body $body
@@ -674,8 +674,8 @@ Invoke-RestMethod -Uri "http://localhost:8000/api/bom/bulk" `
 
 ### FastAPI Interactive Docs
 
-- **Swagger UI:** `http://localhost:8000/docs` -- test any endpoint interactively
-- **ReDoc:** `http://localhost:8000/redoc` -- read-only API documentation
+- **Swagger UI:** `http://localhost:8001/docs` -- test any endpoint interactively
+- **ReDoc:** `http://localhost:8001/redoc` -- read-only API documentation
 
 ### Supabase Dashboard
 
@@ -699,7 +699,7 @@ Look for non-200 status codes to identify failing endpoints.
 ### Health Check
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8001/health
 # Expected: {"status":"healthy"}
 ```
 

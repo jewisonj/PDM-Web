@@ -121,7 +121,7 @@ Still at root:
 
 ```bash
 # Local development (Supabase handles DB, Auth, Storage)
-cd backend && uvicorn app.main:app --reload
+cd backend && uvicorn app.main:app --reload --port 8001
 cd frontend && npm run dev
 
 # FreeCAD worker (local Docker)

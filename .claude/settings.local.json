@@ -154,7 +154,16 @@
       "Bash(python -m pip install:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "PowerShell(python -c \"import pypdf, reportlab; print\\('pypdf', pypdf.__version__\\); print\\('reportlab', reportlab.Version\\)\")",
+      "PowerShell(python -c \"import inspect; from pypdf import PdfWriter; print\\(inspect.signature\\(PdfWriter.add_outline_item\\)\\); print\\(inspect.signature\\(PdfWriter.set_page_label\\)\\); import pypdf.generic; print\\([n for n in dir\\(PdfWriter\\) if 'outline' in n.lower\\(\\) or 'label' in n.lower\\(\\) or 'append' in n.lower\\(\\)]\\)\")",
+      "PowerShell(python -c \"import inspect; from pypdf import PdfWriter; print\\(inspect.signature\\(PdfWriter.append\\)\\)\")",
+      "PowerShell($f = \"C:\\\\Users\\\\JACKJE~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\J--PDM-Web\\\\d410852b-9366-4051-850f-4a5f13b15111\\\\tasks\\\\w0ujz8zvb.output\"; \\(Get-Item $f\\).Length; $raw = Get-Content $f -Raw; try { $j = $raw | ConvertFrom-Json; \"JSON OK\"; $j.PSObject.Properties.Name } catch { \"NOT PLAIN JSON: $\\($_.Exception.Message\\)\"; $raw.Substring\\(0,300\\) })",
+      "Bash(powershell -Command \"Get-Process python -ErrorAction SilentlyContinue\")",
+      "Bash(powershell -Command:*)",
+      "PowerShell(Test-Path J:\\\\PDM-Web\\\\backend\\\\.env; Test-Path J:\\\\PDM-Web\\\\backend\\\\venv; Test-Path J:\\\\PDM-Web\\\\backend\\\\.venv; \\(Get-Command python -ErrorAction SilentlyContinue\\).Source)",
+      "PowerShell(python -c \"import supabase, httpx; print\\('supabase-py OK'\\)\")",
+      "PowerShell(python \"C:\\\\Users\\\\JACKJE~1\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\J--PDM-Web\\\\d410852b-9366-4051-850f-4a5f13b15111\\\\scratchpad\\\\upload_limit_test.py\")"
     ],
     "deny": []
   },

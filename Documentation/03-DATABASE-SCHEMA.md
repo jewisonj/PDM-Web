@@ -14,6 +14,8 @@ The backend uses two Supabase client instances:
 - **Anon client** (`supabase_anon_key`) -- standard user-level operations subject to RLS policies.
 - **Admin client** (`supabase_service_key`) -- bypasses RLS for trusted internal operations such as bulk BOM upload and the file upload service.
 
+**Note:** AI Assistant tables (`assistant_conversations`, `assistant_approvals`) added in v3.9.2 are documented separately in `33-AI-ASSISTANT.md`.
+
 ---
 
 ## Tables

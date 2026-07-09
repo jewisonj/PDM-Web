@@ -40,7 +40,7 @@ Step-by-step guides for daily operations in the PDM-Web system.
 
 ### Via the API (Swagger UI)
 
-1. Open `http://localhost:8000/docs`
+1. Open `http://localhost:8001/docs`
 2. Expand **POST /api/items**
 3. Click **Try it out**
 4. Enter the item data in JSON format:
@@ -80,14 +80,14 @@ Files can be uploaded through the API, the Swagger UI, or the PDM Upload Service
 ### Via the API (curl)
 
 ```bash
-curl -X POST http://localhost:8000/api/files/upload \
+curl -X POST http://localhost:8001/api/files/upload \
   -F "file=@csp0030.step" \
   -F "item_number=csp0030"
 ```
 
 ### Via Swagger UI
 
-1. Open `http://localhost:8000/docs`
+1. Open `http://localhost:8001/docs`
 2. Expand **POST /api/files/upload**
 3. Click **Try it out**
 4. Select a file using the file chooser
@@ -159,7 +159,7 @@ BOM data flows from Creo Parametric into PDM-Web through the BOM upload pipeline
 ### Upload via API Directly
 
 ```bash
-curl -X POST http://localhost:8000/api/bom/bulk \
+curl -X POST http://localhost:8001/api/bom/bulk \
   -H "Content-Type: application/json" \
   -d '{
     "parent_item_number": "wma20120",
@@ -268,8 +268,8 @@ POST /api/tasks/generate-svg/{item_number}
 Example using curl:
 
 ```bash
-curl -X POST http://localhost:8000/api/tasks/generate-dxf/csp0030
-curl -X POST http://localhost:8000/api/tasks/generate-svg/csp0030
+curl -X POST http://localhost:8001/api/tasks/generate-dxf/csp0030
+curl -X POST http://localhost:8001/api/tasks/generate-svg/csp0030
 ```
 
 ### Monitor Progress
@@ -348,7 +348,7 @@ GET /api/files/{file_id}/download
 Update specific fields on an existing item:
 
 ```bash
-curl -X PATCH http://localhost:8000/api/items/csp0030 \
+curl -X PATCH http://localhost:8001/api/items/csp0030 \
   -H "Content-Type: application/json" \
   -d '{
     "material": "Steel, 304 SS",
@@ -395,7 +395,7 @@ Items have a lifecycle state that controls their status in the engineering proce
 ### Changing State via API
 
 ```bash
-curl -X PATCH http://localhost:8000/api/items/csp0030 \
+curl -X PATCH http://localhost:8001/api/items/csp0030 \
   -H "Content-Type: application/json" \
   -d '{"lifecycle_state": "Released"}'
 ```
@@ -609,7 +609,7 @@ For supplier parts (item numbers starting with `mmc` or `spn`):
 Generate a combined PDF print packet for shop floor use:
 
 ```bash
-curl -X POST http://localhost:8000/api/mrp/projects/{project_id}/print-packet
+curl -X POST http://localhost:8001/api/mrp/projects/{project_id}/print-packet
 ```
 
 The packet includes a cover sheet with categorized parts lists and individual part PDFs with routing stamp overlays.
@@ -737,10 +737,10 @@ Nest sheet metal flat patterns onto stock sheets to optimize material usage.
 
 ```bash
 # Get material groups for a project
-curl "http://localhost:8000/api/nesting/projects/<project-uuid>/groups"
+curl "http://localhost:8001/api/nesting/projects/<project-uuid>/groups"
 
 # Create a nesting job
-curl -X POST "http://localhost:8000/api/nesting/projects/<project-uuid>/nest" \
+curl -X POST "http://localhost:8001/api/nesting/projects/<project-uuid>/nest" \
   -H "Content-Type: application/json" \
   -d '{
     "material": "STEEL_HSLA",
@@ -753,10 +753,10 @@ curl -X POST "http://localhost:8000/api/nesting/projects/<project-uuid>/nest" \
   }'
 
 # Check job status
-curl "http://localhost:8000/api/nesting/jobs/<job-uuid>"
+curl "http://localhost:8001/api/nesting/jobs/<job-uuid>"
 
 # Download a nested sheet
-curl "http://localhost:8000/api/nesting/jobs/<job-uuid>/sheets/1/download"
+curl "http://localhost:8001/api/nesting/jobs/<job-uuid>/sheets/1/download"
 ```
 
 #### Understanding Nesting Results

@@ -65,6 +65,8 @@ const generatingPacket = ref(false)
 const packetSuccess = ref('')
 const packetUrl = ref<string | null>(null)
 const packetUrls = ref<string[] | null>(null)  // For split packets
+const showPacketConfirm = ref(false)  // Confirmation for regenerating existing packet
+const showPacketDropdown = ref(false)  // Dropdown for split packet downloads
 const downloadingDXFs = ref(false)
 const completionData = ref<{item_id: string, station_id: string}[]>([])
 
@@ -125,6 +127,15 @@ const totalHours = computed(() => {
   const totalMinutes = projectParts.value.reduce((sum, p) => sum + (p.quantity * p.est_time_min), 0)
   return Math.round(totalMinutes / 60 * 10) / 10
 })
+
+// Format part number for display - strips MMC/SPN prefixes
+function formatPartNumber(pn: string): string {
+  const lower = pn.toLowerCase()
+  if (lower.startsWith('mmc') || lower.startsWith('spn')) {
+    return pn.slice(3)
+  }
+  return pn
+}
 
 const remainingHours = computed(() => {
   // Build a map of completed stations per item
@@ -804,9 +815,23 @@ async function deleteProject() {
   }
 }
 
+function requestGeneratePrintPacket() {
+  if (!selectedProject.value) return
+
+  // Check if a packet already exists
+  if (packetUrl.value || packetUrls.value) {
+    showPacketConfirm.value = true
+    return
+  }
+
+  // No existing packet, generate directly
+  generatePrintPacket()
+}
+
 async function generatePrintPacket() {
   if (!selectedProject.value) return
 
+  showPacketConfirm.value = false  // Close confirmation if open
   generatingPacket.value = true
   error.value = ''
   packetSuccess.value = ''
@@ -1449,7 +1474,7 @@ defineExpose({ openNestModal })
                   class="part-item clickable"
                 >
                   <span class="part-number" @click="goToRouting(part.item_number)">
-                    {{ part.item_number }} <i class="pi pi-arrow-right"></i>
+                    {{ formatPartNumber(part.item_number) }} <i class="pi pi-arrow-right"></i>
                     <span v-if="part.is_manual" class="manual-badge" title="Manually added">M</span>
                   </span>
                   <div class="part-actions">
@@ -1504,7 +1529,7 @@ defineExpose({ openNestModal })
                   :class="{ 'has-warning': !part.has_routing }"
                 >
                   <span class="part-number">
-                    {{ part.item_number }}
+                    {{ formatPartNumber(part.item_number) }}
                     <i v-if="!part.has_routing" class="pi pi-exclamation-triangle warning-icon"></i>
                     <span v-if="part.is_manual" class="manual-badge" title="Manually added">M</span>
                   </span>
@@ -1639,7 +1664,7 @@ defineExpose({ openNestModal })
             <div class="footer-left">
               <button
                 class="primary-btn"
-                @click="generatePrintPacket"
+                @click="requestGeneratePrintPacket"
                 :disabled="generatingPacket"
               >
                 <i :class="generatingPacket ? 'pi pi-spin pi-spinner' : 'pi pi-print'"></i>
@@ -1647,25 +1672,43 @@ defineExpose({ openNestModal })
               </button>
               <!-- Single packet download -->
               <button
-                v-if="packetUrl && !packetUrls"
+                v-if="packetUrl && (!packetUrls || packetUrls.length <= 1)"
                 class="success-btn"
                 @click="downloadPacket()"
               >
                 <i class="pi pi-download"></i>
                 Download PDF
               </button>
-              <!-- Split packet downloads -->
-              <template v-if="packetUrls && packetUrls.length > 1">
+              <!-- Split packet downloads - dropdown -->
+              <div v-if="packetUrls && packetUrls.length > 1" class="packet-dropdown-wrapper">
                 <button
-                  v-for="(url, i) in packetUrls"
-                  :key="i"
                   class="success-btn"
-                  @click="downloadPacket(i)"
+                  @click="showPacketDropdown = !showPacketDropdown"
                 >
                   <i class="pi pi-download"></i>
-                  Part {{ i + 1 }}
+                  Download ({{ packetUrls.length }} parts)
+                  <i :class="showPacketDropdown ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" style="margin-left: 4px;"></i>
                 </button>
-              </template>
+                <div v-if="showPacketDropdown" class="packet-dropdown">
+                  <button
+                    class="dropdown-item"
+                    @click="downloadPacket(); showPacketDropdown = false"
+                  >
+                    <i class="pi pi-download"></i>
+                    Download All Parts
+                  </button>
+                  <div class="dropdown-divider"></div>
+                  <button
+                    v-for="(url, i) in packetUrls"
+                    :key="i"
+                    class="dropdown-item"
+                    @click="downloadPacket(i); showPacketDropdown = false"
+                  >
+                    <i class="pi pi-file-pdf"></i>
+                    Part {{ i + 1 }}
+                  </button>
+                </div>
+              </div>
               <button
                 class="primary-btn nest-btn"
                 @click="openNestModal"
@@ -1738,6 +1781,29 @@ defineExpose({ openNestModal })
       @close="showNestModal = false"
       @submit="submitNestJob"
     />
+
+    <!-- Regenerate Print Packet Confirmation -->
+    <div v-if="showPacketConfirm" class="modal-overlay" @click.self="showPacketConfirm = false">
+      <div class="modal confirm-modal">
+        <div class="modal-header">
+          <h2>Regenerate Print Packet?</h2>
+          <button class="close-btn" @click="showPacketConfirm = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>A print packet already exists for this project. Regenerating will replace the existing packet.</p>
+          <p class="confirm-note">This action cannot be undone.</p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" @click="showPacketConfirm = false">
+            Cancel
+          </button>
+          <button type="button" class="warning-btn" @click="generatePrintPacket">
+            <i class="pi pi-refresh"></i>
+            Regenerate
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1943,6 +2009,95 @@ defineExpose({ openNestModal })
   background: #047857;
 }
 
+.warning-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #d97706;
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.warning-btn:hover {
+  background: #b45309;
+}
+
+/* Packet Download Dropdown */
+.packet-dropdown-wrapper {
+  position: relative;
+}
+
+.packet-dropdown {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  background: #1e293b;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  min-width: 180px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+}
+
+.packet-dropdown .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: #d1d5db;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.packet-dropdown .dropdown-item:hover {
+  background: #374151;
+}
+
+.packet-dropdown .dropdown-item:first-child {
+  border-radius: 6px 6px 0 0;
+}
+
+.packet-dropdown .dropdown-item:last-child {
+  border-radius: 0 0 6px 6px;
+}
+
+.packet-dropdown .dropdown-divider {
+  height: 1px;
+  background: #374151;
+  margin: 4px 0;
+}
+
+/* Confirmation Modal */
+.confirm-modal .modal-body p {
+  margin: 0 0 8px 0;
+  color: #d1d5db;
+  font-size: 14px;
+}
+
+.confirm-modal .confirm-note {
+  color: #f87171;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.confirm-modal .modal-actions {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid #374151;
+}
+
 /* Error/Status Messages */
 .error-message {
   background: #7f1d1d;
@@ -2097,7 +2252,7 @@ defineExpose({ openNestModal })
   right: 0;
   top: 0;
   bottom: 0;
-  width: 450px;
+  width: 675px;
   background: #0f172a;
   border-left: 1px solid #1e293b;
   transform: translateX(100%);

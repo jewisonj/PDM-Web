@@ -581,10 +581,10 @@ LOG_LEVEL=INFO
 
 ```bash
 # Get material groups for a project
-curl "http://localhost:8000/api/nesting/projects/<project-uuid>/groups"
+curl "http://localhost:8001/api/nesting/projects/<project-uuid>/groups"
 
 # Create a nesting job
-curl -X POST "http://localhost:8000/api/nesting/projects/<project-uuid>/nest" \
+curl -X POST "http://localhost:8001/api/nesting/projects/<project-uuid>/nest" \
   -H "Content-Type: application/json" \
   -d '{
     "material": "STEEL_HSLA",
@@ -597,7 +597,7 @@ curl -X POST "http://localhost:8000/api/nesting/projects/<project-uuid>/nest" \
   }'
 
 # Check job status
-curl "http://localhost:8000/api/nesting/jobs/<job-uuid>"
+curl "http://localhost:8001/api/nesting/jobs/<job-uuid>"
 ```
 
 ### Common Issues

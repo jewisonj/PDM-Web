@@ -162,9 +162,9 @@ if item_data.get("project_id"):
 
 ### 7. Wrong Port in workspace.html (404 Errors)
 
-**Symptom:** All API calls from workspace.html returned 404. The browser console showed requests going to `localhost:8000`.
+**Symptom:** All API calls from workspace.html returned 404. The browser console showed requests going to `localhost:8001`.
 
-**Root Cause:** The `PDM_CONFIG` in `workspace.html` had `apiUrl: 'http://localhost:8000'` but the FastAPI backend runs on port 8001 (configured in `backend/.env` as `API_PORT=8001`).
+**Root Cause:** The `PDM_CONFIG` in `workspace.html` had `apiUrl: 'http://localhost:8001'` but the FastAPI backend runs on port 8001 (configured in `backend/.env` as `API_PORT=8001`).
 
 **Diagnosis:** Checked browser Network tab -- requests were hitting port 8000 which had nothing listening. Compared against `backend/.env` and found the port mismatch.
 

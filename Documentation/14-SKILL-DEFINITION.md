@@ -357,8 +357,8 @@ The PDM Upload Service is a PowerShell-based bridge that runs on the local works
 
 The FastAPI backend provides auto-generated interactive API documentation:
 
-- **Swagger UI:** `http://localhost:8000/docs`
-- **ReDoc:** `http://localhost:8000/redoc`
+- **Swagger UI:** `http://localhost:8001/docs`
+- **ReDoc:** `http://localhost:8001/redoc`
 - **Health check:** `GET /health`
 
 All API routes are prefixed with `/api/` and organized by resource:

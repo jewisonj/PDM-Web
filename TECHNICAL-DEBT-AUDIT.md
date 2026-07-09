@@ -1,6 +1,7 @@
 # Technical Debt Audit - PDM-Web
 
-**Date:** 2026-01-30
+**Original Date:** 2026-01-30
+**Last Reviewed:** 2026-07-09
 **Scope:** Full codebase review - frontend, backend, database usage, deployment
 **Focus:** Technical debt, AI-generated code smells, performance, Fly.io resource usage
 
@@ -17,6 +18,22 @@ The codebase is **functionally working but operationally fragile**. The main ris
 | Code Quality & Debt | 0 | 4 | 6 | 3 |
 | Deployment & Ops | 1 | 2 | 4 | 2 |
 | **Totals** | **5** | **13** | **17** | **5** |
+
+### Review Status (2026-07-09)
+
+| Status | Count | Items |
+|--------|-------|-------|
+| Resolved | 2 | C3, H2 |
+| Partially Addressed | 3 | C2, H3, H4 |
+| Open | 35 | All others |
+
+**Key Changes Since Original Audit:**
+- **C3 (N+1 in MRP Dashboard):** RESOLVED in v3.7+ via batch queries (see Pitfall #35)
+- **H2 (Health Check):** RESOLVED 2026-07-09 - now verifies Supabase connectivity
+- **H3 (Compression):** PARTIALLY RESOLVED 2026-07-09 - GzipMiddleware added, Cache-Control pending
+- **C2 (.env in Git):** PARTIALLY ADDRESSED - `.gitignore` now properly excludes `.env` files
+- **H4 (Item Number Validation):** PARTIALLY ADDRESSED - accepts uppercase, but still rejects McMaster/supplier formats
+- **NEW:** 4 new debt items identified from v3.3-v3.9.2 feature work
 
 ---
 
@@ -50,6 +67,8 @@ async def get_current_user(authorization: str = Header(...)):
 
 ### C2. `.env` Files Contain Real Credentials in Git Working Tree
 
+**Status:** PARTIALLY ADDRESSED (2026-07-09)
+
 **Files:** `backend/.env`, `frontend/.env`
 
 Both contain actual Supabase URLs, anon keys, and the backend has the **service key** (full admin access). If this repo is ever shared or made public, credentials are exposed.
@@ -62,9 +81,13 @@ echo "frontend/.env" >> .gitignore
 ```
 Rotate Supabase keys if this repo has ever been pushed to a remote.
 
+**Current Status:** `.gitignore` now properly excludes `.env`, `.env.*`, `.env.local`, `.env.*.local` (verified lines 79-86). A `backend/.env.example` exists with placeholder values. **Remaining action:** Verify no credentials were ever committed to git history.
+
 ---
 
 ### C3. N+1 Query in MRP Dashboard - 100+ Queries Per Project Load
+
+**Status:** RESOLVED (v3.7+, 2026-05-22)
 
 **File:** `frontend/src/views/MrpDashboardView.vue:182-209`
 
@@ -93,6 +116,8 @@ const { data: allBom } = await supabase
   .from('bom').select('parent_item_id').in('parent_item_id', itemIds)
 // Then look up from maps instead of querying in loop
 ```
+
+**Resolution:** Fixed via batch queries using `.in('item_id', itemIds)`. Documented in Pitfall #35 of Development Notes. Reduced 118 queries to 4 queries, making sidebar load instantly.
 
 ---
 
@@ -143,6 +168,8 @@ The `CORS_ALLOW_ALL` env var defaults to `false` but can be flipped. This combin
 
 ### H2. Health Check Is a Stub
 
+**Status:** RESOLVED (2026-07-09)
+
 **File:** `backend/app/main.py:55-58`
 
 ```python
@@ -169,22 +196,28 @@ async def health():
 
 ### H3. No Static Asset Caching or Compression
 
+**Status:** PARTIALLY RESOLVED (2026-07-09) - Gzip added, Cache-Control pending
+
 **File:** `backend/app/main.py:64-93`
 
 FastAPI serves frontend assets with **no Cache-Control headers and no gzip compression**. Every page load re-downloads all JS/CSS bundles (300-400KB uncompressed).
 
 **Fix:**
-1. Add `GzipMiddleware` to FastAPI (saves ~60-70% bandwidth)
-2. Set `Cache-Control: max-age=31536000, immutable` for `/assets/*` (Vite hashes filenames)
+1. Add `GzipMiddleware` to FastAPI (saves ~60-70% bandwidth) - **DONE**
+2. Set `Cache-Control: max-age=31536000, immutable` for `/assets/*` (Vite hashes filenames) - **PENDING**
 
 ```python
 from starlette.middleware.gzip import GzipMiddleware
 app.add_middleware(GzipMiddleware, minimum_size=1000)
 ```
 
+**Resolution:** GzipMiddleware added to `main.py` on 2026-07-09. Cache-Control headers for static assets still needed.
+
 ---
 
 ### H4. Item Number Validation Schema Rejects Valid Items
+
+**Status:** PARTIALLY ADDRESSED (v3.7.3)
 
 **File:** `backend/app/models/schemas.py:58`
 
@@ -198,6 +231,8 @@ This only accepts `abc1234` format, but the system has McMaster items like `mmc9
 ```python
 item_number: str = Field(..., pattern=r"^[a-z]{3}[a-z0-9\-]+$")
 ```
+
+**Current Status:** Pattern updated to `r"^[a-zA-Z]{3}\d{4,6}$"` to accept both uppercase and lowercase. Route normalizes to lowercase. However, the pattern still rejects McMaster/supplier formats with alphanumeric suffixes and dashes. **Remaining action:** Widen pattern to accept full range of valid item formats.
 
 ---
 
@@ -451,16 +486,16 @@ Work through these in order. Each tier should be complete before moving to the n
 
 ### Phase 1: Security & Stability (Tier 1)
 1. Add auth middleware to all backend endpoints (C1)
-2. Verify .env files are gitignored and credentials aren't in history (C2)
+2. Verify .env files are gitignored and credentials aren't in history (C2) - PARTIAL
 3. Add file size limit to upload endpoint (C5)
-4. Fix N+1 in MRP Dashboard parts loading (C3)
+4. ~~Fix N+1 in MRP Dashboard parts loading~~ **DONE** (C3)
 5. Fix recursive N+1 in BOM tree builder (C4)
 
 ### Phase 2: Performance & Reliability (Tier 2)
-6. Add GzipMiddleware and Cache-Control headers (H3)
-7. Fix health check to verify Supabase connectivity (H2)
+6. ~~Add GzipMiddleware~~ **DONE** ~~and Cache-Control headers~~ (H3) - Gzip done, cache pending
+7. ~~Fix health check to verify Supabase connectivity~~ **DONE** (H2)
 8. Implement server-side search/filter for items (H7)
-9. Fix item number validation schema (H4)
+9. Fix item number validation schema (H4) - PARTIAL
 10. Replace bare exception handlers (H5)
 11. Fix N+1 in Part Lookup view (H8)
 
@@ -478,3 +513,73 @@ Work through these in order. Each tier should be complete before moving to the n
 20. Remove unused dependencies (M8)
 21. Add transactions to bulk BOM (M4)
 22. Remaining low-priority items
+
+---
+
+## NEW DEBT ITEMS (Identified 2026-07-09)
+
+These items were identified from v3.3-v3.9.2 feature development and should be tracked alongside the original audit items.
+
+### NEW-1. Minimal Test Coverage
+
+**Status:** OPEN (Infrastructure exists, coverage minimal)
+
+Testing infrastructure was added in v3.7.3 (Vitest, pytest, GitHub Actions CI), but coverage remains minimal:
+- Only 39 total tests across 3 files (`scheduling.test.ts`, `buildTracker.test.ts`, `buildBook.test.ts`)
+- No tests for BOM upload, print packet generation, routing save, cost estimation
+- No component tests for MRP views
+- No integration tests for file upload/processing
+
+**Priority:** HIGH - Tests exist but critical workflows are untested.
+
+---
+
+### NEW-2. Print Packet / Build Book Size Limits
+
+**Status:** OPEN (Workaround in place)
+
+Large print packets and build books exceed Supabase storage limits:
+- Full build book for test project: 107 pages / 62 prints / 54 MB
+- Supabase storage upload cap: ~50 MB
+- v3.9.1 workaround: Section print sets instead of full book download
+
+**Root Cause:** No chunked upload or compression before storage.
+
+**Priority:** MEDIUM - Band-aid solution works but root cause unaddressed.
+
+---
+
+### NEW-3. Backend PDF Generation Performance
+
+**Status:** DOCUMENTED (Pitfall #191-194)
+
+PDF generation uses inefficient patterns:
+- Never use `StreamingResponse` over `BytesIO` (~80 KB/s observed vs instant with plain `Response`)
+- Section print sets: 27 pages in ~11s (acceptable)
+- Full book: 107 pages takes longer (no explicit benchmark)
+- No pagination or batching for large projects
+
+**Priority:** LOW - Documented best practices, current performance acceptable.
+
+---
+
+### NEW-4. AI Assistant Security (v3.9.2)
+
+**Status:** OPEN (Known limitation documented)
+
+AI Assistant (`/mrp/assistant`) has security gaps documented as v1 limitations:
+- No JWT authentication (uses Supabase admin client, bypasses RLS)
+- In-memory sessions only (lost on server restart)
+- No rate limiting (could be abused if exposed publicly)
+- Read-only (mitigates risk somewhat)
+
+**Priority:** HIGH - Must address before expanding public access. Documented in `33-AI-ASSISTANT.md`.
+
+---
+
+### Suggested Priority for New Items
+
+1. **NEW-4 (AI Assistant Auth)** - CRITICAL if publicly accessible
+2. **NEW-1 (Test Coverage)** - HIGH, prevents regressions
+3. **NEW-2 (Print Packet Size)** - MEDIUM, workaround exists
+4. **NEW-3 (PDF Performance)** - LOW, acceptable performance

@@ -385,7 +385,7 @@ def calculate_cost(node: dict) -> float:
     return (own_price + children_cost) * qty
 
 # Fetch the BOM tree
-response = httpx.get("http://localhost:8000/api/bom/wma20120/tree")
+response = httpx.get("http://localhost:8001/api/bom/wma20120/tree")
 tree = response.json()
 
 total_cost = calculate_cost(tree)

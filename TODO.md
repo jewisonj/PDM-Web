@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-07-07
-**Current Version:** v3.9.1
+**Last Updated:** 2026-07-09
+**Current Version:** v3.9.2
 **Project Status:** Active Development / Production Use
 
 ---
@@ -302,9 +302,11 @@ Fetch supplier information for `mmc`-prefixed items.
 
 ## Known Issues / Tech Debt
 
+> **See `TECHNICAL-DEBT-AUDIT.md` for full tracking of 40+ items from the January 2026 audit.** Summary: 1 resolved (C3), 2 partially addressed (C2, H4), 37 open. 4 new items identified in July 2026 review.
+
 ### TypeScript Errors in Build
-**Status:** Non-blocking but should be cleaned up
-**Action:** See "TypeScript Error Cleanup" in High Priority
+**Status:** RESOLVED (v3.7.3)
+**Fixed:** All 77 build-time TypeScript errors cleaned up across multiple views.
 
 ### Hardcoded Sheet Sizes in Nesting
 **Status:** Works but inflexible
@@ -312,9 +314,19 @@ Fetch supplier information for `mmc`-prefixed items.
 **Future:** Add custom sheet size table in database
 
 ### No Automated Testing
-**Status:** Manual testing only
-**Risk:** Regressions during refactoring
-**Action:** See "Automated Testing Setup" in High Priority
+**Status:** PARTIALLY ADDRESSED (v3.7.3)
+**Current:** Testing infrastructure exists (Vitest, pytest, GitHub Actions CI). 39 tests across 3 files.
+**Remaining:** Need tests for BOM upload, print packet, routing, integration tests.
+
+### Authentication on Public Endpoints (CRITICAL)
+**Status:** OPEN
+**Issue:** Multiple endpoints have no auth checks (C1 in audit). AI Assistant also lacks auth (NEW-4).
+**Action:** Add `get_current_user` dependency to all routes before expanding public access.
+
+### N+1 Query in BOM Tree Builder (CRITICAL)
+**Status:** OPEN
+**Issue:** Recursive N+1 queries in `backend/app/routes/bom.py:40-67` (C4 in audit).
+**Action:** Apply same batching pattern used for MRP Dashboard fix.
 
 ---
 
@@ -358,9 +370,14 @@ Fetch supplier information for `mmc`-prefixed items.
 - `00-TABLE-OF-CONTENTS.md` - Master index
 - `03-DATABASE-SCHEMA.md` - Database reference
 - `04-SERVICES-REFERENCE.md` - Backend API reference
-- `15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md` - 36 pitfalls, 35 reminders
-- `24-VERSION-HISTORY.md` - Release notes (v1.0 through v3.7.1)
+- `15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md` - 42 pitfalls documented
+- `24-VERSION-HISTORY.md` - Release notes (v1.0 through v3.9.2)
 - `29-NESTING-AUTOMATION.md` - Nesting reference
+- `31-BUILD-TRACKER-SHEET.md` - Shop-floor build tracker (v3.8)
+- `32-BUILD-BOOK.md` - Manufacturing build book (v3.9)
+- `33-AI-ASSISTANT.md` - AI assistant feature reference (v3.9.2)
+- `34-AI-ASSISTANT-ROADMAP.md` - AI assistant future plans
+- `TECHNICAL-DEBT-AUDIT.md` - Tech debt tracking (reviewed 2026-07-09)
 - `TODO.md` - This file
 
 ### Reference Documentation (Historical)
@@ -408,13 +425,29 @@ cd Local_Creo_Files\Powershell
 
 ## Next Actions (Prioritized)
 
-1. **Set up automated testing** - Vitest + pytest + GitHub Actions
-2. **Clean up TypeScript errors** - Run type-check and fix obvious issues
-3. **Lifecycle release validation** - Enforce prerequisites for state transitions
-4. **Database cleanup endpoint** - Find orphaned records
-5. **ERP export** - CSV download for items
+### Critical (Security)
+1. **Add authentication to all endpoints** - Create `get_current_user` dependency, apply to all routes (C1, NEW-4)
+2. **Verify .env not in git history** - Run `git log --all -- backend/.env frontend/.env` (C2)
+3. **Add file upload size limit** - Check size before `await file.read()`, return 413 if exceeded (C5)
+
+### High Priority (Performance & Stability)
+4. **Fix N+1 in BOM tree builder** - Apply batch query pattern from MRP Dashboard fix (C4)
+5. **Expand test coverage** - Add tests for BOM upload, print packet, routing (NEW-1)
+6. ~~**Add GzipMiddleware**~~ - DONE 2026-07-09 (H3)
+7. ~~**Fix health check**~~ - DONE 2026-07-09, now verifies Supabase connectivity (H2)
+
+### Medium Priority
+8. **Lifecycle release validation** - Enforce prerequisites for state transitions
+9. **Widen item number validation** - Accept McMaster/supplier formats (H4)
+10. **Database cleanup endpoint** - Find orphaned records
+11. **ERP export** - CSV download for items
+
+### Completed (remove from active tracking)
+- ~~Set up automated testing~~ - Done in v3.7.3 (infrastructure exists)
+- ~~Clean up TypeScript errors~~ - Done in v3.7.3 (77 errors fixed)
 
 ---
 
+**Last Updated:** 2026-07-09
 **Maintained by:** Documentation Agent
-**Related:** `Documentation/24-VERSION-HISTORY.md`, `Documentation/15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md`, `CLAUDE.md`
+**Related:** `TECHNICAL-DEBT-AUDIT.md`, `Documentation/24-VERSION-HISTORY.md`, `Documentation/15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md`, `CLAUDE.md`

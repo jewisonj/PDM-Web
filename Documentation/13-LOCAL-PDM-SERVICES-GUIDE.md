@@ -120,7 +120,7 @@ Edit `frontend/.env`:
 ```ini
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your_anon_key_here
-# VITE_API_URL=http://localhost:8000/api
+# VITE_API_URL=http://localhost:8001/api
 ```
 
 | Variable | Required | Description |

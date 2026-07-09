@@ -21,8 +21,9 @@ from reportlab.pdfgen import canvas
 
 from .supabase import get_supabase_admin
 
-# Maximum size for a single PDF upload (40MB to stay safely under Supabase 50MB limit)
-MAX_PDF_SIZE_BYTES = 40 * 1024 * 1024
+# Maximum size for a single PDF upload
+# Matches print-packets bucket limit in Supabase
+MAX_PDF_SIZE_BYTES = 50 * 1024 * 1024  # 50MB per bucket config
 
 logger = logging.getLogger(__name__)
 
@@ -380,12 +381,16 @@ def _draw_tracking_table(
 
         x = x_start
 
-        # Part number cell
+        # Part number cell - strip MMC/SPN prefixes for display
+        display_pn = item_number
+        pn_lower = item_number.lower()
+        if pn_lower.startswith("mmc") or pn_lower.startswith("spn"):
+            display_pn = item_number[3:]
         c.setFillColorRGB(1, 1, 1)
         c.rect(x, y - row_height, col_part, row_height, fill=1, stroke=1)
         c.setFillColorRGB(0, 0, 0)
         c.setFont("Helvetica", 9)
-        c.drawString(x + 4, y - 14, item_number[:12])
+        c.drawString(x + 4, y - 14, display_pn[:12])
         x += col_part
 
         # Description cell
@@ -629,15 +634,19 @@ async def generate_print_packet(project_id: str) -> dict:
         supabase=supabase,
     )
 
+    print(f"[PrintPacket] Generated PDF: {len(pdf_bytes):,} bytes ({len(pdf_bytes)/1024/1024:.2f} MB)", flush=True)
     logger.info(f"Generated PDF: {len(pdf_bytes):,} bytes")
 
     # 7. Compress the PDF
     pdf_bytes = _compress_pdf(pdf_bytes)
+    print(f"[PrintPacket] After compression: {len(pdf_bytes):,} bytes ({len(pdf_bytes)/1024/1024:.2f} MB)", flush=True)
     logger.info(f"After compression: {len(pdf_bytes):,} bytes")
 
-    # 8. Split if still too large
+    # 8. Split if still too large (4MB chunks)
+    print(f"[PrintPacket] Max chunk size: {MAX_PDF_SIZE_BYTES:,} bytes ({MAX_PDF_SIZE_BYTES/1024/1024:.2f} MB)", flush=True)
     pdf_parts = _split_pdf(pdf_bytes)
     is_split = len(pdf_parts) > 1
+    print(f"[PrintPacket] Split into {len(pdf_parts)} parts", flush=True)
 
     # 9. Upload to Supabase Storage
     storage_paths = []
@@ -653,13 +662,20 @@ async def generate_print_packet(project_id: str) -> dict:
         except:
             pass
 
-        logger.info(f"Uploading {storage_path}: {len(part_bytes):,} bytes")
-        supabase.storage.from_("print-packets").upload(
-            storage_path,
-            part_bytes,
-            file_options={"content-type": "application/pdf", "upsert": "true"}
-        )
-        storage_paths.append(storage_path)
+        logger.info(f"Uploading {storage_path}: {len(part_bytes):,} bytes ({len(part_bytes)/1024/1024:.2f} MB)")
+        print(f"[PrintPacket] Uploading part {i+1}/{len(pdf_parts)}: {len(part_bytes):,} bytes ({len(part_bytes)/1024/1024:.2f} MB)", flush=True)
+
+        try:
+            supabase.storage.from_("print-packets").upload(
+                storage_path,
+                part_bytes,
+                file_options={"content-type": "application/pdf", "upsert": "true"}
+            )
+            storage_paths.append(storage_path)
+            print(f"[PrintPacket] Successfully uploaded {storage_path}", flush=True)
+        except Exception as upload_err:
+            print(f"[PrintPacket] Upload failed for {storage_path}: {upload_err}", flush=True)
+            raise ValueError(f"Failed to upload part {i+1} ({len(part_bytes)/1024/1024:.2f} MB): {upload_err}")
 
     # If split, also delete any old single file
     if is_split:
@@ -1162,14 +1178,19 @@ def _create_cover_sheet(
                 c.setFont("Helvetica", 9)
 
             pn = part["item_number"]
-            if show_link and pn.lower().startswith("mmc"):
-                # McMaster link
-                mmc_pn = pn[3:]
-                url = f"https://www.mcmaster.com/{mmc_pn}/"
+            pn_lower = pn.lower()
+            if show_link and pn_lower.startswith("mmc"):
+                # McMaster link - strip MMC prefix
+                display_pn = pn[3:]
+                url = f"https://www.mcmaster.com/{display_pn}/"
                 c.setFillColorRGB(0, 0, 0.8)
-                c.drawString(72, y, mmc_pn)
+                c.drawString(72, y, display_pn)
                 c.linkURL(url, (72, y - 2, 180, y + 10), relative=0)
                 c.setFillColorRGB(0, 0, 0)
+            elif pn_lower.startswith("spn"):
+                # Supplier part - strip SPN prefix
+                display_pn = pn[3:]
+                c.drawString(72, y, display_pn)
             else:
                 c.drawString(72, y, pn)
 
@@ -1319,9 +1340,12 @@ def _create_stamp(
         c.drawString(x + 8, current_y, text)
         current_y -= line_height
 
-    # Draw stamp content
+    # Draw stamp content - strip MMC/SPN prefixes for display
+    pn = part['item_number']
+    pn_lower = pn.lower()
+    display_pn = pn[3:] if pn_lower.startswith("mmc") or pn_lower.startswith("spn") else pn
     draw_line(f"Project - {project_code}", bold=True)
-    draw_line(f"Part # - {part['item_number']}")
+    draw_line(f"Part # - {display_pn}")
     if start_date:
         draw_line(f"Start - {start_date}")
     if due_date:

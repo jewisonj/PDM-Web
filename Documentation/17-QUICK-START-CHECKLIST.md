@@ -87,11 +87,11 @@ cd backend
 uvicorn app.main:app --reload --port 8000
 ```
 
-**Verify:** Open `http://localhost:8000/docs` in a browser. You should see the Swagger API documentation page.
+**Verify:** Open `http://localhost:8001/docs` in a browser. You should see the Swagger API documentation page.
 
 - [ ] Backend starts without errors
 - [ ] Swagger UI loads at `/docs`
-- [ ] Health check returns OK: `http://localhost:8000/health`
+- [ ] Health check returns OK: `http://localhost:8001/health`
 
 ---
 
@@ -176,12 +176,12 @@ If items already exist in the database:
 3. Use the API directly to upload a test file:
 
 ```bash
-curl -X POST http://localhost:8000/api/files/upload \
+curl -X POST http://localhost:8001/api/files/upload \
   -F "file=@test_file.pdf" \
   -F "item_number=csp0030"
 ```
 
-Or use the Swagger UI at `http://localhost:8000/docs` to test the `/api/files/upload` endpoint interactively.
+Or use the Swagger UI at `http://localhost:8001/docs` to test the `/api/files/upload` endpoint interactively.
 
 - [ ] File upload succeeds (HTTP 200)
 - [ ] File appears in the item's detail panel under "Files"
@@ -227,7 +227,7 @@ Edit `scripts/pdm-upload/PDM-Upload-Config.ps1`:
 
 ```powershell
 $Config = @{
-    ApiUrl       = "http://localhost:8000/api"    # or production URL
+    ApiUrl       = "http://localhost:8001/api"    # or production URL
     WatchFolder  = "C:\PDM-Upload"
     LogFile      = "C:\PDM-Upload\pdm-upload.log"
 }
@@ -341,4 +341,4 @@ Once setup is complete:
 1. **Learn daily workflows:** Read [20-COMMON-WORKFLOWS.md](20-COMMON-WORKFLOWS.md)
 2. **Understand system capabilities:** Read [14-SKILL-DEFINITION.md](14-SKILL-DEFINITION.md)
 3. **FreeCAD automation:** Read [12-FREECAD-AUTOMATION.md](12-FREECAD-AUTOMATION.md)
-4. **API reference:** Browse the interactive docs at `http://localhost:8000/docs`
+4. **API reference:** Browse the interactive docs at `http://localhost:8001/docs`

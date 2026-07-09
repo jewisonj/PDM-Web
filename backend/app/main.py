@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.gzip import GZipMiddleware
 
 from .config import get_settings
 from .routes import (
@@ -32,6 +33,9 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# Gzip compression for responses > 1KB (60-70% bandwidth reduction)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # CORS middleware - allow all origins for internal/Tailnet apps
 app.add_middleware(
     CORSMiddleware,
@@ -56,8 +60,17 @@ app.include_router(assistant_router, prefix="/api")
 
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    return {"status": "healthy"}
+    """Health check endpoint with Supabase connectivity verification."""
+    from .services.supabase import get_supabase_client
+    from fastapi import HTTPException
+
+    try:
+        supabase = get_supabase_client()
+        # Lightweight query to verify database connectivity
+        result = supabase.table("projects").select("id").limit(1).execute()
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database unreachable: {str(e)}")
 
 
 # ============================================

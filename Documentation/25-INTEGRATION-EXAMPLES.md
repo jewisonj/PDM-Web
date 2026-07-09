@@ -94,7 +94,7 @@ from .routes import reports_router
 app.include_router(reports_router, prefix="/api")
 ```
 
-**Step 4: Test** at `http://localhost:8000/docs` -- the new endpoint appears automatically in the Swagger UI.
+**Step 4: Test** at `http://localhost:8001/docs` -- the new endpoint appears automatically in the Swagger UI.
 
 ---
 
@@ -353,7 +353,7 @@ Create a script that calls the PDM-Web API and exports data:
 import csv
 import requests
 
-API_URL = "http://localhost:8000/api"
+API_URL = "http://localhost:8001/api"
 
 # Fetch all items
 response = requests.get(f"{API_URL}/items", params={"limit": 10000})
@@ -390,7 +390,7 @@ print(f"Exported {len(items)} items to erp_items_export.csv")
 import csv
 import requests
 
-API_URL = "http://localhost:8000/api"
+API_URL = "http://localhost:8001/api"
 
 with open("supplier_prices.csv", "r") as f:
     reader = csv.DictReader(f)
@@ -423,7 +423,7 @@ with open("supplier_prices.csv", "r") as f:
 
 import requests
 
-API_URL = "http://localhost:8000/api"
+API_URL = "http://localhost:8001/api"
 
 
 def print_bom_tree(item_number: str):
@@ -582,7 +582,7 @@ from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
-API_URL = "http://localhost:8000/api"
+API_URL = "http://localhost:8001/api"
 WATCH_DIR = r"C:\CADExport\CheckIn"
 
 
@@ -705,7 +705,7 @@ function loadReport(itemNumber: string) {
 Test new endpoints using the FastAPI interactive docs:
 
 1. Start the backend: `cd backend && uvicorn app.main:app --reload`
-2. Open `http://localhost:8000/docs`
+2. Open `http://localhost:8001/docs`
 3. Find your new endpoint in the list
 4. Click "Try it out" and fill in parameters
 5. Click "Execute" and verify the response
@@ -714,15 +714,15 @@ Or test with curl:
 
 ```bash
 # Test a GET endpoint
-curl http://localhost:8000/api/reports/cost/csp0030
+curl http://localhost:8001/api/reports/cost/csp0030
 
 # Test a POST endpoint
-curl -X POST http://localhost:8000/api/webhooks/price-update \
+curl -X POST http://localhost:8001/api/webhooks/price-update \
   -H "Content-Type: application/json" \
   -d '{"item_number": "csp0030", "new_price": 15.50}'
 
 # Test file upload
-curl -X POST http://localhost:8000/api/files/upload \
+curl -X POST http://localhost:8001/api/files/upload \
   -F "file=@/path/to/file.step" \
   -F "item_number=csp0030"
 ```

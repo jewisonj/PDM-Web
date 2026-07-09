@@ -43,6 +43,7 @@ The backend loads configuration via Pydantic Settings from `backend/.env`. All v
 | `API_PORT` | Port for the API server | No | `8080` | `8001` (dev), `8080` (prod) |
 | `DEBUG` | Enable debug mode (auto-reload) | No | `false` | `true`, `false` |
 | `CORS_ALLOW_ALL` | Allow all CORS origins | No | `false` | `true` (dev only) |
+| `ANTHROPIC_API_KEY` | Claude API key for AI Assistant (v3.9.2+) | No | (empty) | `sk-ant-api...` (disables assistant if not set) |
 
 **Example `.env` file (development):**
 
@@ -57,6 +58,9 @@ API_HOST=0.0.0.0
 API_PORT=8001
 DEBUG=true
 CORS_ALLOW_ALL=true
+
+# AI Assistant (optional)
+ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
 **Example `.env` file (production):**
@@ -72,6 +76,9 @@ API_HOST=0.0.0.0
 API_PORT=8080
 DEBUG=false
 CORS_ALLOW_ALL=false
+
+# AI Assistant (optional)
+ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
 ### Settings Class
@@ -301,7 +308,7 @@ The upload bridge script runs on the CAD workstation and watches a local folder 
 ```powershell
 $Config = @{
     # PDM-Web API URL
-    ApiUrl       = "http://localhost:8000/api"
+    ApiUrl       = "http://localhost:8001/api"
     # Production:
     # ApiUrl     = "https://pdm-web.fly.dev/api"
 
@@ -321,7 +328,7 @@ $Config = @{
 
 | Setting | Description | Default | Notes |
 |---------|-------------|---------|-------|
-| `ApiUrl` | FastAPI backend API URL | `http://localhost:8000/api` | Change for production or Tailnet access |
+| `ApiUrl` | FastAPI backend API URL | `http://localhost:8001/api` | Change for production or Tailnet access |
 | `WatchFolder` | Local folder monitored for new files | `C:\PDM-Upload` | Created automatically if missing |
 | `LogFile` | Path to the upload service log | `C:\PDM-Upload\pdm-upload.log` | Auto-rotates at MaxLogSize |
 | `PollInterval` | Delay before processing a detected file (ms) | `500` | Increase for slow file writes |

@@ -117,7 +117,7 @@ Login with email and password via Supabase Auth.
 
 **Example (curl):**
 ```bash
-curl -X POST "http://localhost:8000/api/auth/login?email=jack@example.com&password=secret"
+curl -X POST "http://localhost:8001/api/auth/login?email=jack@example.com&password=secret"
 ```
 
 **Response (200):**
@@ -198,14 +198,14 @@ List items with optional filtering and pagination.
 
 **Example (curl):**
 ```bash
-curl "http://localhost:8000/api/items?q=csp&lifecycle_state=Design&limit=20"
+curl "http://localhost:8001/api/items?q=csp&lifecycle_state=Design&limit=20"
 ```
 
 **Example (Python):**
 ```python
 import requests
 
-response = requests.get("http://localhost:8000/api/items", params={
+response = requests.get("http://localhost:8001/api/items", params={
     "q": "csp",
     "lifecycle_state": "Design",
     "limit": 20
@@ -221,7 +221,7 @@ Get a single item by item number, including associated file records.
 
 **Example:**
 ```bash
-curl "http://localhost:8000/api/items/csp0030"
+curl "http://localhost:8001/api/items/csp0030"
 ```
 
 **Response (200):**
@@ -303,14 +303,14 @@ When `upsert=true`, the admin client is used (bypasses RLS). If the item does no
 
 **Example (curl):**
 ```bash
-curl -X PATCH "http://localhost:8000/api/items/csp0030" \
+curl -X PATCH "http://localhost:8001/api/items/csp0030" \
   -H "Content-Type: application/json" \
   -d '{"material": "Stainless Steel", "mass": 3.1}'
 ```
 
 **Example (upsert from upload bridge):**
 ```bash
-curl -X PATCH "http://localhost:8000/api/items/wmp20080?upsert=true" \
+curl -X PATCH "http://localhost:8001/api/items/wmp20080?upsert=true" \
   -H "Content-Type: application/json" \
   -d '{"name": "Shaft", "material": "Aluminum", "thickness": 2.5}'
 ```
@@ -424,7 +424,7 @@ Get a signed download URL for a file. The URL is valid for 1 hour (3600 seconds)
 
 **Example (curl):**
 ```bash
-curl "http://localhost:8000/api/files/<file-uuid>/download"
+curl "http://localhost:8001/api/files/<file-uuid>/download"
 ```
 
 **Response (200):**
@@ -466,7 +466,7 @@ Get full recursive BOM tree. Returns a nested structure with item details at eac
 
 **Example (curl):**
 ```bash
-curl "http://localhost:8000/api/bom/wma20120/tree?max_depth=5"
+curl "http://localhost:8001/api/bom/wma20120/tree?max_depth=5"
 ```
 
 **Response (200):**
@@ -695,7 +695,7 @@ Queue DXF flat pattern generation for an item. Automatically finds the item's la
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8000/api/tasks/generate-dxf/csp0030"
+curl -X POST "http://localhost:8001/api/tasks/generate-dxf/csp0030"
 ```
 
 **Response (404):** Item not found, or no STEP file found for item.
@@ -962,7 +962,7 @@ Get a signed download URL for a nested output sheet DXF.
 
 **Example:**
 ```bash
-curl "http://localhost:8000/api/nesting/jobs/<job-uuid>/sheets/1/download"
+curl "http://localhost:8001/api/nesting/jobs/<job-uuid>/sheets/1/download"
 ```
 
 **Response (200):**

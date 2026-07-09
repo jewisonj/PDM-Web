@@ -1,9 +1,9 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-07-07
+**Last Updated:** 2026-07-09
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.9.1
+**Current Version:** v3.9.2
 
 ---
 
@@ -57,6 +57,7 @@ New to PDM-Web? Read these in order:
 | 09 | `09-PDM-WEBSERVER-DEPLOYMENT.md` | Production deployment guide for FastAPI + Vue SPA. |
 | 10 | `10-PDM-WEBSERVER-OVERVIEW.md` | Frontend UI design, views, components, and user experience. |
 | 11 | `11-PDM-WEBSERVER-QUICK-REFERENCE.md` | Daily operations and common tasks reference. |
+| 35 | `35-UI-DESIGN-STANDARDS.md` | UI/UX design standards: part number display formatting (prefix stripping for MMC/SPN), code patterns, implementation locations. |
 
 ### Section 6: CAD Processing and Docker
 
@@ -118,7 +119,8 @@ New to PDM-Web? Read these in order:
 ### Frontend Development
 1. `08-PDM-WEBSERVER-README.md` -- Vue app setup
 2. `10-PDM-WEBSERVER-OVERVIEW.md` -- UI design and views
-3. `11-PDM-WEBSERVER-QUICK-REFERENCE.md` -- daily tasks
+3. `35-UI-DESIGN-STANDARDS.md` -- UI/UX standards and formatting conventions
+4. `11-PDM-WEBSERVER-QUICK-REFERENCE.md` -- daily tasks
 
 ### Deployment
 1. `09-PDM-WEBSERVER-DEPLOYMENT.md` -- production deployment
@@ -169,7 +171,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 34
+**Total Documentation Files:** 35
 **Status:** Current
 
 ---
@@ -177,6 +179,8 @@ docker-compose up -d freecad-worker
 ## Project Management
 
 **Global TODO:** `TODO.md` (project root) - Comprehensive task tracking, feature status, and development roadmap
+**Tech Debt:** `TECHNICAL-DEBT-AUDIT.md` (project root) - 40+ tracked debt items from Jan 2026 audit, reviewed Jul 2026 (1 resolved, 2 partial, 37 open, 4 new)
+**Documentation Audit:** `DOCUMENTATION-AUDIT-2026-07-09.md` - Comprehensive documentation audit (14 files fixed for port 8001, README.md updated, health score 7/10)
 **Planning Docs (Reference):**
 - `Update-Compare.md` - Migration gap analysis (workspace comparison completed)
 - `Nest_plan.md` - Nesting service implementation plan (completed)
