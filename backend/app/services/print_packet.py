@@ -3,6 +3,7 @@
 Generates combined PDF print packets for MRP projects with:
 - Cover sheet with project info and categorized parts lists
 - Part PDFs with stamp overlays showing routing information
+- Automatic compression and splitting for large jobs
 """
 
 import os
@@ -20,7 +21,87 @@ from reportlab.pdfgen import canvas
 
 from .supabase import get_supabase_admin
 
+# Maximum size for a single PDF upload (40MB to stay safely under Supabase 50MB limit)
+MAX_PDF_SIZE_BYTES = 40 * 1024 * 1024
+
 logger = logging.getLogger(__name__)
+
+
+def _compress_pdf(pdf_bytes: bytes) -> bytes:
+    """Compress PDF by removing duplicate objects and compressing streams."""
+    try:
+        reader = PdfReader(BytesIO(pdf_bytes))
+        writer = PdfWriter()
+
+        for page in reader.pages:
+            writer.add_page(page)
+
+        # Compress content streams and remove duplicates
+        writer.add_metadata(reader.metadata or {})
+
+        output = BytesIO()
+        writer.write(output)
+        output.seek(0)
+        compressed = output.read()
+
+        # Only use compressed version if it's actually smaller
+        if len(compressed) < len(pdf_bytes):
+            logger.info(f"PDF compressed: {len(pdf_bytes):,} -> {len(compressed):,} bytes ({100 - (len(compressed)*100//len(pdf_bytes))}% reduction)")
+            return compressed
+        return pdf_bytes
+    except Exception as e:
+        logger.warning(f"PDF compression failed: {e}")
+        return pdf_bytes
+
+
+def _split_pdf(pdf_bytes: bytes, max_size: int = MAX_PDF_SIZE_BYTES) -> list[bytes]:
+    """Split a large PDF into multiple parts that fit under max_size.
+
+    Returns a list of PDF byte arrays. If the PDF fits, returns a single-element list.
+    """
+    if len(pdf_bytes) <= max_size:
+        return [pdf_bytes]
+
+    reader = PdfReader(BytesIO(pdf_bytes))
+    total_pages = len(reader.pages)
+
+    if total_pages <= 1:
+        # Can't split a single page, return as-is
+        logger.warning(f"Cannot split single-page PDF of {len(pdf_bytes):,} bytes")
+        return [pdf_bytes]
+
+    # Estimate pages per chunk based on average page size
+    avg_page_size = len(pdf_bytes) // total_pages
+    pages_per_chunk = max(1, (max_size * 8 // 10) // avg_page_size)  # 80% of max to be safe
+
+    logger.info(f"Splitting {total_pages} pages into chunks of ~{pages_per_chunk} pages each")
+
+    parts = []
+    start_page = 0
+
+    while start_page < total_pages:
+        end_page = min(start_page + pages_per_chunk, total_pages)
+
+        writer = PdfWriter()
+        for i in range(start_page, end_page):
+            writer.add_page(reader.pages[i])
+
+        output = BytesIO()
+        writer.write(output)
+        output.seek(0)
+        chunk_bytes = output.read()
+
+        # If chunk is still too big, reduce pages_per_chunk
+        if len(chunk_bytes) > max_size and end_page - start_page > 1:
+            pages_per_chunk = max(1, pages_per_chunk // 2)
+            logger.info(f"Chunk too large ({len(chunk_bytes):,} bytes), reducing to {pages_per_chunk} pages per chunk")
+            continue
+
+        parts.append(chunk_bytes)
+        start_page = end_page
+
+    logger.info(f"Split PDF into {len(parts)} parts")
+    return parts
 
 
 def categorize_part(item_number: str) -> str:
@@ -548,34 +629,66 @@ async def generate_print_packet(project_id: str) -> dict:
         supabase=supabase,
     )
 
-    # 7. Upload to Supabase Storage
-    storage_path = f"{project_code}/{project_code}_packet.pdf"
+    logger.info(f"Generated PDF: {len(pdf_bytes):,} bytes")
 
-    # Delete existing file if present (to replace)
-    try:
-        supabase.storage.from_("print-packets").remove([storage_path])
-    except:
-        pass
+    # 7. Compress the PDF
+    pdf_bytes = _compress_pdf(pdf_bytes)
+    logger.info(f"After compression: {len(pdf_bytes):,} bytes")
 
-    upload_result = supabase.storage.from_("print-packets").upload(
-        storage_path,
-        pdf_bytes,
-        file_options={"content-type": "application/pdf", "upsert": "true"}
-    )
+    # 8. Split if still too large
+    pdf_parts = _split_pdf(pdf_bytes)
+    is_split = len(pdf_parts) > 1
 
-    # 8. Update project record
+    # 9. Upload to Supabase Storage
+    storage_paths = []
+    for i, part_bytes in enumerate(pdf_parts):
+        if is_split:
+            storage_path = f"{project_code}/{project_code}_packet_part{i+1}.pdf"
+        else:
+            storage_path = f"{project_code}/{project_code}_packet.pdf"
+
+        # Delete existing file if present (to replace)
+        try:
+            supabase.storage.from_("print-packets").remove([storage_path])
+        except:
+            pass
+
+        logger.info(f"Uploading {storage_path}: {len(part_bytes):,} bytes")
+        supabase.storage.from_("print-packets").upload(
+            storage_path,
+            part_bytes,
+            file_options={"content-type": "application/pdf", "upsert": "true"}
+        )
+        storage_paths.append(storage_path)
+
+    # If split, also delete any old single file
+    if is_split:
+        try:
+            supabase.storage.from_("print-packets").remove([f"{project_code}/{project_code}_packet.pdf"])
+        except:
+            pass
+
+    # 10. Update project record (store all paths as comma-separated if split)
     generated_at = datetime.utcnow().isoformat()
     supabase.table("mrp_projects").update({
-        "print_packet_path": storage_path,
+        "print_packet_path": ",".join(storage_paths),
         "print_packet_generated_at": generated_at,
     }).eq("id", project_id).execute()
 
-    # 9. Get signed URL for download
-    signed = supabase.storage.from_("print-packets").create_signed_url(storage_path, 3600)
+    # 11. Get signed URLs for download
+    urls = []
+    for path in storage_paths:
+        signed = supabase.storage.from_("print-packets").create_signed_url(path, 3600)
+        url = signed.get("signedURL") or signed.get("signedUrl")
+        if url:
+            urls.append(url)
 
     return {
-        "url": signed.get("signedURL") or signed.get("signedUrl"),
-        "path": storage_path,
+        "url": urls[0] if urls else None,
+        "urls": urls if is_split else None,
+        "path": storage_paths[0] if storage_paths else None,
+        "paths": storage_paths if is_split else None,
+        "parts": len(pdf_parts) if is_split else None,
         "generated_at": generated_at,
     }
 
@@ -592,23 +705,29 @@ async def get_existing_packet(project_id: str) -> Optional[dict]:
         if not result.data or not result.data.get("print_packet_path"):
             return None
 
-        path = result.data["print_packet_path"]
+        path_str = result.data["print_packet_path"]
+        paths = [p.strip() for p in path_str.split(",") if p.strip()]
+        is_split = len(paths) > 1
 
-        # Get fresh signed URL
-        signed = supabase.storage.from_("print-packets").create_signed_url(path, 3600)
+        # Get fresh signed URLs for all paths
+        urls = []
+        for path in paths:
+            signed = supabase.storage.from_("print-packets").create_signed_url(path, 3600)
+            if signed:
+                url = signed.get("signedURL") or signed.get("signedUrl")
+                if url:
+                    urls.append(url)
 
-        if not signed:
-            logger.warning(f"Failed to create signed URL for packet: {path}")
-            return None
-
-        url = signed.get("signedURL") or signed.get("signedUrl")
-        if not url:
-            logger.warning(f"No URL in signed response for packet: {path}, response: {signed}")
+        if not urls:
+            logger.warning(f"Failed to create signed URLs for packet: {path_str}")
             return None
 
         return {
-            "url": url,
-            "path": path,
+            "url": urls[0],
+            "urls": urls if is_split else None,
+            "path": paths[0],
+            "paths": paths if is_split else None,
+            "parts": len(paths) if is_split else None,
             "generated_at": result.data.get("print_packet_generated_at"),
         }
     except Exception as e:

@@ -64,6 +64,7 @@ const addingPart = ref(false)
 const generatingPacket = ref(false)
 const packetSuccess = ref('')
 const packetUrl = ref<string | null>(null)
+const packetUrls = ref<string[] | null>(null)  // For split packets
 const downloadingDXFs = ref(false)
 const completionData = ref<{item_id: string, station_id: string}[]>([])
 
@@ -288,6 +289,7 @@ async function selectProject(project: MrpProject) {
   selectedProject.value = { ...project, parts: [] }
   showDetailPanel.value = true
   packetUrl.value = null  // Clear packet URL when switching projects
+  packetUrls.value = null
   packetSuccess.value = ''
   projectCost.value = null
   completionData.value = []  // Clear completion data when switching projects
@@ -323,6 +325,10 @@ async function loadExistingPacket(projectId: string) {
       const data = await response.json()
       if (data.url) {
         packetUrl.value = data.url
+        // Handle split packets
+        if (data.urls && data.urls.length > 1) {
+          packetUrls.value = data.urls
+        }
       }
     }
     // 404 means no packet exists - that's fine, just don't set URL
@@ -805,6 +811,7 @@ async function generatePrintPacket() {
   error.value = ''
   packetSuccess.value = ''
   packetUrl.value = null
+  packetUrls.value = null
 
   try {
     const response = await fetch(`${API_BASE_URL}/mrp/projects/${selectedProject.value.id}/print-packet`, {
@@ -823,7 +830,13 @@ async function generatePrintPacket() {
 
     if (data.url) {
       packetUrl.value = data.url
-      packetSuccess.value = 'Print packet generated!'
+      // Handle split packets
+      if (data.urls && data.urls.length > 1) {
+        packetUrls.value = data.urls
+        packetSuccess.value = `Print packet generated (${data.parts} parts due to size)!`
+      } else {
+        packetSuccess.value = 'Print packet generated!'
+      }
     }
   } catch (e: any) {
     error.value = e.message || 'Failed to generate print packet'
@@ -832,8 +845,18 @@ async function generatePrintPacket() {
   }
 }
 
-function downloadPacket() {
-  if (packetUrl.value) {
+function downloadPacket(index?: number) {
+  if (packetUrls.value && packetUrls.value.length > 1) {
+    // Multiple parts - download specific part or all
+    if (index !== undefined && packetUrls.value[index]) {
+      window.open(packetUrls.value[index], '_blank')
+    } else {
+      // Download all parts
+      packetUrls.value.forEach((url, i) => {
+        setTimeout(() => window.open(url, '_blank'), i * 500)
+      })
+    }
+  } else if (packetUrl.value) {
     window.open(packetUrl.value, '_blank')
   }
 }
@@ -1622,14 +1645,27 @@ defineExpose({ openNestModal })
                 <i :class="generatingPacket ? 'pi pi-spin pi-spinner' : 'pi pi-print'"></i>
                 {{ generatingPacket ? 'Generating...' : 'Print Packet' }}
               </button>
+              <!-- Single packet download -->
               <button
-                v-if="packetUrl"
+                v-if="packetUrl && !packetUrls"
                 class="success-btn"
-                @click="downloadPacket"
+                @click="downloadPacket()"
               >
                 <i class="pi pi-download"></i>
                 Download PDF
               </button>
+              <!-- Split packet downloads -->
+              <template v-if="packetUrls && packetUrls.length > 1">
+                <button
+                  v-for="(url, i) in packetUrls"
+                  :key="i"
+                  class="success-btn"
+                  @click="downloadPacket(i)"
+                >
+                  <i class="pi pi-download"></i>
+                  Part {{ i + 1 }}
+                </button>
+              </template>
               <button
                 class="primary-btn nest-btn"
                 @click="openNestModal"
