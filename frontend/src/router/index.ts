@@ -89,6 +89,18 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/mrp/design-books',
+      name: 'mrp-design-books',
+      component: () => import('../views/DesignBooksIndexView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/mrp/design-book/:bookCode',
+      name: 'mrp-design-book',
+      component: () => import('../views/MasterDesignBookView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/mrp/materials',
       name: 'mrp-materials',
       component: () => import('../views/MrpRawMaterialsView.vue'),

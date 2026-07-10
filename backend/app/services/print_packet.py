@@ -150,6 +150,7 @@ STATION_ABBREV = {
     "Inspection": "INS",
     "Galvanizing": "GAL",
     "Paint and Paint Prep": "PNT",
+    "Vinyl Wrap": "VW",  # mirrors frontend buildBook.ts STATION_ABBREV
 }
 
 

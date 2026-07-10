@@ -9,9 +9,10 @@
 ## 1. What this is
 
 A **product-level, date-free, rev-controlled Master Design Book** for the Standard Spa
-(product `csa00010`, template project `TEST-PROG01`). Unlike the per-project Build Book
-(dated, completion-prefilled, regenerated per job), the Master Design Book is the
-canonical "how to build one spa" document:
+(product `csa00010`, template project `SPA0030` — "Elite Equine Spa3", the current
+model + print set; TEST-PROG01 was the prototype and is out of date). Unlike the
+per-project Build Book (dated, completion-prefilled, regenerated per job), the Master
+Design Book is the canonical "how to build one spa" document:
 
 - Days are **relative (D1..Dn)** — never calendar dates.
 - All checkboxes **always blank** (photocopy pages for one-off use).
@@ -366,7 +367,7 @@ backend/app/routes/design_books.py)
    acknowledgment gate.
 
 **Phase 4 — First publish + verification**
-1. Generate spa-standard rev 1 from TEST-PROG01. Verify bucket contents + manifest.
+1. Generate spa-standard rev 1 from SPA0030. Verify bucket contents + manifest.
 2. `/check` no-op idempotence immediately after publish (must be empty diff).
 3. Print-test one package booklet + one kit booklet (footer legibility on prints,
    qty stamp placement on 11x17/rotated pages, duplex behavior per Jack's answers).
@@ -389,9 +390,12 @@ backend/app/routes/design_books.py)
    (reason `PRINT ADDED`). No placeholder pages, no hard block.
 4. Paper: **mixed 11x17 prints + letter tables, single-sided** — no blank-page
    insertion logic; TOC counts PDF pages.
-5. Template governance: **TEST-PROG01 stays the live authoring surface** — routing/
-   BOM edits there are the update mechanism; master mode ignores completion + dates.
-   No lock flag.
+5. Template governance: **the template project is the live authoring surface** —
+   routing/BOM edits there are the update mechanism; master mode ignores completion
+   + dates. No lock flag. Template = SPA0030 (Jack, 2026-07-09; TEST-PROG01 was the
+   out-of-date prototype). When a newer spa project becomes the reference, repoint
+   design_books.template_project_id and run Update — the change notice will show
+   exactly what changed between the two models.
 
 ## 11. Known landmines (carry into every phase)
 

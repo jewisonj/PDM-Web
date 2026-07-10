@@ -975,6 +975,10 @@ function goToAssistant() {
   router.push('/mrp/assistant')
 }
 
+function goToDesignBook() {
+  router.push('/mrp/design-books')
+}
+
 // === Nesting Functions ===
 // Note: openNestModal is used in template via @click
 
@@ -1188,6 +1192,10 @@ defineExpose({ openNestModal })
         <button class="nav-btn settings" @click="goToCostSettings">
           <span class="nav-dot settings"></span>
           Cost Settings
+        </button>
+        <button class="nav-btn design-book" @click="goToDesignBook">
+          <span class="nav-dot design-book"></span>
+          Design Book
         </button>
         <button class="nav-btn assistant" @click="goToAssistant">
           <span class="nav-dot assistant"></span>
@@ -1699,7 +1707,7 @@ defineExpose({ openNestModal })
                   </button>
                   <div class="dropdown-divider"></div>
                   <button
-                    v-for="(url, i) in packetUrls"
+                    v-for="(_url, i) in packetUrls"
                     :key="i"
                     class="dropdown-item"
                     @click="downloadPacket(i); showPacketDropdown = false"
@@ -1910,6 +1918,7 @@ defineExpose({ openNestModal })
 .nav-dot.settings { background: #10b981; }
 .nav-dot.cost-report { background: #f472b6; }
 .nav-dot.assistant { background: #38bdf8; }
+.nav-dot.design-book { background: #14b8a6; }
 
 .refresh-btn {
   display: flex;

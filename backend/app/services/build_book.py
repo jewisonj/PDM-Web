@@ -59,11 +59,14 @@ def _fetch_pdf_paths(supabase, item_numbers: list[str]) -> dict[str, str]:
         return {}
     files = (
         supabase.table("files")
-        .select("item_id, file_path, created_at")
+        .select("item_id, file_path, updated_at")
         .in_("item_id", list(id_by_num.values()))
         .eq("file_type", "PDF")
         .not_.is_("file_path", "null")
-        .order("created_at", desc=True)
+        # updated_at, NOT created_at: files rows are updated in place on
+        # same-filename re-upload, so created_at goes stale for them.
+        # nullsfirst=False: a legacy NULL updated_at must not win "newest".
+        .order("updated_at", desc=True, nullsfirst=False)
         .execute()
     )
     path_by_id: dict[str, str] = {}

@@ -58,6 +58,7 @@ New to PDM-Web? Read these in order:
 | 10 | `10-PDM-WEBSERVER-OVERVIEW.md` | Frontend UI design, views, components, and user experience. |
 | 11 | `11-PDM-WEBSERVER-QUICK-REFERENCE.md` | Daily operations and common tasks reference. |
 | 35 | `35-UI-DESIGN-STANDARDS.md` | UI/UX design standards: part number display formatting (prefix stripping for MMC/SPN), code patterns, implementation locations. |
+| 36 | `36-MASTER-DESIGN-BOOK-PLAN.md` | Master Design Book (Spa): product-level, date-free (D1..Dn), rev-controlled section booklets with auto change notices. Architecture + phased plan. |
 
 ### Section 6: CAD Processing and Docker
 

@@ -6,7 +6,7 @@
 
 import { supabase } from './supabase'
 
-export type BucketName = 'pdm-cad' | 'pdm-exports' | 'pdm-drawings' | 'pdm-other'
+export type BucketName = 'pdm-cad' | 'pdm-exports' | 'pdm-drawings' | 'pdm-other' | 'design-books'
 
 // File extension to bucket mapping
 const EXTENSION_BUCKET_MAP: Record<string, BucketName> = {
