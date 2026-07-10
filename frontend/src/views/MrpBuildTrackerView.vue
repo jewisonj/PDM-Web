@@ -6,6 +6,7 @@ import { supabase } from '../services/supabase'
 import { calculateSchedule, type PartData, type BomData, type RoutingData } from '../utils/scheduling'
 import {
   buildTrackerSheet,
+  applyKitSourcing,
   PART_COLUMNS,
   ASM_COLUMNS,
   type TrackerSheet,
@@ -13,6 +14,7 @@ import {
   type TrackerFormat,
   type TrackerPage,
 } from '../utils/buildTracker'
+import { fetchProjectKitSources } from '../services/designBook'
 
 const route = useRoute()
 const router = useRouter()
@@ -57,7 +59,7 @@ async function loadAll() {
 
     const itemIds = (partsData || []).map(p => p.item_id)
 
-    const [{ data: completionData }, { data: bomData }, { data: routingData }, { data: stationsData }] =
+    const [{ data: completionData }, { data: bomData }, { data: routingData }, { data: stationsData }, kitSources] =
       await Promise.all([
         supabase
           .from('part_completion')
@@ -73,7 +75,20 @@ async function loadAll() {
           .in('item_id', itemIds)
           .order('sequence'),
         supabase.from('workstations').select('id, station_code, station_name, station_group'),
+        fetchProjectKitSources(project.id),
       ])
+
+    const bom = (bomData || []) as any
+    const workstations = (stationsData || []) as any
+    // kit-sourced parts are received/inspected/staged, not made — synthesize that
+    // routing before scheduling so the tracker agrees with the master book. (No
+    // routing_materials here — the tracker has no stock-pull section.)
+    const sourced = applyKitSourcing({
+      routing: (routingData || []).map(r => ({ ...r, workstations: (r as any).workstations })) as any,
+      kitSources,
+      workstations,
+      bom,
+    })
 
     const schedule = calculateSchedule(
       (partsData || []).map(p => ({
@@ -81,8 +96,8 @@ async function loadAll() {
         quantity: p.quantity,
         items: (p as any).items,
       })) as PartData[],
-      (bomData || []) as BomData[],
-      (routingData || []).map(r => ({ ...r, workstations: (r as any).workstations })) as RoutingData[],
+      bom as BomData[],
+      sourced.routing as unknown as RoutingData[],
       (completionData || []).map(c => ({ item_id: c.item_id, station_id: c.station_id }))
     )
 
@@ -93,11 +108,12 @@ async function loadAll() {
         quantity: p.quantity,
         items: (p as any).items,
       })),
-      bom: (bomData || []) as any,
-      routing: (routingData || []).map(r => ({ ...r, workstations: (r as any).workstations })) as any,
+      bom,
+      routing: sourced.routing as any,
       completion: (completionData || []) as any,
-      workstations: (stationsData || []) as any,
+      workstations,
       schedule,
+      kitSources,
     }
     rebuild()
 

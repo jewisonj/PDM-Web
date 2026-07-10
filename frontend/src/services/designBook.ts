@@ -123,6 +123,33 @@ export interface DesignBookPayload {
 }
 
 // ============================================================================
+// Kit sourcing — shared by the master book and the per-project Build Book/Tracker
+// ============================================================================
+
+/**
+ * Vendor bundles of finished parts for a project (project_item_source + project_kits).
+ *
+ * `use_kit` is deliberately NOT filtered on: it is a pricing toggle, and a cost
+ * experiment must never change a build document (Documentation/38 §3). Sourcing
+ * changes mean reassigning parts to 'make'.
+ */
+export async function fetchProjectKitSources(projectId: string): Promise<KitSourceInput[]> {
+  const { data } = await supabase
+    .from('project_item_source')
+    .select('item_id, project_kits (kit_number, kit_name, vendor)')
+    .eq('project_id', projectId)
+    .eq('source_type', 'kit')
+  return (data || [])
+    .filter((r: any) => r.project_kits)
+    .map((r: any) => ({
+      item_id: r.item_id,
+      kit_number: r.project_kits.kit_number,
+      kit_name: r.project_kits.kit_name,
+      vendor: r.project_kits.vendor ?? null,
+    }))
+}
+
+// ============================================================================
 // Payload builder — the same fetch set as MrpBuildBookView (no completion)
 // ============================================================================
 
@@ -148,7 +175,7 @@ export async function buildMasterModel(templateProjectCode: string): Promise<Mas
     { data: stationsData },
     { data: materialsData },
     { data: printFiles },
-    { data: kitSourceRows },
+    kitSources,
   ] = await Promise.all([
     supabase
       .from('bom')
@@ -172,24 +199,8 @@ export async function buildMasterModel(templateProjectCode: string): Promise<Mas
       .not('file_path', 'is', null)
       .in('item_id', itemIds)
       .limit(3000),
-    // Vendor bundles of finished parts. `use_kit` is deliberately NOT filtered on:
-    // it is a pricing toggle, and a cost experiment must never rev the design book
-    // (Documentation/38 §3). Sourcing changes mean reassigning parts to 'make'.
-    supabase
-      .from('project_item_source')
-      .select('item_id, project_kits (kit_number, kit_name, vendor)')
-      .eq('project_id', project.id)
-      .eq('source_type', 'kit'),
+    fetchProjectKitSources(project.id),
   ])
-
-  const kitSources: KitSourceInput[] = (kitSourceRows || [])
-    .filter((r: any) => r.project_kits)
-    .map((r: any) => ({
-      item_id: r.item_id,
-      kit_number: r.project_kits.kit_number,
-      kit_name: r.project_kits.kit_name,
-      vendor: r.project_kits.vendor ?? null,
-    }))
 
   return masterDesignBook({
     project: project as any,

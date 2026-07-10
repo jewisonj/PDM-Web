@@ -230,11 +230,24 @@ clean (a resequence no longer reprints identical booklets). ⚠ JACK decides at 
    BOM-rollup qty gate; emit bundle info on the spine descriptor and the RCV package.
 6. `designBook.ts`: fetch `project_item_source` + `project_kits` in `buildMasterModel`.
 
-**Phase C — renderer**
-7. `master_design_book.py`: STAGE SET rename, bundle band, BUNDLES block on the buy
-   list, `renderer_version = 2`, `derive_reasons` keeps data reasons on a renderer bump.
-8. `verify_quantities`: skip `zz*`.
-9. Pytest: renderer strings, bundle band, reason derivation with renderer bump.
+**Phase C — renderer** (DONE 2026-07-10)
+7. `master_design_book.py`: STAGE SET rename (`STAGE SET -- PARTS REQUIRED`, `FOR SET`
+   column, `STAGE SETS:` line, `IN SET ORDER`), bundle band on receiving/staging
+   booklets (`BUNDLE KIT-001 ... VERIFY N PARTS AGAINST PRINTS ON RECEIPT`), BUNDLES
+   block on the spine buy list (no prices), `derive_reasons` prepends the layout reason
+   but keeps up to two data reasons.
+8. `verify_quantities`: skip `zz*` (mirrors the frontend gate).
+9. Pytest: renderer strings, bundle band (+ singular), STAGE SET, spine BUNDLES,
+   renderer-bump-keeps-data-reasons, renderer-bump-alone. Eyeballed on live SPA0030.
+
+⚠ **The renderer-text change REQUIRES a `renderer_version` bump at publish (Phase E).**
+The STAGE SET / FOR SET renames alter printed text on nearly every Section I/II booklet
+— including ones whose content did not change. Per Documentation/36 §3.4, shipping
+different pages under an unchanged rev letter is a defect, so `spa-standard`'s
+`design_books.renderer_version` must go 1 → 2 in the same update. That makes rev 2 a
+full re-issue (every section revs), with each section's change notice reading
+`LAYOUT UPDATE (renderer v1->v2); <data reason>`. This also moots the Phase-B
+`pkg_position` transition worry — everything revs from the renderer bump regardless.
 
 **Phase D — per-project docs (keeps the two books from disagreeing)**
 10. Wire `kitSources` into `MrpBuildBookView` and `MrpBuildTrackerView`. Without this,
@@ -242,8 +255,9 @@ clean (a resequence no longer reprints identical booklets). ⚠ JACK decides at 
     receive.
 
 **Phase E — publish**
-11. Dry-run `/check` on `spa-standard`, review the diff, publish rev 2, verify the
-    change notice names both the sourcing change and the layout update.
+11. `UPDATE design_books SET renderer_version = 2 WHERE book_code = 'spa-standard'`
+    (the layout change above), then dry-run `/check`, review the diff, publish rev 2,
+    verify the change notice names both the sourcing change and the layout update.
 
 ## 7. Risks
 

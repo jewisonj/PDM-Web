@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '../services/supabase'
 import { calculateSchedule, type PartData, type BomData, type RoutingData } from '../utils/scheduling'
 import { buildBook, type BuildBook } from '../utils/buildBook'
+import { applyKitSourcing } from '../utils/buildTracker'
+import { fetchProjectKitSources } from '../services/designBook'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,6 +45,7 @@ async function loadAll() {
       { data: stationsData },
       { data: materialsData },
       { data: printFiles },
+      kitSources,
     ] = await Promise.all([
       supabase
         .from('part_completion')
@@ -68,7 +71,25 @@ async function loadAll() {
         .eq('file_type', 'PDF')
         .not('file_path', 'is', null)
         .in('item_id', itemIds),
+      fetchProjectKitSources(project.id),
     ])
+
+    const bom = (bomData || []) as any
+    const workstations = (stationsData || []) as any
+    // kit-sourced parts are received/inspected/staged, not made — synthesize that
+    // routing (and drop their raw-material pulls) BEFORE scheduling, exactly as the
+    // master book does, so the project book agrees with it (Documentation/38)
+    const sourced = applyKitSourcing({
+      routing: (routingData || []).map(r => ({ ...r, workstations: (r as any).workstations })) as any,
+      routingMaterials: (materialsData || []).map(m => ({
+        item_id: m.item_id,
+        qty_required: m.qty_required,
+        raw_materials: (m as any).raw_materials,
+      })),
+      kitSources,
+      workstations,
+      bom,
+    })
 
     const schedule = calculateSchedule(
       (partsData || []).map(p => ({
@@ -76,8 +97,8 @@ async function loadAll() {
         quantity: p.quantity,
         items: (p as any).items,
       })) as PartData[],
-      (bomData || []) as BomData[],
-      (routingData || []).map(r => ({ ...r, workstations: (r as any).workstations })) as RoutingData[],
+      bom as BomData[],
+      sourced.routing as unknown as RoutingData[],
       (completionData || []).map(c => ({ item_id: c.item_id, station_id: c.station_id }))
     )
 
@@ -88,17 +109,14 @@ async function loadAll() {
         quantity: p.quantity,
         items: (p as any).items,
       })),
-      bom: (bomData || []) as any,
-      routing: (routingData || []).map(r => ({ ...r, workstations: (r as any).workstations })) as any,
+      bom,
+      routing: sourced.routing as any,
       completion: (completionData || []) as any,
-      workstations: (stationsData || []) as any,
+      workstations,
       schedule,
-      routingMaterials: (materialsData || []).map(m => ({
-        item_id: m.item_id,
-        qty_required: m.qty_required,
-        raw_materials: (m as any).raw_materials,
-      })),
+      routingMaterials: sourced.routingMaterials as any,
       printItemIds: [...new Set((printFiles || []).map(f => f.item_id))],
+      kitSources,
     })
 
     document.title = `BOOK_${projectCode}_${fmtIso(book.value.generatedAt)}`
