@@ -17,6 +17,11 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
     and raw_materials to calculate labor, material, outsourced, and
     purchased costs.
 
+    Now also factors in kit pricing:
+    - Items with source_type='kit' and kit.use_kit=true skip in-house costing
+    - Kit prices are added as a separate category
+    - Items in disabled kits (use_kit=false) fall back to in-house routing
+
     Returns None if the project has no parts (or doesn't exist).
     """
     supabase = get_supabase_admin()
@@ -42,12 +47,49 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
     if not parts_result.data:
         return None
 
+    # Filter out zzz-prefix items (reference-only parts, not for manufacturing)
+    parts_data = [
+        p for p in parts_result.data
+        if not (p.get("items") or {}).get("item_number", "").lower().startswith("zzz")
+    ]
+
+    if not parts_data:
+        return None
+
+    # --- Kit Pricing Support ---
+    # Load active kits for this project (use_kit=true)
+    kits_result = supabase.table("project_kits").select(
+        "id, kit_number, kit_name, vendor, price, use_kit"
+    ).eq("project_id", pid).execute()
+
+    kits_map = {k["id"]: k for k in (kits_result.data or [])}
+    active_kit_ids = {k["id"] for k in (kits_result.data or []) if k.get("use_kit", True)}
+
+    # Load item sources to determine which items are in active kits
+    sources_result = supabase.table("project_item_source").select(
+        "item_id, source_type, kit_id"
+    ).eq("project_id", pid).execute()
+
+    # Build map of item_id -> source info
+    item_sources = {}
+    for src in (sources_result.data or []):
+        item_sources[src["item_id"]] = {
+            "source_type": src["source_type"],
+            "kit_id": src["kit_id"],
+        }
+
+    # Determine which items are covered by active kits (skip their in-house cost)
+    items_in_active_kits = set()
+    for item_id, src in item_sources.items():
+        if src["source_type"] == "kit" and src["kit_id"] in active_kit_ids:
+            items_in_active_kits.add(item_id)
+
     # Load all workstations
     ws_result = supabase.table("workstations").select("id, station_code, station_name, hourly_rate, is_outsourced, outsourced_cost_default").execute()
     ws_map = {w["id"]: w for w in (ws_result.data or [])}
 
     # Collect all item IDs
-    item_ids = [p["item_id"] for p in parts_result.data]
+    item_ids = [p["item_id"] for p in parts_data]
 
     # Load routing for all items
     routing_result = supabase.table("routing").select(
@@ -76,11 +118,42 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
     total_outsourced = 0.0
     total_purchased = 0.0
 
-    for part in parts_result.data:
+    for part in parts_data:
         item = part.get("items") or {}
         item_id = part["item_id"]
         qty = part.get("quantity", 1) or 1
         is_supplier = item.get("is_supplier_part", False)
+
+        # Check if this item is in an active kit
+        item_source = item_sources.get(item_id, {})
+        in_active_kit = item_id in items_in_active_kits
+        kit_info = None
+        if in_active_kit and item_source.get("kit_id"):
+            kit = kits_map.get(item_source["kit_id"])
+            if kit:
+                kit_info = {
+                    "kit_id": kit["id"],
+                    "kit_number": kit["kit_number"],
+                    "kit_name": kit["kit_name"],
+                }
+
+        # If item is in an active kit, skip individual costing (kit price covers it)
+        if in_active_kit:
+            items_output.append({
+                "item_id": item_id,
+                "item_number": item.get("item_number", ""),
+                "name": item.get("name", ""),
+                "quantity": qty,
+                "is_supplier_part": False,
+                "in_kit": True,
+                "kit_info": kit_info,
+                "labor_cost": 0,
+                "material_cost": 0,
+                "outsourced_cost": 0,
+                "unit_cost": 0,
+                "extended_cost": 0,
+            })
+            continue
 
         if is_supplier:
             unit_price = float(item.get("unit_price") or 0)
@@ -92,6 +165,7 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
                 "name": item.get("name", ""),
                 "quantity": qty,
                 "is_supplier_part": True,
+                "in_kit": False,
                 "labor_cost": 0,
                 "material_cost": 0,
                 "outsourced_cost": 0,
@@ -160,6 +234,7 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
             "name": item.get("name", ""),
             "quantity": qty,
             "is_supplier_part": False,
+            "in_kit": False,
             "labor_cost": round(item_labor, 2),
             "material_cost": round(item_material, 2),
             "outsourced_cost": round(item_outsourced, 2),
@@ -167,7 +242,27 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
             "extended_cost": round(extended, 2)
         })
 
-    subtotal = total_labor + total_material + total_outsourced + total_purchased
+    # Calculate total kit costs (sum of active kit prices)
+    total_kit_cost = 0.0
+    kits_output = []
+    for kit_id in active_kit_ids:
+        kit = kits_map.get(kit_id)
+        if kit:
+            kit_price = float(kit.get("price") or 0)
+            total_kit_cost += kit_price
+            # Count parts in this kit
+            parts_in_kit = sum(1 for iid in items_in_active_kits
+                               if item_sources.get(iid, {}).get("kit_id") == kit_id)
+            kits_output.append({
+                "kit_id": kit_id,
+                "kit_number": kit["kit_number"],
+                "kit_name": kit["kit_name"],
+                "vendor": kit.get("vendor"),
+                "price": kit_price,
+                "part_count": parts_in_kit,
+            })
+
+    subtotal = total_labor + total_material + total_outsourced + total_purchased + total_kit_cost
     total = subtotal * overhead_multiplier
 
     return {
@@ -176,8 +271,10 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
         "material_cost": round(total_material, 2),
         "outsourced_cost": round(total_outsourced, 2),
         "purchased_cost": round(total_purchased, 2),
+        "kit_cost": round(total_kit_cost, 2),
         "overhead_multiplier": overhead_multiplier,
         "subtotal": round(subtotal, 2),
         "total": round(total, 2),
-        "items": items_output
+        "items": items_output,
+        "kits": kits_output,
     }

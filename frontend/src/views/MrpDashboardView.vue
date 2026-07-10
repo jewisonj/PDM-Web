@@ -3,8 +3,9 @@ import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase, API_BASE_URL } from '../services/supabase'
 import NestConfigModal from '../components/NestConfigModal.vue'
+import KitManagementSlideout from '../components/KitManagementSlideout.vue'
 import type { NestGroup, NestJob, NestSheet } from '../types'
-import { isDocumentItem } from '../utils/buildTracker'
+import { isDocumentItem, isReferenceOnlyItem } from '../utils/buildTracker'
 
 const router = useRouter()
 
@@ -94,12 +95,16 @@ interface CostEstimate {
   material_cost: number
   outsourced_cost: number
   purchased_cost: number
+  kit_cost: number
   overhead_multiplier: number
   subtotal: number
   total: number
 }
 const projectCost = ref<CostEstimate | null>(null)
 const loadingCost = ref(false)
+
+// Kit management state
+const showKitSlideout = ref(false)
 
 // Computed properties for selected project
 const projectParts = computed(() => selectedProject.value?.parts || [])
@@ -109,11 +114,11 @@ const assemblies = computed(() =>
 )
 
 const parts = computed(() =>
-  projectParts.value.filter(p => !p.is_assembly && !isDocumentItem(p.item_number))
+  projectParts.value.filter(p => !p.is_assembly && !isDocumentItem(p.item_number) && !isReferenceOnlyItem(p.item_number))
 )
 
 const unroutedParts = computed(() =>
-  projectParts.value.filter(p => !p.has_routing && !p.is_assembly && !isDocumentItem(p.item_number))
+  projectParts.value.filter(p => !p.has_routing && !p.is_assembly && !isDocumentItem(p.item_number) && !isReferenceOnlyItem(p.item_number))
 )
 
 // Controlled documents (third-letter 'd' item numbers) attached as reference prints
@@ -1350,11 +1355,19 @@ defineExpose({ openNestModal })
                   <span class="cost-label">Purchased</span>
                   <span class="cost-value">${{ projectCost.purchased_cost.toFixed(2) }}</span>
                 </div>
+                <div v-if="projectCost.kit_cost > 0" class="cost-row kit-cost">
+                  <span class="cost-label">Vendor Kits</span>
+                  <span class="cost-value">${{ projectCost.kit_cost.toFixed(2) }}</span>
+                </div>
                 <div class="cost-row cost-total">
                   <span class="cost-label">Total</span>
                   <span class="cost-value">${{ projectCost.total.toFixed(2) }}</span>
                 </div>
               </div>
+              <button class="manage-kits-btn" @click="showKitSlideout = true">
+                <i class="pi pi-box"></i>
+                Manage Kits
+              </button>
             </div>
 
             <!-- Status -->
@@ -1788,6 +1801,15 @@ defineExpose({ openNestModal })
       :loading="loadingNestGroups"
       @close="showNestModal = false"
       @submit="submitNestJob"
+    />
+
+    <!-- Kit Management Slideout -->
+    <KitManagementSlideout
+      v-if="showKitSlideout && selectedProject"
+      :project-id="selectedProject.id"
+      :project-code="selectedProject.project_code"
+      @close="showKitSlideout = false"
+      @updated="loadCostEstimate(selectedProject.id)"
     />
 
     <!-- Regenerate Print Packet Confirmation -->
@@ -2417,6 +2439,36 @@ defineExpose({ openNestModal })
 
 .cost-total .cost-value {
   color: #10b981;
+}
+
+.cost-row.kit-cost .cost-label {
+  color: #a78bfa;
+}
+
+.cost-row.kit-cost .cost-value {
+  color: #a78bfa;
+}
+
+.manage-kits-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #1e293b;
+  color: #e5e7eb;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.manage-kits-btn:hover {
+  background: #334155;
+  border-color: #475569;
 }
 
 /* Status Section */

@@ -10,6 +10,7 @@ from .workspace import router as workspace_router
 from .nesting import router as nesting_router
 from .assistant import router as assistant_router
 from .design_books import router as design_books_router
+from .kits import router as kits_router
 
 __all__ = [
     "items_router",
@@ -23,4 +24,5 @@ __all__ = [
     "nesting_router",
     "assistant_router",
     "design_books_router",
+    "kits_router",
 ]
