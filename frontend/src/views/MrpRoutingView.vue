@@ -150,6 +150,21 @@ const purchaseSupplier = ref<string>('')
 const purchasePn = ref<string>('')
 const savingPurchase = ref(false)
 
+// Kit sourcing state (per-project source method)
+interface ProjectKit {
+  id: string
+  kit_number: string
+  kit_name: string
+  vendor: string | null
+  price: number
+  use_kit: boolean
+}
+const projectKits = ref<ProjectKit[]>([])
+const itemSourceType = ref<'make' | 'kit'>('make')
+const itemSourceKitId = ref<string | null>(null)
+const savingSource = ref(false)
+const activeProjectId = ref<string | null>(null)  // Project context for source selection
+
 // Detect if selected material is sheet metal
 const selectedMaterialIsSM = computed(() => {
   if (!selectedMaterial.value) return false
@@ -258,9 +273,9 @@ function getPartType(item: Item): string {
 const projectOptions = computed(() => {
   const projects = new Set<string>()
   items.value.forEach(item => {
-    if (item.project_name) projects.add(item.project_name)
+    if (item.project_name) projects.add(item.project_name.trim())
     if (item.mrp_project_codes) {
-      item.mrp_project_codes.forEach(code => projects.add(code))
+      item.mrp_project_codes.forEach(code => projects.add(code.trim()))
     }
   })
   return Array.from(projects).sort()
@@ -284,7 +299,8 @@ const filteredItems = computed(() => {
   if (routingStatusFilter.value === 'has_routing') {
     result = result.filter(item => item.has_routing)
   } else if (routingStatusFilter.value === 'no_routing') {
-    result = result.filter(item => !item.has_routing)
+    // Exclude purchased items (mmc, spn, zzz) from unrouted list - they don't need routing
+    result = result.filter(item => !item.has_routing && item.part_type !== 'purchased')
   }
 
   if (searchQuery.value) {
@@ -844,6 +860,43 @@ async function selectItem(item: Item) {
 
     // Check if item is an assembly (has BOM children)
     await checkIfAssembly(item.id)
+
+    // Load kit source info based on project context
+    // Priority: 1) Selected project filter, 2) Item's mrp_project_codes
+    const projectCode = (projectFilter.value !== 'all'
+      ? projectFilter.value
+      : item.mrp_project_codes?.[0])?.trim()
+
+    console.log('[Kit Debug] Item:', item.item_number, 'using project context:', projectCode,
+      '(filter:', projectFilter.value, ', item codes:', item.mrp_project_codes, ')')
+
+    if (projectCode) {
+      // Look up the project by code
+      const { data: projectData } = await supabase
+        .from('mrp_projects')
+        .select('id, project_code')
+        .eq('project_code', projectCode)
+        .single()
+
+      console.log('[Kit Debug] Project:', projectCode, '→ ID:', projectData?.id?.substring(0, 8), '...')
+      if (projectData) {
+        activeProjectId.value = projectData.id
+        await loadProjectKits(projectData.id)
+        console.log('[Kit Debug] Kits loaded:', projectKits.value.length, 'kits found for project', projectCode)
+        console.log('[Kit Debug] UI condition (activeProjectId && projectKits.length > 0):', !!activeProjectId.value && projectKits.value.length > 0)
+        await loadItemSource(projectData.id, item.id)
+      } else {
+        activeProjectId.value = null
+        projectKits.value = []
+        itemSourceType.value = 'make'
+        itemSourceKitId.value = null
+      }
+    } else {
+      activeProjectId.value = null
+      projectKits.value = []
+      itemSourceType.value = 'make'
+      itemSourceKitId.value = null
+    }
   } catch (e: any) {
     error.value = e.message || 'Failed to load item data'
   }
@@ -864,6 +917,88 @@ async function checkIfAssembly(itemId: string) {
     isAssembly.value = false
   }
 }
+
+// --- Kit Sourcing Functions ---
+
+async function loadProjectKits(projectId: string) {
+  try {
+    const url = `/api/mrp/projects/${projectId}/kits`
+    console.log('[Kit Debug] Fetching kits from:', url)
+    const response = await fetch(url)
+    console.log('[Kit Debug] Response status:', response.status)
+    if (response.ok) {
+      const data = await response.json()
+      console.log('[Kit Debug] Kits response data:', data, 'Length:', data?.length)
+      projectKits.value = data
+    } else {
+      console.log('[Kit Debug] Kits request failed:', await response.text())
+      projectKits.value = []
+    }
+  } catch (e) {
+    console.error('[Kit Debug] Failed to load project kits:', e)
+    projectKits.value = []
+  }
+}
+
+async function loadItemSource(projectId: string, itemId: string) {
+  try {
+    const response = await fetch(`/api/mrp/projects/${projectId}/item-sources`)
+    if (response.ok) {
+      const sources = await response.json()
+      const itemSource = sources[itemId]
+      if (itemSource) {
+        itemSourceType.value = itemSource.source_type || 'make'
+        itemSourceKitId.value = itemSource.kit_id || null
+      } else {
+        itemSourceType.value = 'make'
+        itemSourceKitId.value = null
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load item source:', e)
+    itemSourceType.value = 'make'
+    itemSourceKitId.value = null
+  }
+}
+
+async function saveItemSource() {
+  if (!activeProjectId.value || !selectedItem.value) return
+
+  savingSource.value = true
+  try {
+    const body = {
+      source_type: itemSourceType.value,
+      kit_id: itemSourceType.value === 'kit' ? itemSourceKitId.value : null,
+    }
+
+    const response = await fetch(
+      `/api/mrp/projects/${activeProjectId.value}/items/${selectedItem.value.id}/source`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    )
+
+    if (response.ok) {
+      successMessage.value = 'Source updated'
+      setTimeout(() => { successMessage.value = '' }, 2000)
+    } else {
+      const data = await response.json()
+      error.value = data.detail || 'Failed to save source'
+    }
+  } catch (e: any) {
+    error.value = e.message || 'Failed to save source'
+  } finally {
+    savingSource.value = false
+  }
+}
+
+// Computed: selected kit info
+const selectedKitInfo = computed(() => {
+  if (itemSourceType.value !== 'kit' || !itemSourceKitId.value) return null
+  return projectKits.value.find(k => k.id === itemSourceKitId.value) || null
+})
 
 async function downloadAssemblyPackage() {
   if (!selectedItem.value) return
@@ -1660,6 +1795,42 @@ onMounted(() => {
             </button>
           </div>
 
+          <!-- Part Sourcing (only for items in MRP projects with kits) -->
+          <div v-if="activeProjectId && projectKits.length > 0" class="source-section">
+            <div class="source-header">
+              <span class="source-label">Part Source:</span>
+              <div class="source-toggle">
+                <button
+                  class="source-btn"
+                  :class="{ active: itemSourceType === 'make' }"
+                  @click="itemSourceType = 'make'; itemSourceKitId = null"
+                >
+                  Make In-House
+                </button>
+                <button
+                  class="source-btn"
+                  :class="{ active: itemSourceType === 'kit' }"
+                  @click="itemSourceType = 'kit'"
+                >
+                  Part of Kit
+                </button>
+              </div>
+              <select v-if="itemSourceType === 'kit'" v-model="itemSourceKitId" class="kit-select">
+                <option :value="null" disabled>Select kit...</option>
+                <option v-for="kit in projectKits.filter(k => k.use_kit)" :key="kit.id" :value="kit.id">
+                  {{ kit.kit_number }}: {{ kit.kit_name }}
+                </option>
+              </select>
+              <button
+                class="save-source-btn"
+                :disabled="savingSource || (itemSourceType === 'kit' && !itemSourceKitId)"
+                @click="saveItemSource"
+              >
+                {{ savingSource ? 'Saving...' : 'Save' }}
+              </button>
+            </div>
+          </div>
+
           <!-- Raw Material Requirements -->
           <div class="section-title">Raw Material Requirements</div>
           <div class="material-section">
@@ -2223,6 +2394,98 @@ onMounted(() => {
   border-radius: 4px;
   font-size: 12px;
   color: #9ca3af;
+}
+
+/* Part Sourcing Section - Compact inline layout */
+.source-section {
+  margin-top: 20px;
+  margin-bottom: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #1e293b;
+}
+
+.source-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.source-label {
+  font-size: 13px;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.source-toggle {
+  display: flex;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.source-btn {
+  padding: 6px 12px;
+  border: none;
+  background: #1e293b;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.source-btn:first-child {
+  border-right: 1px solid #334155;
+}
+
+.source-btn:hover {
+  background: #334155;
+  color: #e5e7eb;
+}
+
+.source-btn.active {
+  background: #2563eb;
+  color: white;
+}
+
+.kit-select {
+  min-width: 200px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #334155;
+  background: #020617;
+  color: #e5e7eb;
+  font-size: 12px;
+}
+
+.kit-select:focus {
+  outline: none;
+  border-color: #38bdf8;
+}
+
+.save-source-btn {
+  padding: 6px 12px;
+  border: none;
+  background: #22c55e;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.save-source-btn:hover {
+  background: #16a34a;
+}
+
+.save-source-btn:disabled {
+  background: #374151;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+.kit-info-note i {
+  color: #60a5fa;
 }
 
 /* Section Titles */

@@ -105,6 +105,15 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
     if not parts_result.data:
         raise HTTPException(status_code=404, detail="Project not found or has no parts")
 
+    # Filter out zzz-prefix items (reference-only parts, not for manufacturing)
+    parts_data = [
+        p for p in parts_result.data
+        if not (p.get("items") or {}).get("item_number", "").lower().startswith("zzz")
+    ]
+
+    if not parts_data:
+        raise HTTPException(status_code=404, detail="Project has no manufacturable parts")
+
     # Load all workstations (including station_group for grouping)
     ws_result = supabase.table("workstations").select(
         "id, station_code, station_name, hourly_rate, is_outsourced, outsourced_cost_default, station_group"
@@ -112,7 +121,7 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
     ws_map = {w["id"]: w for w in (ws_result.data or [])}
 
     # Collect all item IDs
-    item_ids = [p["item_id"] for p in parts_result.data]
+    item_ids = [p["item_id"] for p in parts_data]
 
     # Load routing for all items
     routing_result = supabase.table("routing").select(
@@ -141,7 +150,7 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
     total_outsourced = 0.0
     total_purchased = 0.0
 
-    for part in parts_result.data:
+    for part in parts_data:
         item = part.get("items") or {}
         item_id = part["item_id"]
         qty = part.get("quantity", 1) or 1
@@ -523,15 +532,19 @@ async def download_project_dxfs(project_id: UUID):
     if not parts_result.data:
         raise HTTPException(status_code=404, detail="No parts found in project")
 
-    # Filter to only parts with needs_dxf=true and build info map
+    # Filter to only parts with needs_dxf=true (excluding zzz reference items)
     item_ids = []
     item_info = {}  # item_id (str) -> {item_number, thickness, quantity}
     for p in parts_result.data:
         if p.get("items") and p["items"].get("needs_dxf"):
+            item_number = p["items"].get("item_number", "")
+            # Skip zzz-prefix items (reference-only parts, not for manufacturing)
+            if item_number.lower().startswith("zzz"):
+                continue
             item_id = str(p["item_id"])  # Ensure string key
             item_ids.append(item_id)
             item_info[item_id] = {
-                "item_number": p["items"]["item_number"],
+                "item_number": item_number,
                 "thickness": p["items"].get("thickness"),
                 "quantity": p.get("quantity", 1)
             }

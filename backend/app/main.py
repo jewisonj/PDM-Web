@@ -22,6 +22,7 @@ from .routes import (
     nesting_router,
     assistant_router,
     design_books_router,
+    kits_router,
 )
 
 settings = get_settings()
@@ -58,6 +59,7 @@ app.include_router(workspace_router, prefix="/api")
 app.include_router(nesting_router, prefix="/api")
 app.include_router(assistant_router, prefix="/api")
 app.include_router(design_books_router, prefix="/api")
+app.include_router(kits_router, prefix="/api")
 
 
 @app.get("/health")
