@@ -27,6 +27,7 @@ import {
   type TrackerSheet,
   type TrackerMilestone,
   type TrackerGroup,
+  type TrackerPurchasedRow,
 } from './buildTracker'
 import type { ScheduleResult, ScheduledTask } from './scheduling'
 
@@ -55,6 +56,15 @@ export const STATION_ABBREV: Record<string, string> = {
 
 export function stationAbbrev(name: string): string {
   return STATION_ABBREV[name] || name.slice(0, 3).toUpperCase()
+}
+
+/**
+ * Relative-day label: 0-indexed schedule day -> shop-facing "D1", "D2", ...
+ * The single shared helper for every date-free rendering (master design book);
+ * mirrored by dayLabel() in backend master_design_book.py.
+ */
+export function dayLabel(day: number): string {
+  return `D${day + 1}`
 }
 
 /**
@@ -119,6 +129,8 @@ export interface BookWeldStep {
   abbrev: string
   estMin: number
   done: boolean
+  /** planned schedule day (0-indexed) of this step's task, null if unscheduled */
+  day: number | null
   /** routing.notes for this step — assembly method instructions written by engineering */
   notes: string | null
 }
@@ -188,6 +200,8 @@ export interface BuildBook {
   kits: BookKit[]
   /** controlled document items (csd... / third-letter-d) attached to the project */
   referenceDocs: BookReferenceDoc[]
+  /** purchased items checklist (shop-facing display numbers + source), from the tracker model */
+  purchased: TrackerPurchasedRow[]
 }
 
 // ============================================================================
@@ -449,6 +463,7 @@ export function buildBook(inp: BookInputs): BuildBook {
           abbrev: stationAbbrev(nm),
           estMin: round1(t.duration_min),
           done: t.is_complete,
+          day: t.start_day,
           notes: stepNotes.get(`${t.item_id}|${t.station_id}`) ?? null,
         }
       }),
@@ -543,5 +558,6 @@ export function buildBook(inp: BookInputs): BuildBook {
     packages,
     kits,
     referenceDocs,
+    purchased: sheet.purchased,
   }
 }
