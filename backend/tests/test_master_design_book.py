@@ -58,7 +58,7 @@ def pkg_descriptor():
         "title": "SAW",
         "sort_order": 100,
         "identity": {"station_code": "010", "occurrence": 1},
-        "display": {"day": 0, "pkg_position": 2},
+        "display": {"day": 0},
         "payload": {
             "stationName": "Saw",
             "stationAbbrev": "SAW",
@@ -284,12 +284,11 @@ class TestReasons:
     def test_capped_at_three_plus_more(self):
         old = incoming(pkg_descriptor())["hash_input"]
         d2 = pkg_descriptor()
-        d2["display"]["day"] = 3
-        d2["display"]["pkg_position"] = 9
-        d2["payload"]["lines"][0]["qty"] = 6
-        d2["payload"]["stockPull"] = []
+        d2["display"]["day"] = 3          # MOVED
+        d2["payload"]["lines"][0]["qty"] = 6   # PARTS
+        d2["payload"]["stockPull"] = []        # STOCK PULL REVISED
         rows2 = copy.deepcopy(FILE_ROWS)
-        rows2["csp00010"].update(revision="C", file_id="f-9")
+        rows2["csp00010"].update(revision="C", file_id="f-9")  # PRINT
         new = incoming(d2, rows2)["hash_input"]
         reasons = derive_reasons(old, new)
         assert len(reasons) == 4

@@ -236,7 +236,11 @@ CREATE TABLE design_book_sections (
   sort_order INTEGER NOT NULL DEFAULT 0,
   rev TEXT NOT NULL DEFAULT 'A',
   identity JSONB NOT NULL DEFAULT '{}'::jsonb,    -- diff match key
-  display JSONB,                                  -- day / pkg position (display metadata)
+  display JSONB,                                  -- day (printed on header, hashed). NOT the
+                                                  -- global PKG ordinal: it is not printed in the
+                                                  -- master book, so hashing it phantom-revs on any
+                                                  -- resequence (see Documentation/38). Order lives
+                                                  -- in the spine checklist.
   content_hash TEXT,
   source JSONB NOT NULL DEFAULT '{}'::jsonb,      -- FULL hash input (reason derivation + headless ops)
   storage_path TEXT,

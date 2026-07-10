@@ -23,11 +23,13 @@ import {
   addWorkingDays,
   purchasedDisplay,
   isDocumentItem,
+  kitSuppliedMap,
   type TrackerInputs,
   type TrackerSheet,
   type TrackerMilestone,
   type TrackerGroup,
   type TrackerPurchasedRow,
+  type TrackerBundle,
 } from './buildTracker'
 import type { ScheduleResult, ScheduledTask } from './scheduling'
 
@@ -101,6 +103,8 @@ export interface BookPackageLine {
   next: string | null // abbrev of the next station this part goes to, null = last op
   feeds: string[]     // assembly rids this part belongs to (e.g. ['A01'])
   done: boolean
+  /** kit_number of the vendor bundle supplying this part finished, else null */
+  sourcedFrom: string | null
 }
 
 export interface BookStockPull {
@@ -143,6 +147,8 @@ export interface BookKitPart {
   readyBy: string | null // package id producing this part ('PKG 07'), null = no routing
   readyDay: number | null
   done: boolean
+  /** kit_number of the vendor bundle supplying this part finished, else null */
+  sourcedFrom: string | null
 }
 
 export interface BookKit {
@@ -189,6 +195,8 @@ export interface BuildBook {
     totalHours: number
     totalDays: number
     fabParts: number
+    /** leaf parts supplied finished in a vendor bundle (received, inspected, staged) */
+    kitSupplied: number
     assemblies: number
     purchased: number
     packageCount: number
@@ -202,6 +210,8 @@ export interface BuildBook {
   referenceDocs: BookReferenceDoc[]
   /** purchased items checklist (shop-facing display numbers + source), from the tracker model */
   purchased: TrackerPurchasedRow[]
+  /** vendor bundles supplying finished parts (see Documentation/38) */
+  bundles: TrackerBundle[]
 }
 
 // ============================================================================
@@ -280,10 +290,14 @@ export function buildBook(inp: BookInputs): BuildBook {
     return typeof ws?.sort_order === 'number' ? ws.sort_order : 999
   }
 
-  // materials per item
+  // kit-supplied leaf parts (vendor bundles) — same derivation as the tracker
+  const kitOf = kitSuppliedMap(inp.kitSources, inp.bom)
+
+  // materials per item. Kit-supplied parts arrive cut, so they pull no raw stock —
+  // applyKitSourcing already drops their rows; this guards a caller that forgot.
   const matsOf = new Map<string, { description: string; qty: number }[]>()
   for (const m of inp.routingMaterials || []) {
-    if (!info.has(m.item_id)) continue
+    if (!info.has(m.item_id) || kitOf.has(m.item_id)) continue
     const desc = m.raw_materials?.description || m.raw_materials?.material_code || 'Material'
     if (!matsOf.has(m.item_id)) matsOf.set(m.item_id, [])
     matsOf.get(m.item_id)!.push({ description: desc, qty: m.qty_required ?? 0 })
@@ -351,6 +365,7 @@ export function buildBook(inp: BookInputs): BuildBook {
         next: nextName ? stationAbbrev(nextName) : null,
         feeds,
         done: t.is_complete,
+        sourcedFrom: kitOf.get(t.item_id)?.kit_number ?? null,
       })
 
       // stock pull at the item's first routed station
@@ -432,6 +447,7 @@ export function buildBook(inp: BookInputs): BuildBook {
         readyBy: producer?.id ?? null,
         readyDay: producer?.day ?? null,
         done: r.rowDone,
+        sourcedFrom: r.sourcedFrom,
       }
     })
     // drawings to pull for this kit: the assembly print + each part's print (with rev)
@@ -544,6 +560,7 @@ export function buildBook(inp: BookInputs): BuildBook {
       totalHours: round1(schedule.tasks.reduce((n, t) => n + t.duration_min, 0) / 60),
       totalDays: schedule.total_days,
       fabParts: sheet.fabTotal,
+      kitSupplied: sheet.kitSuppliedTotal,
       assemblies: sheet.asmTotal,
       purchased: sheet.purchasedTotal,
       packageCount: packages.length,
@@ -559,5 +576,6 @@ export function buildBook(inp: BookInputs): BuildBook {
     kits,
     referenceDocs,
     purchased: sheet.purchased,
+    bundles: sheet.bundles,
   }
 }

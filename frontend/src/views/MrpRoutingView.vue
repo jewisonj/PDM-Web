@@ -994,12 +994,6 @@ async function saveItemSource() {
   }
 }
 
-// Computed: selected kit info
-const selectedKitInfo = computed(() => {
-  if (itemSourceType.value !== 'kit' || !itemSourceKitId.value) return null
-  return projectKits.value.find(k => k.id === itemSourceKitId.value) || null
-})
-
 async function downloadAssemblyPackage() {
   if (!selectedItem.value) return
 

@@ -12,6 +12,7 @@ import {
   masterDesignBook,
   type MasterDesignBook,
 } from '../utils/masterDesignBook'
+import type { KitSourceInput } from '../utils/buildTracker'
 
 // ============================================================================
 // Types (mirror backend design_books.py / master_design_book.py responses)
@@ -147,6 +148,7 @@ export async function buildMasterModel(templateProjectCode: string): Promise<Mas
     { data: stationsData },
     { data: materialsData },
     { data: printFiles },
+    { data: kitSourceRows },
   ] = await Promise.all([
     supabase
       .from('bom')
@@ -170,7 +172,24 @@ export async function buildMasterModel(templateProjectCode: string): Promise<Mas
       .not('file_path', 'is', null)
       .in('item_id', itemIds)
       .limit(3000),
+    // Vendor bundles of finished parts. `use_kit` is deliberately NOT filtered on:
+    // it is a pricing toggle, and a cost experiment must never rev the design book
+    // (Documentation/38 §3). Sourcing changes mean reassigning parts to 'make'.
+    supabase
+      .from('project_item_source')
+      .select('item_id, project_kits (kit_number, kit_name, vendor)')
+      .eq('project_id', project.id)
+      .eq('source_type', 'kit'),
   ])
+
+  const kitSources: KitSourceInput[] = (kitSourceRows || [])
+    .filter((r: any) => r.project_kits)
+    .map((r: any) => ({
+      item_id: r.item_id,
+      kit_number: r.project_kits.kit_number,
+      kit_name: r.project_kits.kit_name,
+      vendor: r.project_kits.vendor ?? null,
+    }))
 
   return masterDesignBook({
     project: project as any,
@@ -180,6 +199,7 @@ export async function buildMasterModel(templateProjectCode: string): Promise<Mas
     workstations: (stationsData || []) as any,
     routingMaterials: (materialsData || []) as any,
     printItemIds: [...new Set((printFiles || []).map(f => f.item_id))],
+    kitSources,
   })
 }
 

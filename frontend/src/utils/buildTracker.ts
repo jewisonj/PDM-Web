@@ -139,6 +139,9 @@ export interface TrackerInputs {
   now?: Date
   /** 'tabloid' = one 11x17 sheet; 'letter' = 8.5x11 landscape pages (parts pages + status page) */
   format?: TrackerFormat
+  /** vendor bundles supplying finished parts (see Documentation/38). Omit for the
+   *  pre-kit behavior — every part is made in-house. */
+  kitSources?: KitSourceInput[]
 }
 
 export interface TrackerBox {
@@ -156,6 +159,8 @@ export interface TrackerPartRow {
   qty: number
   boxes: TrackerBox[]
   rowDone: boolean         // all applicable non-gate boxes done
+  /** kit_number of the vendor bundle supplying this part finished, else null */
+  sourcedFrom: string | null
 }
 
 export interface TrackerGroup {
@@ -217,8 +222,14 @@ export interface TrackerSheet {
   asmRows: TrackerAsmRow[]
   milestones: TrackerMilestone[]
   purchased: TrackerPurchasedRow[]
+  /** vendor bundles supplying finished parts, with their part counts */
+  bundles: TrackerBundle[]
   fabDone: number
+  /** part ROWS that are made in-house. A part used by two assemblies counts twice —
+   *  same convention as before kit sourcing, so fabTotal + kitSuppliedTotal is the
+   *  old fabTotal. (TrackerBundle.partCount counts DISTINCT part numbers instead.) */
   fabTotal: number
+  kitSuppliedTotal: number
   asmDone: number
   asmTotal: number
   purchasedTotal: number
@@ -272,7 +283,7 @@ function fmtActual(iso: string | null | undefined): string {
 // MAIN
 // ============================================================================
 
-type ItemClass = 'assembly' | 'made' | 'purchased' | 'ref' | 'doc'
+type ItemClass = 'assembly' | 'made' | 'kit_supplied' | 'purchased' | 'ref' | 'doc'
 
 /** Third-letter-'d' items (csd0001, wmd0100...) are controlled documents — design books,
  *  build references — not physical parts. They never appear as tracker/book work rows;
@@ -281,23 +292,148 @@ export function isDocumentItem(itemNumber: string): boolean {
   return /^[a-z]{2}d\d/i.test(itemNumber)
 }
 
-/** zzz-prefix items are reference-only parts (sub-components of purchased items uploaded
- *  for CAD reference). They should be excluded from all manufacturing views, routing
- *  requirements, cost reports, BOMs, and design books. */
+/** The zz* family is reference-only: sub-components of purchased items uploaded for CAD
+ *  reference (zzz1071a59a), and legacy reference numbers (zzc551436, zz_hingebody). They
+ *  are excluded from all manufacturing views, routing requirements, cost reports, BOMs,
+ *  and design books.
+ *
+ *  Deliberately matches the whole `zz` family, not just `zzz`: narrowing this to `zzz`
+ *  would reclassify the routing-less zzc* reference items as makeable parts. */
 export function isReferenceOnlyItem(itemNumber: string): boolean {
-  return itemNumber.toLowerCase().startsWith('zzz')
+  return itemNumber.toLowerCase().startsWith('zz')
 }
 
 /** Returns true if the item should be excluded from manufacturing views
- *  (documents, zzz reference items, purchased mmc/spn parts). */
+ *  (documents, zz reference items, purchased mmc/spn parts).
+ *
+ *  ⚠ Dashboard/report use only — NOT for the build documents. The Build Book and Master
+ *  Design Book need mmc/spn items: they are the spine BUY LIST and the receiving work
+ *  packages. Use isReferenceOnlyItem()/isDocumentItem() there instead. */
 export function excludeFromManufacturing(itemNumber: string): boolean {
   const lower = itemNumber.toLowerCase()
   return (
     isDocumentItem(itemNumber) ||
-    lower.startsWith('zzz') ||
+    isReferenceOnlyItem(itemNumber) ||
     lower.startsWith('mmc') ||
     lower.startsWith('spn')
   )
+}
+
+// ============================================================================
+// KIT SOURCING (vendor bundles of finished parts — see Documentation/38)
+// ============================================================================
+
+/** One part's vendor-bundle assignment, from project_item_source + project_kits.
+ *  `use_kit` is deliberately NOT modelled: it is a pricing toggle, and a cost
+ *  experiment must never change a controlled build document. */
+export interface KitSourceInput {
+  item_id: string
+  kit_number: string // 'KIT-001'
+  kit_name: string // 'Tube Laser Bundle'
+  vendor: string | null // 'Precision Tube Laser'
+}
+
+export interface TrackerBundle {
+  kit_number: string
+  kit_name: string
+  vendor: string | null
+  partCount: number
+}
+
+/**
+ * Routing synthesized for kit-supplied parts: they arrive finished, so the shop
+ * receives them, inspects them, and stages them to their area.
+ *
+ * Times are PER UNIT and deliberately small. The 5-min house norm on Receiving is
+ * the cost of an individually purchased item (unpack, count and log one McMaster
+ * box); a bundle arrives as a single shipment of many pre-cut parts. Buying finished
+ * parts must never cost MORE shop labor than making them — at 5/5/5 the SPA0030
+ * bundle charged 435 min against the 193 min of in-house work it replaced, which
+ * lengthened the schedule instead of shortening it.
+ */
+export const KIT_SUPPLIED_ROUTING: { stationName: string; sequence: number; estMin: number }[] = [
+  { stationName: 'Receiving', sequence: 10, estMin: 1 },
+  { stationName: 'Inspection', sequence: 20, estMin: 2 },
+  { stationName: 'Part Staging', sequence: 30, estMin: 1 },
+]
+
+/**
+ * item_id -> bundle, for kit-sourced items that are LEAF parts.
+ *
+ * A kit-sourced item that is a BOM parent (a pre-welded weldment) is out of scope:
+ * buying it would retire its whole assembly section. Those are excluded here, so
+ * classification and routing synthesis agree on exactly one set of items.
+ */
+export function kitSuppliedMap(
+  kitSources: KitSourceInput[] | undefined,
+  bom: { parent_item_id: string }[]
+): Map<string, KitSourceInput> {
+  const map = new Map<string, KitSourceInput>()
+  if (!kitSources?.length) return map
+  const parents = new Set(bom.map(b => b.parent_item_id))
+  for (const k of kitSources) {
+    if (parents.has(k.item_id)) continue // assembly-level kit: not supported
+    map.set(k.item_id, k)
+  }
+  return map
+}
+
+export interface SourcedRoutingRow {
+  id: string
+  item_id: string
+  station_id: string
+  sequence: number
+  est_time_min: number | null
+  notes?: string | null
+  workstations: { station_code: string; station_name: string } | null
+}
+
+/**
+ * Rewrite routing for kit-supplied parts, per project.
+ *
+ * The `routing` table has no project_id — it is global per item — so the parts a
+ * vendor supplies pre-cut here are still sawn in other projects. Sourcing lives in
+ * the per-project project_item_source table, so the receive-and-inspect flow is
+ * SYNTHESIZED at build time and the routing table is never touched.
+ *
+ * Also drops the parts' routing_materials: the vendor already cut them, so the
+ * receiving booklet must not tell the shop to pull raw tube stock.
+ */
+export function applyKitSourcing<M extends { item_id: string }>(args: {
+  routing: SourcedRoutingRow[]
+  routingMaterials?: M[]
+  kitSources?: KitSourceInput[]
+  workstations: TrackerWorkstation[]
+  bom: { parent_item_id: string }[]
+}): { routing: SourcedRoutingRow[]; routingMaterials: M[] } {
+  const supplied = kitSuppliedMap(args.kitSources, args.bom)
+  const materials = args.routingMaterials ?? []
+  if (supplied.size === 0) return { routing: args.routing, routingMaterials: materials }
+
+  const stationByName = new Map(args.workstations.map(w => [w.station_name, w]))
+  const kept = args.routing.filter(r => !supplied.has(r.item_id))
+
+  const synthesized: SourcedRoutingRow[] = []
+  for (const itemId of supplied.keys()) {
+    for (const op of KIT_SUPPLIED_ROUTING) {
+      const ws = stationByName.get(op.stationName)
+      if (!ws) continue // station not configured — skip rather than invent one
+      synthesized.push({
+        id: `kit-${itemId}-${ws.id}`,
+        item_id: itemId,
+        station_id: ws.id,
+        sequence: op.sequence,
+        est_time_min: op.estMin,
+        notes: null,
+        workstations: { station_code: ws.station_code, station_name: ws.station_name },
+      })
+    }
+  }
+
+  return {
+    routing: [...kept, ...synthesized],
+    routingMaterials: materials.filter(m => !supplied.has(m.item_id)),
+  }
 }
 
 const PAGE_ROW_CAP_TABLOID = 48 // data rows + group header rows per part column
@@ -373,6 +509,9 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
     completionRow.set(key, { qty, at })
   }
 
+  // ---- kit sourcing (leaf parts supplied finished in a vendor bundle) ----
+  const kitOf = kitSuppliedMap(inp.kitSources, inp.bom)
+
   // ---- classification --------------------------------------------------
   const classOf = new Map<string, ItemClass>()
   const classify = (id: string): ItemClass => {
@@ -385,10 +524,14 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
     const hasReceiving = routed.some(s => s.station_name === 'Receiving')
 
     let cls: ItemClass
-    if (num.startsWith('zz')) {
+    if (isReferenceOnlyItem(num)) {
       cls = 'ref'
     } else if (isDocumentItem(num)) {
       cls = 'doc'
+    } else if (kitOf.has(id)) {
+      // bought finished in a bundle: receive + inspect + stage, but still a member of
+      // the assemblies it goes into (kitSuppliedMap already excluded BOM parents)
+      cls = 'kit_supplied'
     } else if (num.startsWith('mmc') || num.startsWith('spn')) {
       cls = 'purchased'
     } else if (children.has(id) && (hasWeldOrAsm || childrenLookMade(id))) {
@@ -400,6 +543,12 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
     }
     classOf.set(id, cls)
     return cls
+  }
+  /** parts that physically go into an assembly's stage set: made in-house or supplied
+   *  finished in a bundle. Purchased hardware is tracked on the buy list instead. */
+  const isStageSetPart = (id: string): boolean => {
+    const c = classify(id)
+    return c === 'made' || c === 'kit_supplied'
   }
   function childrenLookMade(id: string): boolean {
     // assembly fallback when routing is missing: any non-ref, non-purchased-prefix child
@@ -480,7 +629,9 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
     const rows: TrackerPartRow[] = []
     const parentQty = projQty.get(asmId) || 1
     for (const c of children.get(asmId) || []) {
-      if (classify(c.child) !== 'made') continue
+      // kit-supplied parts stay in the stage set: the welder still needs the list of
+      // tubes that go into this weldment, even though the vendor cut them
+      if (!isStageSetPart(c.child)) continue
       placed.add(c.child)
       rows.push(makePartRow(c.child, c.qty * parentQty))
     }
@@ -495,9 +646,9 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
       readyTotal: rows.length,
     })
   }
-  // loose made parts (no assembly parent in project)
+  // loose parts (no assembly parent in project)
   const loose = [...info.keys()]
-    .filter(id => classify(id) === 'made' && !placed.has(id))
+    .filter(id => isStageSetPart(id) && !placed.has(id))
     .sort((a, b) => info.get(a)!.item_number.localeCompare(info.get(b)!.item_number))
   if (loose.length > 0) {
     const rows = loose.map(id => makePartRow(id, projQty.get(id) || 1))
@@ -524,6 +675,7 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
       qty,
       boxes,
       rowDone,
+      sourcedFrom: kitOf.get(itemId)?.kit_number ?? null,
     }
   }
 
@@ -638,8 +790,26 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
     )
   }
 
+  // ---- bundles ------------------------------------------------------------------
+  const bundleAgg = new Map<string, TrackerBundle>()
+  for (const k of kitOf.values()) {
+    const cur = bundleAgg.get(k.kit_number)
+    if (cur) cur.partCount++
+    else
+      bundleAgg.set(k.kit_number, {
+        kit_number: k.kit_number,
+        kit_name: k.kit_name,
+        vendor: k.vendor,
+        partCount: 1,
+      })
+  }
+  const bundles = [...bundleAgg.values()].sort((a, b) => a.kit_number.localeCompare(b.kit_number))
+
   // ---- header stats -----------------------------------------------------------
-  const fabTotal = groups.reduce((n, g) => n + g.rows.length, 0)
+  // kit-supplied parts share the group rows with made parts but are not fabricated
+  const allRows = groups.flatMap(g => g.rows)
+  const fabTotal = allRows.filter(r => r.sourcedFrom === null).length
+  const kitSuppliedTotal = allRows.length - fabTotal
   const fabDone = groups.reduce((n, g) => n + g.readyDone, 0)
   const asmTotal = asmRows.length
   const asmDone = asmRows.filter(r => r.rowDone).length
@@ -710,8 +880,10 @@ export function buildTrackerSheet(inp: TrackerInputs): TrackerSheet {
     asmRows,
     milestones,
     purchased,
+    bundles,
     fabDone,
     fabTotal,
+    kitSuppliedTotal,
     asmDone,
     asmTotal,
     purchasedTotal: purchased.length,

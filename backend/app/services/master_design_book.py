@@ -323,8 +323,9 @@ def derive_reasons(old_source: dict | None, new_input: dict, renamed_from: str |
                 f"MOVED PLAN {dayLabel(od.get('startDay'))}-{dayLabel(od.get('endDay') or od.get('startDay'))}"
                 f"->{dayLabel(nd.get('startDay'))}-{dayLabel(nd.get('endDay') or nd.get('startDay'))}"
             )
-    if od.get("pkg_position") is not None and od.get("pkg_position") != nd.get("pkg_position"):
-        reasons.append(f"RESEQUENCED PKG {od['pkg_position']}->{nd['pkg_position']}")
+    # NOTE: no pkg_position reason — the global build-order ordinal is not printed in
+    # the master book (the header shows the stable section code), so it is no longer
+    # part of the hash input and a pure resequence does not rev a booklet.
 
     # payload diff, kind-aware
     op_, np_ = old_source.get("payload") or {}, new_input.get("payload") or {}
