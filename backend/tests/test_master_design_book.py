@@ -58,7 +58,7 @@ def pkg_descriptor():
         "title": "SAW",
         "sort_order": 100,
         "identity": {"station_code": "010", "occurrence": 1},
-        "display": {"day": 0, "pkg_position": 2},
+        "display": {"day": 0},
         "payload": {
             "stationName": "Saw",
             "stationAbbrev": "SAW",
@@ -274,22 +274,31 @@ class TestReasons:
         new = incoming(d2)["hash_input"]
         assert "NOTES REVISED" in derive_reasons(old, new)
 
-    def test_renderer_bump_suppresses_others(self):
+    def test_renderer_bump_keeps_data_reasons(self):
+        # a renderer bump must PREPEND the layout reason but still surface the data
+        # change that motivated it (Documentation/38 §4.5)
         old = incoming(pkg_descriptor())["hash_input"]
         d2 = pkg_descriptor()
         d2["display"]["day"] = 5
         new = incoming(d2, renderer_version=2)["hash_input"]
+        reasons = derive_reasons(old, new)
+        assert reasons[0] == "LAYOUT UPDATE (renderer v1->v2)"
+        assert "MOVED D1->D6" in reasons
+
+    def test_renderer_bump_alone_is_layout_only(self):
+        # identical content, only the renderer bumped -> LAYOUT UPDATE by itself
+        old = incoming(pkg_descriptor())["hash_input"]
+        new = incoming(pkg_descriptor(), renderer_version=2)["hash_input"]
         assert derive_reasons(old, new) == ["LAYOUT UPDATE (renderer v1->v2)"]
 
     def test_capped_at_three_plus_more(self):
         old = incoming(pkg_descriptor())["hash_input"]
         d2 = pkg_descriptor()
-        d2["display"]["day"] = 3
-        d2["display"]["pkg_position"] = 9
-        d2["payload"]["lines"][0]["qty"] = 6
-        d2["payload"]["stockPull"] = []
+        d2["display"]["day"] = 3          # MOVED
+        d2["payload"]["lines"][0]["qty"] = 6   # PARTS
+        d2["payload"]["stockPull"] = []        # STOCK PULL REVISED
         rows2 = copy.deepcopy(FILE_ROWS)
-        rows2["csp00010"].update(revision="C", file_id="f-9")
+        rows2["csp00010"].update(revision="C", file_id="f-9")  # PRINT
         new = incoming(d2, rows2)["hash_input"]
         reasons = derive_reasons(old, new)
         assert len(reasons) == 4
@@ -412,6 +421,45 @@ class TestRenderers:
         assert "PLAN D5-D8" in text              # relative-day plan
         assert "(D5)" in text                    # step day tag
 
+    def test_assembly_parts_list_is_stage_set_not_kit(self):
+        # "kit" now means a vendor purchase bundle; the assembly parts list is a STAGE SET
+        e = incoming(kit_descriptor())
+        cache = {"csp00010": make_pdf(), "csa00030": make_pdf()}
+        pdf, _ = render_section(e["descriptor"], e["prints"], cache, BOOK_META, "A")
+        text = _all_text(pdf)
+        assert "STAGE SET -- PARTS REQUIRED" in text
+        assert "IN SET ORDER" in text
+        assert "KIT -- PARTS REQUIRED" not in text
+        assert "IN KIT ORDER" not in text
+
+    def test_package_bundle_band_and_for_set_column(self):
+        d = pkg_descriptor()
+        d["section_code"] = "I-RCV-1"
+        d["payload"]["stationName"] = "Receiving"
+        d["payload"]["lines"][0]["source"] = "KIT-001"  # bundled tube
+        d["payload"]["bundles"] = [
+            {"kit_number": "KIT-001", "kit_name": "Tube Laser Bundle",
+             "vendor": "Precision Tube Laser", "partCount": 18}
+        ]
+        e = incoming(d)
+        pdf, _ = render_section(e["descriptor"], e["prints"], {"csp00010": make_pdf()}, BOOK_META, "B")
+        text = _all_text(pdf)
+        assert "BUNDLE KIT-001 TUBE LASER BUNDLE" in text
+        assert "Precision Tube Laser" in text
+        assert "VERIFY 18 PARTS AGAINST PRINTS ON RECEIPT" in text
+        assert "FOR SET" in text and "FOR KIT" not in text
+        assert "KIT-001" in text  # the tube's source on its line
+
+    def test_package_singular_part_in_bundle_band(self):
+        d = pkg_descriptor()
+        d["payload"]["bundles"] = [
+            {"kit_number": "KIT-002", "kit_name": "Solo", "vendor": None, "partCount": 1}
+        ]
+        e = incoming(d)
+        pdf, _ = render_section(e["descriptor"], e["prints"], {"csp00010": make_pdf()}, BOOK_META, "A")
+        text = _all_text(pdf)
+        assert "VERIFY 1 PART AGAINST" in text  # singular
+
     def test_kit_missing_print_flagged(self):
         e = incoming(kit_descriptor(), {"csp00010": FILE_ROWS["csp00010"]})  # csa00030 missing
         cache = {"csp00010": make_pdf()}
@@ -435,6 +483,26 @@ class TestRenderers:
         assert "I-SAW-1" in text
         assert "D1" in text
         assert "00-SPINE REV A" in text
+
+    def test_spine_bundles_block_no_prices(self):
+        spine = spine_descriptor()
+        spine["payload"]["bundles"] = [
+            {"kit_number": "KIT-001", "kit_name": "Tube Laser Bundle",
+             "vendor": "Precision Tube Laser", "partCount": 18}
+        ]
+        e1 = {**incoming(pkg_descriptor()), "rev": "A", "page_count": 5}
+        pdf, _ = render_section(
+            spine, [], {}, BOOK_META, "A",
+            spine_extra={"toc_rows": _toc_rows([e1]), "rev_history": []},
+        )
+        text = _all_text(pdf)
+        assert "BUNDLES -- FINISHED PARTS" in text
+        assert "KIT-001" in text
+        assert "Precision Tube Laser" in text
+        assert "18 parts" in text
+        assert "PURCHASED PARTS" in text          # loose purchases still listed
+        assert "90098A036" in text
+        assert "$" not in text and "850" not in text  # never priced on shop paper
 
     def test_change_notice_renders_actions(self):
         diff = [

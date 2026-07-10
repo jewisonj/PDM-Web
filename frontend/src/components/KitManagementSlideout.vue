@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 
 interface Kit {
   id: string
@@ -46,10 +46,6 @@ const formKitName = ref('')
 const formVendor = ref('')
 const formPrice = ref<number>(0)
 const formNotes = ref('')
-
-const selectedKit = computed(() =>
-  kits.value.find(k => k.id === selectedKitId.value) || null
-)
 
 async function loadKits() {
   loading.value = true

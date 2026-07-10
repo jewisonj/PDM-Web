@@ -36,10 +36,14 @@ import {
 } from './buildBook'
 import {
   purchasedSource,
+  applyKitSourcing,
+  isReferenceOnlyItem,
   type TrackerProject,
   type TrackerPartInput,
   type TrackerBomInput,
   type TrackerWorkstation,
+  type TrackerBundle,
+  type KitSourceInput,
 } from './buildTracker'
 import {
   calculateSchedule,
@@ -75,6 +79,10 @@ export interface MasterBookInputs {
   routingMaterials?: BookRoutingMaterial[]
   /** item_ids that have a current PDF print in the files table */
   printItemIds?: string[]
+  /** vendor bundles supplying finished parts, from project_item_source + project_kits.
+   *  The book follows the sourcing assignment only — `use_kit` is a pricing toggle and
+   *  must never rev a controlled document (Documentation/38 §3). */
+  kitSources?: KitSourceInput[]
   now?: Date
 }
 
@@ -159,6 +167,38 @@ function round1(n: number): number {
   return Math.round(n * 10) / 10
 }
 
+export interface SectionBundle {
+  kit_number: string
+  kit_name: string
+  vendor: string | null
+  /** distinct parts of this bundle handled by THIS section */
+  partCount: number
+}
+
+/** vendor bundles represented in a set of package lines, with per-section part counts */
+function bundlesIn(
+  lines: { item_number: string; sourcedFrom: string | null }[],
+  byNumber: Map<string, TrackerBundle>
+): SectionBundle[] {
+  const counts = new Map<string, Set<string>>()
+  for (const l of lines) {
+    if (!l.sourcedFrom) continue
+    if (!counts.has(l.sourcedFrom)) counts.set(l.sourcedFrom, new Set())
+    counts.get(l.sourcedFrom)!.add(l.item_number)
+  }
+  return [...counts.entries()]
+    .map(([kit_number, items]) => {
+      const b = byNumber.get(kit_number)
+      return {
+        kit_number,
+        kit_name: b?.kit_name ?? kit_number,
+        vendor: b?.vendor ?? null,
+        partCount: items.size,
+      }
+    })
+    .sort((a, b) => a.kit_number.localeCompare(b.kit_number))
+}
+
 /** canonical input copies — deterministic order regardless of DB result order */
 function canonicalize(inp: MasterBookInputs): MasterBookInputs {
   const partNum = new Map(inp.parts.map(p => [p.item_id, p.items?.item_number ?? '']))
@@ -188,6 +228,12 @@ function canonicalize(inp: MasterBookInputs): MasterBookInputs {
         )
       : undefined,
     printItemIds: inp.printItemIds ? [...inp.printItemIds].sort() : undefined,
+    kitSources: inp.kitSources
+      ? [...inp.kitSources].sort(
+          (a, b) =>
+            a.kit_number.localeCompare(b.kit_number) || key(a.item_id).localeCompare(key(b.item_id))
+        )
+      : undefined,
   }
 }
 
@@ -264,6 +310,9 @@ function checkQuantities(
   const mismatches: QtyMismatch[] = []
   for (const id of projQty.keys()) {
     if (id === topId) continue
+    // zz* reference items never reach the book — a stale quantity on one must not
+    // block a publish (Documentation/38 §3.1)
+    if (isReferenceOnlyItem(numOf.get(id) || '')) continue
     const expected = usage(id, new Set())
     if (expected === 0) continue // not reachable from the top assembly (manual attach, docs)
     const flat = projQty.get(id) || 0
@@ -321,10 +370,20 @@ export function masterDesignBook(rawInputs: MasterBookInputs): MasterDesignBook 
   // no completion data at all.
   const masterProject: TrackerProject = { ...inp.project, start_date: null, due_date: null }
 
+  // Parts bought finished in a vendor bundle are received, inspected and staged —
+  // not sawn. Synthesized per project; the global routing table is never touched.
+  const sourced = applyKitSourcing({
+    routing: inp.routing,
+    routingMaterials: inp.routingMaterials,
+    kitSources: inp.kitSources,
+    workstations: inp.workstations,
+    bom: inp.bom,
+  })
+
   const schedule = calculateSchedule(
     inp.parts as unknown as PartData[],
     inp.bom as BomData[],
-    inp.routing as unknown as RoutingData[],
+    sourced.routing as unknown as RoutingData[],
     []
   )
 
@@ -332,12 +391,13 @@ export function masterDesignBook(rawInputs: MasterBookInputs): MasterDesignBook 
     project: masterProject,
     parts: inp.parts,
     bom: inp.bom,
-    routing: inp.routing,
+    routing: sourced.routing,
     completion: [],
     workstations: inp.workstations,
     schedule,
-    routingMaterials: inp.routingMaterials,
+    routingMaterials: sourced.routingMaterials,
     printItemIds: inp.printItemIds,
+    kitSources: inp.kitSources,
     now: inp.now,
   }
   const book = buildBook(bookInputs)
@@ -402,6 +462,7 @@ export function masterSections(
   const sections: SectionDescriptor[] = []
 
   // ---- Section I: one descriptor per work package ---------------------------
+  const bundleByNumber = new Map(book.bundles.map(b => [b.kit_number, b]))
   let sort = 100
   for (const p of pkgsOrdered) {
     const code = pkgCode.get(p.id)!
@@ -420,16 +481,26 @@ export function masterSections(
         estMin: l.estMin,
         next: l.next,
         feeds: l.feeds.map(toKitCode),
-        source: purchased ? purchasedSource(l.item_number, supplierNameOf.get(l.item_number)) : null,
+        // bundle wins over supplier: a bundled part is not separately purchased
+        source:
+          l.sourcedFrom ??
+          (purchased ? purchasedSource(l.item_number, supplierNameOf.get(l.item_number)) : null),
       }
     })
+    // bundles this package handles, with the count of lines it covers here — the
+    // renderer prints a "VERIFY N PARTS AGAINST PRINTS ON RECEIPT" band from this
+    const pkgBundles = bundlesIn(p.lines, bundleByNumber)
     sections.push({
       section_code: code,
       kind: 'work_package',
       title: p.stationName.toUpperCase(),
       sort_order: sort,
       identity: { station_code: stationCode, occurrence: pkgOccurrence.get(p.id)! },
-      display: { day: p.day, pkg_position: p.seq },
+      // day is printed on the header band (and must rev on a move); the global
+      // build-order ordinal (p.seq) is NOT printed in the master book — the header
+      // shows the stable section code (I-SAW-1), so hashing seq would phantom-rev
+      // every downstream booklet on any resequence. Order lives in the spine checklist.
+      display: { day: p.day },
       payload: {
         stationName: p.stationName,
         stationAbbrev: p.stationAbbrev,
@@ -437,6 +508,10 @@ export function masterSections(
         lines,
         stockPull: p.stockPull,
         stageFor: p.stageFor.map(toKitCode),
+        // only present when this package handles a bundle — a section with no bundle
+        // keeps its exact payload shape, so it does not rev just because the feature
+        // was added (no phantom "TABLE DATA REVISED")
+        ...(pkgBundles.length ? { bundles: pkgBundles } : {}),
       },
       print_items: printItems,
       no_print_expected: noPrint,
@@ -467,9 +542,10 @@ export function masterSections(
         qty: pt.qty,
         readyBy: pt.readyBy ? pkgCode.get(pt.readyBy) ?? null : null,
         readyDay: pt.readyDay,
-        source: purchased
-          ? purchasedSource(pt.item_number, supplierNameOf.get(pt.item_number))
-          : null,
+        // bundle wins over supplier: a bundled part is not separately purchased
+        source:
+          pt.sourcedFrom ??
+          (purchased ? purchasedSource(pt.item_number, supplierNameOf.get(pt.item_number)) : null),
       }
     })
     sections.push({
@@ -553,6 +629,18 @@ export function masterSections(
       summary: book.summary,
       milestones: book.milestones.map(m => ({ op: m.op, title: m.title })),
       checklist: checklist.map(r => ({ ...r })),
+      // vendor bundles are ordered as one line item — never priced on shop paper.
+      // Present only when the book has bundles (see note on package payload above).
+      ...(book.bundles.length
+        ? {
+            bundles: book.bundles.map(b => ({
+              kit_number: b.kit_number,
+              kit_name: b.kit_name,
+              vendor: b.vendor,
+              partCount: b.partCount,
+            })),
+          }
+        : {}),
       buyList: book.purchased.map(r => ({
         item_number: r.item_number, // internal key — never printed
         displayNumber: r.displayNumber,
@@ -586,13 +674,20 @@ function buildChecklist(
 
   for (const p of book.packages) {
     const allPurchased = p.lines.length > 0 && p.lines.every(l => purchasedNums.has(l.item_number))
+    const bundled = p.lines.filter(l => l.sourcedFrom).length
+    let text: string
+    if (allPurchased) {
+      text = `Work package - receive ${p.lines.length} purchased items`
+    } else if (bundled > 0) {
+      text = `Work package - ${p.stationName.toLowerCase()} ${p.lines.length} parts (${bundled} bundled)`
+    } else {
+      text = `Work package - ${p.stationName.toLowerCase()} ${p.lines.length} parts`
+    }
     rows.push({
       kind: 'package',
       day: p.day,
       stn: p.stationAbbrev,
-      text: allPurchased
-        ? `Work package - receive ${p.lines.length} purchased items`
-        : `Work package - ${p.stationName.toLowerCase()} ${p.lines.length} parts`,
+      text,
       estH: round1(p.estMin / 60),
       see: pkgCode.get(p.id)!,
       op: null,

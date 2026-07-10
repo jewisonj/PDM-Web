@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { masterDesignBook, dayLabel, type MasterBookInputs } from './masterDesignBook'
+import type { KitSourceInput } from './buildTracker'
 
 // Mini spa fixture (same shape as buildBook.test.ts / buildTracker.test.ts):
 //   csa10 FINISHED ASSY -> csa20 FRAME WELDMENT -> csa30 LOWER FRAME
@@ -17,6 +18,7 @@ const WS = [
   { id: 's-jig', station_code: '014', station_name: 'Weld Jigging', station_group: 'Weld', sort_order: 14 },
   { id: 's-tig', station_code: '015', station_name: 'Tig Welding', station_group: 'Weld', sort_order: 15 },
   { id: 's-wcu', station_code: '017', station_name: 'Weld Cleanup', station_group: 'Weld', sort_order: 17 },
+  { id: 's-stg', station_code: '020', station_name: 'Part Staging', station_group: 'Assembly', sort_order: 20 },
   { id: 's-asm', station_code: '025', station_name: 'Mechanical Assembly', station_group: 'Assembly', sort_order: 25 },
   { id: 's-ins', station_code: '050', station_name: 'Inspection', station_group: 'QC', sort_order: 50 },
 ]
@@ -341,9 +343,29 @@ describe('masterDesignBook', () => {
     expect(dayLabel(17)).toBe('D18')
   })
 
+  it('ignores stale quantities on zz reference items in the qty gate', () => {
+    const inp = makeInputs()
+    // zzz1's flat qty (2) already matches its rollup; break it and prove the gate
+    // still passes — reference items never reach the book, so they must not block it
+    inp.parts = inp.parts.map(p =>
+      p.item_id === ITEMS.zzz1.id ? { ...p, quantity: 999 } : p
+    )
+    expect(masterDesignBook(inp).qtyCheck.ok).toBe(true)
+  })
+
   it('carries schedule days on kit weld steps for the checklist', () => {
     for (const k of book.kits) {
       for (const s of k.weldSeq) expect(typeof s.day).toBe('number')
+    }
+  })
+
+  it('omits the bundles key entirely when nothing is kit-sourced', () => {
+    // absent, not [] — a section with no bundle must keep its exact payload shape so
+    // adding the feature does not phantom-rev it
+    const spine = sections[0]!
+    expect('bundles' in (spine.payload as any)).toBe(false)
+    for (const s of sections.filter(x => x.kind === 'work_package')) {
+      expect('bundles' in (s.payload as any)).toBe(false)
     }
   })
 
@@ -372,5 +394,109 @@ describe('masterDesignBook', () => {
     )
     expect(m20.day).toBeLessThanOrEqual(m30.day)
     expect(m20.day).toBeLessThan(lateAsmRcv)
+  })
+})
+
+// ===========================================================================
+// Kit sourcing (Documentation/38)
+// ===========================================================================
+
+const KIT_001: KitSourceInput = {
+  item_id: ITEMS.csp01.id,
+  kit_number: 'KIT-001',
+  kit_name: 'Tube Laser Bundle',
+  vendor: 'Precision Tube Laser',
+}
+
+describe('masterDesignBook with kit sourcing', () => {
+  function withKit(): MasterBookInputs {
+    return { ...makeInputs(), kitSources: [KIT_001] }
+  }
+  const master = masterDesignBook(withKit())
+  const { sections } = master
+  const codeOf = (pred: (s: any) => boolean) => sections.find(pred)!
+  const rcv = codeOf(s => s.section_code.startsWith('I-RCV-'))
+  const stg = codeOf(s => s.section_code.startsWith('I-STG-'))
+
+  it('routes the bundled tube through receive/inspect/stage, out of Saw', () => {
+    const sawLines = sections
+      .filter(s => s.section_code.startsWith('I-SAW-'))
+      .flatMap(s => (s.payload as any).lines.map((l: any) => l.item_number))
+    expect(sawLines).not.toContain('csp00010')
+    expect(sawLines).toContain('csp00050') // in-house part untouched
+
+    const rcvLines = (rcv.payload as any).lines.map((l: any) => l.item_number)
+    expect(rcvLines).toContain('csp00010')
+    expect((stg.payload as any).lines.map((l: any) => l.item_number)).toContain('csp00010')
+  })
+
+  it('labels bundled lines with the kit number, not a supplier', () => {
+    const line = (rcv.payload as any).lines.find((l: any) => l.item_number === 'csp00010')
+    expect(line.source).toBe('KIT-001')
+    expect(line.next).toBe('STG')
+    // real purchases keep their supplier
+    const washer = (rcv.payload as any).lines.find((l: any) => l.item_number === 'mmc90098a036')
+    expect(washer.source).toBe('McMaster-Carr')
+  })
+
+  it('bands the receiving booklet with the bundle it must verify', () => {
+    expect((rcv.payload as any).bundles).toEqual([
+      { kit_number: 'KIT-001', kit_name: 'Tube Laser Bundle', vendor: 'Precision Tube Laser', partCount: 1 },
+    ])
+  })
+
+  it('keeps the tube in the assembly stage set, ready by the staging package', () => {
+    const lower = codeOf(s => s.section_code === 'II-CSA00030')
+    const tube = (lower.payload as any).parts.find((p: any) => p.item_number === 'csp00010')
+    expect(tube).toBeDefined()
+    expect(tube.source).toBe('KIT-001')
+    expect(tube.readyBy).toBe(stg.section_code)
+    // and it still binds its print — receiving inspects against the drawing
+    expect(lower.print_items.map(p => p.item_number)).toContain('csp00010')
+    expect(rcv.print_items.map(p => p.item_number)).toContain('csp00010')
+  })
+
+  it('pulls no raw stock in the receiving or staging booklets', () => {
+    expect((rcv.payload as any).stockPull).toEqual([])
+    expect((stg.payload as any).stockPull).toEqual([])
+  })
+
+  it('lists the bundle on the spine and keeps it off the buy list', () => {
+    const spine = sections[0]!
+    expect((spine.payload as any).bundles).toEqual([
+      { kit_number: 'KIT-001', kit_name: 'Tube Laser Bundle', vendor: 'Precision Tube Laser', partCount: 1 },
+    ])
+    const buy = (spine.payload as any).buyList.map((r: any) => r.item_number)
+    expect(buy).not.toContain('csp00010')
+    expect(buy).toContain('mmc90098a036')
+    // spine stats split fabricated from supplied
+    expect((spine.payload as any).summary.kitSupplied).toBe(1)
+  })
+
+  it('flags bundled counts on the checklist', () => {
+    const spine = sections[0]!
+    const rows = (spine.payload as any).checklist as any[]
+    const rcvRow = rows.find(r => r.see === rcv.section_code)!
+    expect(rcvRow.text).toContain('bundled')
+  })
+
+  it('stays deterministic under shuffled kit sources', () => {
+    const a = masterDesignBook(withKit())
+    const shuffled = withKit()
+    shuffled.parts = [...shuffled.parts].reverse()
+    shuffled.routing = [...shuffled.routing].reverse()
+    shuffled.kitSources = [...shuffled.kitSources!].reverse()
+    const b = masterDesignBook(shuffled)
+    expect(JSON.stringify(b.sections)).toBe(JSON.stringify(a.sections))
+  })
+
+  it('never rewrites a kit-sourced assembly', () => {
+    const inp = withKit()
+    inp.kitSources = [{ ...KIT_001, item_id: ITEMS.csa30.id }]
+    const result = masterDesignBook(inp)
+    // csa30 keeps its weld sequence; nothing is bundled
+    const lower = result.sections.find(s => s.section_code === 'II-CSA00030')!
+    expect((lower.payload as any).weldSeq.map((s: any) => s.abbrev)).toContain('TIG')
+    expect(result.book.bundles).toEqual([])
   })
 })

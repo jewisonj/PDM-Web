@@ -223,7 +223,7 @@ def make_payload(pkg_qty=2, pkg_identity=None, pkg_code="I-SAW-1"):
                 "section_code": pkg_code, "kind": "work_package", "title": "SAW",
                 "sort_order": 100,
                 "identity": pkg_identity or {"station_code": "010", "occurrence": 1},
-                "display": {"day": 0, "pkg_position": 1},
+                "display": {"day": 0},
                 "payload": {
                     "stationName": "Saw", "stationAbbrev": "SAW", "estMin": 40,
                     "lines": [{"item_number": "csp00010", "displayNumber": "csp00010",

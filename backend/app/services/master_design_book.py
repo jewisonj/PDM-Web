@@ -283,10 +283,14 @@ def derive_reasons(old_source: dict | None, new_input: dict, renamed_from: str |
     if old_source is None:
         return reasons + ["NEW"]
 
+    # A renderer bump changes every section's printed layout, but must NOT hide the
+    # data change that motivated the update — the floor needs both facts. Prepend the
+    # layout reason, then keep deriving content reasons (the 3+MORE cap trims). A
+    # section whose content is otherwise identical keeps LAYOUT UPDATE alone.
     if old_source.get("renderer_version") != new_input.get("renderer_version"):
-        return reasons + [
+        reasons.append(
             f"LAYOUT UPDATE (renderer v{old_source.get('renderer_version')}->v{new_input.get('renderer_version')})"
-        ]
+        )
 
     # prints diff by item_number
     old_p = {p["item_number"]: p for p in old_source.get("prints") or []}
@@ -323,8 +327,9 @@ def derive_reasons(old_source: dict | None, new_input: dict, renamed_from: str |
                 f"MOVED PLAN {dayLabel(od.get('startDay'))}-{dayLabel(od.get('endDay') or od.get('startDay'))}"
                 f"->{dayLabel(nd.get('startDay'))}-{dayLabel(nd.get('endDay') or nd.get('startDay'))}"
             )
-    if od.get("pkg_position") is not None and od.get("pkg_position") != nd.get("pkg_position"):
-        reasons.append(f"RESEQUENCED PKG {od['pkg_position']}->{nd['pkg_position']}")
+    # NOTE: no pkg_position reason — the global build-order ordinal is not printed in
+    # the master book (the header shows the stable section code), so it is no longer
+    # part of the hash input and a pure resequence does not rev a booklet.
 
     # payload diff, kind-aware
     op_, np_ = old_source.get("payload") or {}, new_input.get("payload") or {}
@@ -690,12 +695,24 @@ def _render_package_body(b: _Body, code: str, rev: str, d: dict, prints: list[di
     c.drawString(MARGIN, b.y - 6, "WORK PACKAGE  -  MASTER DOCUMENT, BOXES BLANK  -  ORDER GOVERNED BY 00-SPINE CHECKLIST")
     b.y -= 14
 
+    # vendor bundles handled by this package (receiving/staging) — verify on receipt
+    for bundle in payload.get("bundles") or []:
+        vendor = f" -- {bundle['vendor']}" if bundle.get("vendor") else ""
+        n = bundle.get("partCount")
+        _band(
+            b,
+            f"BUNDLE {bundle.get('kit_number')} {str(bundle.get('kit_name', '')).upper()}{vendor}"
+            f"  -  VERIFY {n} PART{'S' if n != 1 else ''} AGAINST PRINTS ON RECEIPT",
+            fill=SHADE_MD,
+            bold_size=7,
+        )
+
     stock = payload.get("stockPull") or []
     if stock:
         pull = "  -  ".join(f"{s.get('qty')} -- {s.get('description')} ({s.get('parts')}p)" for s in stock)
         _band(b, "PULL STOCK:  " + pull, fill=SHADE, bold_size=6.5)
 
-    cols = [("", 16), ("PART #", 78), ("DESCRIPTION", 190), ("QTY", 28), ("MIN", 34), ("NEXT ->", 56), ("FOR KIT", 130)]
+    cols = [("", 16), ("PART #", 78), ("DESCRIPTION", 190), ("QTY", 28), ("MIN", 34), ("NEXT ->", 56), ("FOR SET", 130)]
 
     def pkg_cols_header():
         c.setFont("Helvetica-Bold", 6)
@@ -750,7 +767,7 @@ def _render_package_body(b: _Body, code: str, rev: str, d: dict, prints: list[di
     c.setFont("Helvetica-Bold", 6.5)
     stage = ", ".join(payload.get("stageFor") or [])
     if stage:
-        c.drawString(MARGIN + 5, b.y - 10, _trunc(c, f"STAGE KITS: {stage}", "Helvetica-Bold", 6.5, 300))
+        c.drawString(MARGIN + 5, b.y - 10, _trunc(c, f"STAGE SETS: {stage}", "Helvetica-Bold", 6.5, 300))
     c.drawRightString(PAGE_W - MARGIN - 5, b.y - 10, "COMPLETED BY ______________  DATE ____ / ____")
     c.setStrokeColor(INK)
     c.setLineWidth(1)
@@ -794,7 +811,9 @@ def _render_kit_body(b: _Body, code: str, rev: str, d: dict, prints: list[dict])
     parts = payload.get("parts") or []
     resolved = {p["item_number"]: p for p in prints}
     if parts:
-        _sec_title(b, "KIT -- PARTS REQUIRED")
+        # "STAGE SET" not "KIT": the vendor-bundle feature reuses "kit" for purchase
+        # bundles (KIT-001), so the assembly's parts list is a STAGE SET on shop paper
+        _sec_title(b, "STAGE SET -- PARTS REQUIRED")
         cols = [("", 16), ("ID", 34), ("PART #", 80), ("DESCRIPTION", 210), ("QTY", 32), ("READY BY", 100), ("PRINT", 60)]
 
         def kit_cols_header():
@@ -887,7 +906,7 @@ def _render_kit_body(b: _Body, code: str, rev: str, d: dict, prints: list[dict])
     n_prints = len({p["item_number"] for p in prints if not p.get("missing")})
     c.setFillColor(INK)
     c.setFont("Helvetica-Bold", 7)
-    c.drawString(MARGIN, b.y - 10, f"PRINTS FOLLOW ({n_prints}): ASSEMBLY PRINT FIRST, THEN PART PRINTS IN KIT ORDER -- QTY STAMPED")
+    c.drawString(MARGIN, b.y - 10, f"PRINTS FOLLOW ({n_prints}): ASSEMBLY PRINT FIRST, THEN PART PRINTS IN SET ORDER -- QTY STAMPED")
     b.y -= 14
 
 
@@ -1047,21 +1066,41 @@ def _render_spine_body(b: _Body, book: dict, spine: dict, toc_rows: list[dict], 
 
     # ---- buy list ----
     buy = payload.get("buyList") or []
-    if buy:
+    bundles = payload.get("bundles") or []
+    if buy or bundles:
         c.showPage()
         b.y = PAGE_H - MARGIN
         _sec_title(b, "BUY LIST -- ORDER BEFORE D1", "PAIRS WITH MILESTONE M10")
-        rows = []
-        for r in buy:
-            rows.append([
-                r.get("displayNumber"), r.get("source"), r.get("name"),
-                r.get("qty"), "LONG" if r.get("longLead") else "", "[  ]", "[  ]",
-            ])
-        _table(
-            b,
-            [("PART #", 100), ("SOURCE", 88), ("DESCRIPTION", 208), ("QTY", 34), ("LEAD", 36), ("ORD", 33), ("RCV", 33)],
-            rows,
-        )
+
+        # vendor bundles are ordered as a single line each (finished parts) — no
+        # prices: this is a build document, not a quote
+        if bundles:
+            _sec_title(b, "BUNDLES -- FINISHED PARTS", "RECEIVE + INSPECT + STAGE")
+            brows = [
+                [x.get("kit_number"), x.get("kit_name"), x.get("vendor") or "--",
+                 f"{x.get('partCount')} parts", "[  ]", "[  ]"]
+                for x in bundles
+            ]
+            _table(
+                b,
+                [("BUNDLE #", 90), ("NAME", 200), ("VENDOR", 130), ("PARTS", 46), ("ORD", 33), ("RCV", 33)],
+                brows,
+            )
+            b.y -= 8
+
+        if buy:
+            _sec_title(b, "PURCHASED PARTS")
+            rows = []
+            for r in buy:
+                rows.append([
+                    r.get("displayNumber"), r.get("source"), r.get("name"),
+                    r.get("qty"), "LONG" if r.get("longLead") else "", "[  ]", "[  ]",
+                ])
+            _table(
+                b,
+                [("PART #", 100), ("SOURCE", 88), ("DESCRIPTION", 208), ("QTY", 34), ("LEAD", 36), ("ORD", 33), ("RCV", 33)],
+                rows,
+            )
 
     # ---- master checklist ----
     c.showPage()
@@ -1422,6 +1461,10 @@ def verify_quantities(supabase, template_project_id: str) -> list[dict]:
     mismatches = []
     for item_id in proj_qty:
         if item_id == top_id:
+            continue
+        # zz* reference items never reach the book — a stale quantity on one must not
+        # block a publish (mirrors masterDesignBook.ts checkQuantities; Documentation/38)
+        if str(num_of.get(item_id, "")).lower().startswith("zz"):
             continue
         expected = usage(item_id, set())
         if expected == 0:
