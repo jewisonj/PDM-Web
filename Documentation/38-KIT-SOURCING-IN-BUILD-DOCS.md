@@ -254,10 +254,25 @@ full re-issue (every section revs), with each section's change notice reading
     the project build book would tell the shop to saw parts the master book says to
     receive.
 
-**Phase E — publish**
-11. `UPDATE design_books SET renderer_version = 2 WHERE book_code = 'spa-standard'`
-    (the layout change above), then dry-run `/check`, review the diff, publish rev 2,
-    verify the change notice names both the sourcing change and the layout update.
+**Phase E — publish (DONE 2026-07-10)**
+11. `UPDATE design_books SET renderer_version = 2 WHERE book_code = 'spa-standard'`, then
+    dry-run `/check`, publish, verify.
+
+    *What actually happened:* the kit-sourcing **data** had already been published as
+    **rev 2** (22 sections rev B, `I-STG-3` inserted, `I-SAW-2`/`I-WJ-3` retired) using the
+    pre-Phase-C renderer, so every booklet still said "KIT". The Phase C renderer changes
+    (STAGE SET / bundle bands) therefore shipped as a **rev 3 full re-issue**: bumping
+    `renderer_version` 1→2 revved all 33 sections (B→C for the 22 kit sections, A→B for the
+    11 others), each with reason `LAYOUT UPDATE (renderer v1→v2)` — no data reasons, because
+    the sourcing data was already live. Verified on the published PDFs: `I-RCV-1` shows the
+    BUNDLE KIT-001 band + FOR SET + tubes routing to STG; `II-CSA00030` shows
+    "STAGE SET — PARTS REQUIRED" with bundled tubes ready-by `I-STG-2` and non-bundled parts
+    still ready-by their make packages; the spine BUNDLES block and change notice rev003 are
+    correct. spa-standard is now **book_rev 3, renderer_version 2**.
+
+    Lesson: `renderer_version` is the mechanism by which a layout/terminology change reaches
+    the shop. Bumping it forces the unchanged-content booklets (e.g. `II-CSA00020`, rev A→B)
+    to re-render too, so no booklet is left printing stale terminology under an old rev.
 
 ## 7. Risks
 
