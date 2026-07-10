@@ -585,6 +585,81 @@ CREATE TABLE nest_results (
 
 ---
 
+### project_kits
+
+Vendor bundles/kits purchased for MRP projects. Tracks bundle pricing as an alternative to in-house manufacturing.
+
+```sql
+CREATE TABLE project_kits (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id  UUID NOT NULL REFERENCES mrp_projects(id) ON DELETE CASCADE,
+    kit_number  VARCHAR(50) NOT NULL,
+    kit_name    VARCHAR(255) NOT NULL,
+    vendor      VARCHAR(255),
+    price       DECIMAL(12, 2) NOT NULL DEFAULT 0,
+    use_kit     BOOLEAN NOT NULL DEFAULT true,
+    notes       TEXT,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+    updated_at  TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT unique_kit_number_per_project UNIQUE (project_id, kit_number)
+);
+```
+
+**Key Points:**
+- `kit_number` - User-defined identifier (e.g., `KIT-001`, `VENDOR-BUNDLE-A`).
+- `kit_name` - Human-readable name (e.g., "Tube Bundle", "Pre-Welded Frame Kit").
+- `vendor` - Optional vendor/supplier name.
+- `price` - Total price for the entire kit (all parts included).
+- `use_kit` - **Toggle switch**: When `true`, kit pricing is used in cost estimates; when `false`, parts fall back to in-house routing costs.
+- Updated automatically by trigger on UPDATE.
+- Foreign key cascade deletes kit when project is deleted.
+
+**Use Case:** Compare vendor bundle pricing against in-house manufacturing costs. For example, a vendor offers a pre-welded tube bundle for $850. Create a kit, assign parts to it, and see the cost comparison (in-house cost: $1,240 → savings: $390).
+
+**Related Documentation:** `37-KIT-BUNDLE-PRICING.md`
+
+---
+
+### project_item_source
+
+Tracks how each part is sourced within a project (make in-house vs part of vendor kit).
+
+```sql
+CREATE TABLE project_item_source (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id  UUID NOT NULL REFERENCES mrp_projects(id) ON DELETE CASCADE,
+    item_id     UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    source_type VARCHAR(20) NOT NULL DEFAULT 'make',
+    kit_id      UUID REFERENCES project_kits(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ DEFAULT now(),
+
+    CONSTRAINT unique_item_source_per_project UNIQUE (project_id, item_id),
+    CONSTRAINT valid_source_type CHECK (source_type IN ('make', 'kit')),
+    CONSTRAINT kit_id_required_for_kit_source CHECK (
+        (source_type = 'kit' AND kit_id IS NOT NULL) OR
+        (source_type = 'make' AND kit_id IS NULL)
+    )
+);
+```
+
+**Key Points:**
+- `source_type` - Either `'make'` (use in-house routing) or `'kit'` (part of vendor bundle).
+- `kit_id` - References the kit this part belongs to (only when `source_type='kit'`).
+- **Default behavior**: If a part has no entry in this table, it defaults to `'make'`.
+- Each part can only have one source per project (unique constraint on `project_id, item_id`).
+- Constraints enforce data integrity: If `source_type='kit'`, `kit_id` must be set; if `'make'`, `kit_id` must be NULL.
+- `ON DELETE SET NULL` on `kit_id`: If a kit is deleted, parts revert to `'make'` automatically.
+
+**Integration with Cost Estimate:**
+- When calculating project costs (`backend/app/services/cost_estimate.py`), parts with `source_type='kit'` and active kit (`use_kit=true`) are excluded from individual labor/material costing.
+- Instead, the kit price is added as a lump sum to the project total.
+- Disabled kits (`use_kit=false`) cause parts to fall back to in-house routing costs.
+
+**Related Documentation:** `37-KIT-BUNDLE-PRICING.md`
+
+---
+
 ## Indexes
 
 The following indexes exist for query performance:
@@ -599,6 +674,10 @@ The following indexes exist for query performance:
 | `idx_bom_parent` | bom | parent_item_id | Get BOM children |
 | `idx_bom_child` | bom | child_item_id | Where-used queries |
 | `idx_work_queue_status` | work_queue | status | Find pending tasks |
+| `idx_project_kits_project_id` | project_kits | project_id | Get all kits for a project |
+| `idx_project_item_source_project_id` | project_item_source | project_id | Get all item sources for a project |
+| `idx_project_item_source_item_id` | project_item_source | item_id | Find source for an item |
+| `idx_project_item_source_kit_id` | project_item_source | kit_id | Find all parts in a kit |
 
 Additionally, all `UNIQUE` constraints and primary keys automatically create indexes.
 
@@ -633,6 +712,10 @@ raw_materials  1--*  routing_materials
 mrp_projects  1--*  mrp_project_parts
               1--*  time_logs
               1--*  part_completion
+              1--*  project_kits
+              1--*  project_item_source
+
+project_kits  1--*  project_item_source
 ```
 
 ---

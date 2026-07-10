@@ -3,7 +3,7 @@
 **Last Updated:** 2026-07-09
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.9.2
+**Current Version:** v3.9.3
 
 ---
 
@@ -48,6 +48,7 @@ New to PDM-Web? Read these in order:
 | 30 | `waterjet-cutting-speeds.md` | Waterjet cutting speed reference tables, machinability indices, material-specific speeds, quality multipliers. |
 | 31 | `31-BUILD-TRACKER-SHEET.md` | Shop-floor Build Tracker print sheet: item classification, station columns, pre-fill/completion semantics, milestones, pagination, photo-capture readiness. |
 | 32 | `32-BUILD-BOOK.md` | Manufacturing Build Book: day-by-day work packages, kit/weld chapters, sequence-first design rationale, station abbreviations, section print sets (v3.9.1), document items, purchased-item display, full-book PDF endpoint. |
+| 37 | `37-KIT-BUNDLE-PRICING.md` | Kit/bundle pricing system: vendor bundles, per-project part sourcing (make vs kit), cost comparison, kit management slideout UI, routing page integration, cost estimate calculation. |
 
 ### Section 5: Frontend Application
 
@@ -138,7 +139,8 @@ New to PDM-Web? Read these in order:
 3. `31-BUILD-TRACKER-SHEET.md` -- printable shop-floor Build Tracker sheet
 4. `32-BUILD-BOOK.md` -- day-by-day manufacturing Build Book (work packages + kit/weld sheets + section print sets)
 5. `06-BOM-COST-ROLLUP-GUIDE.md` -- BOM cost rollup
-6. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
+6. `37-KIT-BUNDLE-PRICING.md` -- Kit/bundle pricing and vendor cost comparison
+7. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
 
 ### Troubleshooting
 1. `19-TROUBLESHOOTING-DECISION-TREE.md` -- diagnosis
@@ -172,7 +174,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 35
+**Total Documentation Files:** 36
 **Status:** Current
 
 ---

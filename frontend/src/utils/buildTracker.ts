@@ -281,6 +281,25 @@ export function isDocumentItem(itemNumber: string): boolean {
   return /^[a-z]{2}d\d/i.test(itemNumber)
 }
 
+/** zzz-prefix items are reference-only parts (sub-components of purchased items uploaded
+ *  for CAD reference). They should be excluded from all manufacturing views, routing
+ *  requirements, cost reports, BOMs, and design books. */
+export function isReferenceOnlyItem(itemNumber: string): boolean {
+  return itemNumber.toLowerCase().startsWith('zzz')
+}
+
+/** Returns true if the item should be excluded from manufacturing views
+ *  (documents, zzz reference items, purchased mmc/spn parts). */
+export function excludeFromManufacturing(itemNumber: string): boolean {
+  const lower = itemNumber.toLowerCase()
+  return (
+    isDocumentItem(itemNumber) ||
+    lower.startsWith('zzz') ||
+    lower.startsWith('mmc') ||
+    lower.startsWith('spn')
+  )
+}
+
 const PAGE_ROW_CAP_TABLOID = 48 // data rows + group header rows per part column
 const PAGE_ROW_CAP_LETTER = 32
 

@@ -1216,6 +1216,170 @@ This supersedes the old "download the whole book as one bound PDF" workflow for 
 
 ---
 
+## 18. Managing Vendor Kits and Bundle Pricing
+
+**Where:** MRP Dashboard → **Manage Kits** button, Routing Editor
+
+**Use Case:** Compare the cost of purchasing a vendor-supplied bundle (e.g., a pre-welded tube assembly) against building the parts in-house. Track which parts are sourced from vendor kits vs manufactured internally.
+
+**Added:** v3.9.3 (2026-07-09)
+
+### Creating a Kit
+
+1. Navigate to the **MRP Dashboard** for your project
+2. Click the **Manage Kits** button in the top toolbar
+3. The Kit Management slideout appears on the right side
+4. Click **Add Kit**
+5. Fill in the kit details:
+   - **Kit Number** (auto-suggested: `KIT-001`, `KIT-002`, etc.)
+   - **Kit Name** (e.g., "Tube Bundle", "Pre-Welded Frame Kit")
+   - **Vendor** (optional: e.g., "ABC Fabrication")
+   - **Price** (total price for the entire kit, e.g., `850.00`)
+   - **Notes** (optional: any additional information)
+6. Click **Add Kit**
+7. The kit appears in the list with:
+   - Part count (initially 0)
+   - In-house cost comparison (calculated once parts are assigned)
+   - Savings/extra cost percentage
+
+### Assigning Parts to a Kit
+
+**Method 1: Via Routing Editor (Recommended)**
+
+1. Navigate to **Routing Editor** (`/mrp/routing`)
+2. **Select a project filter** from the dropdown (kit sourcing is project-specific)
+3. Select a part from the item list
+4. Scroll to the **"Part Sourcing for Project [PROJECT-CODE]"** section (below routing operations, above raw materials)
+5. Toggle from **Make In-House** to **Part of Kit**
+6. Select the kit from the dropdown (e.g., `[KIT-001] Tube Bundle ($850.00)`)
+7. Click **Save**
+8. Repeat for each part in the vendor kit
+9. The routing page shows a status message: "Part source updated"
+
+**Method 2: Via Kit Management Slideout (Bulk)**
+
+1. Open **Manage Kits** slideout
+2. Click a kit card to expand it
+3. Use the bulk API endpoints to assign multiple parts at once (no UI for bulk assignment yet)
+
+### Viewing Cost Comparison
+
+1. Open **Manage Kits** slideout
+2. Each kit card shows:
+   - **Kit Price** (vendor quote)
+   - **In-House Cost** (labor + material for all assigned parts)
+   - **Savings** (positive = kit is cheaper, negative = kit is more expensive)
+   - **Savings %** (percentage savings or penalty)
+3. Click a kit card to expand and see:
+   - List of parts assigned to the kit
+   - Part numbers and names
+
+**Example:**
+```
+KIT-001 - Tube Bundle
+Vendor: ABC Fabrication
+Parts: 12 parts
+
+Kit Price:        $850
+In-House Cost:    $1,240
+Savings:          $390 (31%)
+```
+
+### Temporarily Disabling a Kit
+
+**Use Case:** Vendor kit is out of stock, need to build parts in-house temporarily.
+
+1. Open **Manage Kits** slideout
+2. Find the kit card
+3. Click the **green checkmark icon** (toggles to gray circle)
+4. Kit is now disabled (`use_kit = false`)
+5. All parts assigned to this kit automatically fall back to in-house routing costs
+6. Warning badge appears: "Kit pricing disabled - parts use in-house routing"
+7. Project cost estimate recalculates to use routing costs instead of kit price
+
+**To Re-Enable:** Click the gray circle icon (toggles back to green checkmark).
+
+### Editing a Kit
+
+1. Open **Manage Kits** slideout
+2. Click the **pencil icon** on a kit card
+3. Edit any field (kit name, vendor, price, notes)
+4. Click **Update Kit**
+5. Cost comparison recalculates automatically
+
+### Deleting a Kit
+
+1. Open **Manage Kits** slideout
+2. Click the **trash icon** on a kit card
+3. Confirm deletion: "Delete kit 'Tube Bundle'? Parts in this kit will revert to in-house routing."
+4. Kit is deleted
+5. All parts assigned to this kit automatically revert to `source_type = 'make'`
+6. Parts now use in-house routing costs
+
+### Understanding Kit Pricing in Cost Estimates
+
+When viewing project cost estimates:
+
+- **Items in active kits** (`use_kit = true`):
+  - Show zero individual cost (labor + material = $0)
+  - Marked as `"in_kit": true` in API responses
+  - Kit price is added as a lump sum to the project total
+
+- **Items in disabled kits** (`use_kit = false`):
+  - Fall back to in-house routing costs
+  - Calculate normally (labor + material + outsourced)
+
+- **Cost breakdown**:
+  - Labor Cost
+  - Material Cost
+  - Outsourced Cost
+  - Purchased Cost (supplier parts)
+  - **Kit Cost** (new category - sum of all active kits)
+  - Subtotal = sum of all categories
+  - Total = Subtotal × Overhead Multiplier
+
+### Project Filter Requirement
+
+**Important:** Part sourcing is **project-specific**. The same part may be:
+- **Project A:** Part of a vendor kit
+- **Project B:** Made in-house
+
+You **must** select a project filter on the Routing page to configure part sourcing. If no project is selected, the sourcing UI displays: "Select a project filter to configure part sourcing."
+
+### API Endpoints for Kit Management
+
+| Task | Method | Endpoint |
+|---|---|---|
+| List kits for project | GET | `/api/mrp/projects/{id}/kits` |
+| Create kit | POST | `/api/mrp/projects/{id}/kits` |
+| Get kit details | GET | `/api/mrp/projects/{id}/kits/{kit_id}` |
+| Update kit | PATCH | `/api/mrp/projects/{id}/kits/{kit_id}` |
+| Delete kit | DELETE | `/api/mrp/projects/{id}/kits/{kit_id}` |
+| Get item sources | GET | `/api/mrp/projects/{id}/item-sources` |
+| Set item source | PUT | `/api/mrp/projects/{id}/items/{item_id}/source` |
+| Remove item source | DELETE | `/api/mrp/projects/{id}/items/{item_id}/source` |
+| Add parts to kit (bulk) | POST | `/api/mrp/projects/{id}/kits/{kit_id}/parts` |
+| Remove parts from kit (bulk) | DELETE | `/api/mrp/projects/{id}/kits/{kit_id}/parts` |
+
+### Notes
+
+- **Dark Theme:** Kit Management slideout uses the MRP dark theme (`#0f172a` background, `#38bdf8` accents)
+- **Savings Color Coding:**
+  - Green = Positive savings (kit is cheaper)
+  - Red = Extra cost (kit is more expensive)
+- **In-House Cost Calculation:** Includes all routing labor, materials, and outsourced operations for parts assigned to the kit
+- **Cost Estimate Integration:** Kit pricing is factored into the unified project cost estimate used across:
+  - MRP Dashboard cost display
+  - AI Assistant cost queries
+  - Build Book cost summaries
+
+**Related Documentation:**
+- `37-KIT-BUNDLE-PRICING.md` - Full kit/bundle pricing system documentation
+- `03-DATABASE-SCHEMA.md` - `project_kits` and `project_item_source` table schemas
+- `06-BOM-COST-ROLLUP-GUIDE.md` - Cost calculation procedures
+
+---
+
 ## Quick Reference: API Endpoints for Common Tasks
 
 | Task | Method | Endpoint |
