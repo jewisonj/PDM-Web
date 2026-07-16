@@ -216,7 +216,7 @@ export async function buildMasterModel(templateProjectCode: string): Promise<Mas
 
 export function toPayload(
   master: MasterDesignBook,
-  opts: { title?: string; create: boolean; expectedBookRev: number | null; rebaseline?: boolean }
+  opts: { title?: string; create: boolean; expectedBookRev: number | null; rebaseline?: boolean; allowQtyMismatch?: boolean }
 ): DesignBookPayload {
   return {
     meta: {
@@ -227,7 +227,7 @@ export function toPayload(
       rebaseline: opts.rebaseline ?? false,
       // ALWAYS sent when the book exists — concurrent updates must 409, not race
       expected_book_rev: opts.expectedBookRev,
-      allow_qty_mismatch: false,
+      allow_qty_mismatch: opts.allowQtyMismatch ?? false,
     },
     sections: master.sections,
   }
@@ -327,5 +327,25 @@ export async function downloadFullBook(bookCode: string): Promise<{ pages: strin
   return {
     pages: resp.headers.get('X-Pages'),
     sections: resp.headers.get('X-Sections'),
+  }
+}
+
+/** Download purchase list CSV (bundles + mmc/spn items). */
+export async function downloadPurchaseList(bookCode: string): Promise<{ items: number }> {
+  const resp = await fetch(`/api/mrp/design-books/${bookCode}/purchase-list`)
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }))
+    throw new Error(typeof err.detail === 'string' ? err.detail : `HTTP ${resp.status}`)
+  }
+  const blob = await resp.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  const dispo = resp.headers.get('Content-Disposition') || ''
+  const m = dispo.match(/filename="([^"]+)"/)
+  a.download = m?.[1] || `${bookCode}-purchase-list.csv`
+  a.click()
+  URL.revokeObjectURL(a.href)
+  return {
+    items: parseInt(resp.headers.get('X-Items') || '0', 10),
   }
 }

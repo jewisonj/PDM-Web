@@ -621,7 +621,7 @@ export function masterSections(
   sections.unshift({
     section_code: '00-SPINE',
     kind: 'spine',
-    title: 'MASTER CHECKLIST + TOC',
+    title: 'CHECKLIST + BUY LIST + TOC',
     sort_order: 0,
     identity: { singleton: 'spine' },
     display: null,

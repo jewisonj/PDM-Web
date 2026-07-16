@@ -7,6 +7,50 @@
 
 ## Current Version
 
+### v3.9.3 (2026-07-16) -- Master Design Book Purchase List Export
+
+**Status:** Current Production Release
+
+**Summary:** Added CSV export feature for the Master Design Book's purchase list. The new endpoint extracts all purchased items (individual mmc/spn parts and vendor bundles) from the spine section and provides a downloadable CSV with order tracking columns.
+
+#### Features Added
+
+**Purchase List CSV Download**
+
+- **Backend Endpoint:** `GET /api/mrp/design-books/{book_code}/purchase-list`
+  - Reads `buyList` and `bundles` from spine section's `source.payload`
+  - Returns CSV with columns: Part #, Source, Description, Qty, Long Lead, Type, Ordered, Received
+  - Bundles listed first as Type=BUNDLE (ordered as complete kits)
+  - Individual parts listed as Type=PART (mmc/spn items)
+  - Applies ASCII sanitization to vendor names and descriptions
+  - Filename format: `{book_code}-purchase-list-rev{N}.csv`
+
+- **Frontend UI:** "Purchase List" button in MasterDesignBookView header
+  - Downloads CSV file via browser download API
+  - Disabled for first-generation books (rev 0)
+  - Shows spinner during download
+  - Success toast displays item count
+
+- **Spine Section Rename:** Updated section title from "MASTER CHECKLIST + TOC" to "CHECKLIST + BUY LIST + TOC" to reflect the buy list is included in spine content
+
+#### Use Case
+
+Jack can download the complete purchase list as a CSV file for procurement. The CSV includes blank "Ordered" and "Received" columns that can be printed and used as a manual tracking checklist when ordering parts from vendors.
+
+#### Files Changed
+
+- `backend/app/routes/design_books.py` — Added purchase-list endpoint
+- `backend/app/services/master_design_book.py` — Added `get_purchase_list_csv()` function
+- `frontend/src/services/designBook.ts` — Added `downloadPurchaseList()` service
+- `frontend/src/utils/masterDesignBook.ts` — Updated spine section title
+- `frontend/src/views/MasterDesignBookView.vue` — Added "Purchase List" button
+
+#### Documentation
+
+- Updated `Documentation/36-MASTER-DESIGN-BOOK-PLAN.md` §7.1 with complete Purchase List CSV Export documentation
+
+---
+
 ### v3.9.2 (2026-07-07) -- AI Assistant
 
 **Status:** Current Production Release

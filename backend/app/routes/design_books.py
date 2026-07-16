@@ -112,3 +112,23 @@ async def section_url(book_code: str, section_code: str):
 async def change_notice_url(book_code: str, to_rev: int):
     from ..services.master_design_book import get_change_notice_url
     return _handle(book_code, get_change_notice_url, book_code, to_rev)
+
+
+@router.get("/{book_code}/purchase-list")
+async def purchase_list_csv(book_code: str):
+    """Download the buy list as a CSV file for ordering.
+
+    Extracts purchased items from the spine section's buyList payload.
+    Includes vendor bundles as separate entries.
+    """
+    from ..services.master_design_book import get_purchase_list_csv
+    result = _handle(book_code, get_purchase_list_csv, book_code)
+    filename = f"{book_code}-purchase-list-rev{result['book_rev']}.csv"
+    return Response(
+        content=result["csv"],
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Items": str(result["item_count"]),
+        },
+    )
