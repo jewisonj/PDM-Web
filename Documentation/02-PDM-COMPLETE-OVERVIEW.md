@@ -250,6 +250,15 @@ Standard CRUD operations for project management.
 |--------|----------|-------------|
 | GET | `/api/mrp/projects/{project_id}/cost-report` | Generate comprehensive cost breakdown for a project (labor, materials, outsourced, purchased). |
 | POST | `/api/mrp/projects/{project_id}/print-packet` | Generate a combined PDF print packet for a project. |
+| GET | `/api/mrp/design-books` | List all Master Design Books with staleness indicators. |
+| GET | `/api/mrp/design-books/{book_code}` | Get Design Book details: sections, revisions, change history. |
+| POST | `/api/mrp/design-books/{book_code}/check` | Dry run to check for changes without updating (returns diff preview). |
+| POST | `/api/mrp/design-books/{book_code}/sync-quantities` | Auto-fix template project quantities to match BOM rollup (v3.9.3). |
+| POST | `/api/mrp/design-books/{book_code}/update` | Render changed sections, upload PDFs, bump revisions, issue change notice. |
+| POST | `/api/mrp/design-books/{book_code}/full` | Download merged full book PDF (all sections byte-concatenated with bookmarks). |
+| GET | `/api/mrp/design-books/{book_code}/purchase-list` | Download purchase list CSV (bundles + mmc/spn parts) (v3.9.3). |
+| GET | `/api/mrp/design-books/{book_code}/sections/{section_code}/url` | Get signed URL for individual section PDF. |
+| GET | `/api/mrp/design-books/{book_code}/changes/{to_rev}/url` | Get signed URL for change notice PDF. |
 
 ### Health -- `/health`
 

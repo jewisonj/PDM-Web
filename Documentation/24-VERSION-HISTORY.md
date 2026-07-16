@@ -7,15 +7,15 @@
 
 ## Current Version
 
-### v3.9.3 (2026-07-16) -- Master Design Book Purchase List Export
+### v3.9.3 (2026-07-16) -- Master Design Book Enhancements
 
 **Status:** Current Production Release
 
-**Summary:** Added CSV export feature for the Master Design Book's purchase list. The new endpoint extracts all purchased items (individual mmc/spn parts and vendor bundles) from the spine section and provides a downloadable CSV with order tracking columns.
+**Summary:** Two key enhancements to the Master Design Book system: (1) CSV export for purchase lists to streamline procurement, and (2) automatic BOM quantity synchronization to fix stale template project quantities when mBOM exports change.
 
 #### Features Added
 
-**Purchase List CSV Download**
+**1. Purchase List CSV Download**
 
 - **Backend Endpoint:** `GET /api/mrp/design-books/{book_code}/purchase-list`
   - Reads `buyList` and `bundles` from spine section's `source.payload`
@@ -33,21 +33,54 @@
 
 - **Spine Section Rename:** Updated section title from "MASTER CHECKLIST + TOC" to "CHECKLIST + BUY LIST + TOC" to reflect the buy list is included in spine content
 
-#### Use Case
+**2. Automatic BOM Quantity Synchronization** (Commit: cffd2a3)
 
-Jack can download the complete purchase list as a CSV file for procurement. The CSV includes blank "Ordered" and "Received" columns that can be printed and used as a manual tracking checklist when ordering parts from vendors.
+- **Backend Endpoint:** `POST /api/mrp/design-books/{book_code}/sync-quantities`
+  - Calculates correct quantities from BOM tree rollup (source of truth)
+  - Updates stale `mrp_project_parts.quantity` rows in the template project
+  - Skips `zz*` reference items (not real parts)
+  - Returns list of updated items with old→new quantity changes
+
+- **Backend Service:** `master_design_book.py::sync_quantities_from_bom()`
+  - Recursive BOM rollup calculation with memoization
+  - Detects mismatches between flat project quantities and BOM rollup
+  - Bulk updates database with correct quantities
+
+- **Frontend Integration:** Automatic sync in Check & Update workflow
+  - When quantity mismatches detected and `allow_qty_mismatch` is not set:
+    - Automatically calls `syncQuantities()` to fix database
+    - Shows success message with list of synced items
+    - Rebuilds master model with fresh data
+    - Proceeds seamlessly to update modal
+  - Eliminates manual quantity correction workflow
+
+#### Use Cases
+
+**Purchase List:** Jack can download the complete purchase list as a CSV file for procurement. The CSV includes blank "Ordered" and "Received" columns that can be printed and used as a manual tracking checklist when ordering parts from vendors.
+
+**BOM Quantity Sync:** When Jack exports a new mBOM from Creo that changes quantities (e.g., increased fastener count from 4 to 6), the system automatically detects the mismatch, recalculates correct quantities from the BOM tree, updates the database, and proceeds with the Design Book update. Previously, Jack would see a quantity mismatch error and need to manually find and fix each part quantity before proceeding.
 
 #### Files Changed
 
+**Purchase List:**
 - `backend/app/routes/design_books.py` — Added purchase-list endpoint
 - `backend/app/services/master_design_book.py` — Added `get_purchase_list_csv()` function
 - `frontend/src/services/designBook.ts` — Added `downloadPurchaseList()` service
 - `frontend/src/utils/masterDesignBook.ts` — Updated spine section title
 - `frontend/src/views/MasterDesignBookView.vue` — Added "Purchase List" button
 
+**BOM Sync:**
+- `backend/app/services/master_design_book.py` — Added `sync_quantities_from_bom()` and `sync_book_quantities()`
+- `backend/app/routes/design_books.py` — Added `POST /{book_code}/sync-quantities` endpoint
+- `frontend/src/services/designBook.ts` — Added `SyncQuantitiesResult` interface and `syncQuantities()` function
+- `frontend/src/views/MasterDesignBookView.vue` — Modified `checkAndUpdate()` to auto-sync on quantity mismatch
+
 #### Documentation
 
-- Updated `Documentation/36-MASTER-DESIGN-BOOK-PLAN.md` §7.1 with complete Purchase List CSV Export documentation
+- Updated `Documentation/36-MASTER-DESIGN-BOOK-PLAN.md`:
+  - §7.1 — Purchase List CSV Export
+  - §7.2 — BOM Quantity Sync Endpoint (new)
+  - Updated API endpoint table in §7 to include sync-quantities endpoint
 
 ---
 

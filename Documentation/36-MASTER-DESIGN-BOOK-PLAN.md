@@ -307,6 +307,7 @@ routing/bom have NO updated_at columns):
 | `GET /api/mrp/design-books` | list books + stale_print_count badge |
 | `GET /api/mrp/design-books/{code}` | book detail: sections, stale_prints, changes, consistency flag |
 | `POST .../check` | dry run: hash + diff + reasons; zero downloads/writes |
+| `POST .../sync-quantities` | auto-fix mrp_project_parts quantities to match BOM rollup (see 7.2) |
 | `POST .../update` | the algorithm in 4.3; body = frontend-computed `{meta, sections}` |
 | `POST .../full` | merged book (byte-concat + bookmarks), streamed plain Response |
 | `GET .../sections/{code}/url` | signed URL (frontend may also self-sign via bucket read policy) |
@@ -376,6 +377,97 @@ CSA00010-KIT,Acme Vendor,Standard Spa Kit (145 parts),1,,BUNDLE,,
 McMaster 1234-567,McMaster-Carr,Hex Bolt 1/4-20 x 1",24,,PART,,
 SPN4567,Supplier XYZ,Custom Bracket Assembly,2,YES,PART,,
 ```
+
+---
+
+### 7.2 BOM Quantity Sync Endpoint
+
+**Feature Added:** 2026-07-16 (Commit: cffd2a3)
+
+The Master Design Book system now includes an **automatic BOM quantity synchronization** feature that resolves quantity mismatches between the template project's flat `mrp_project_parts` table and the actual BOM rollup calculations.
+
+**Endpoint:** `POST /api/mrp/design-books/{book_code}/sync-quantities`
+
+**Purpose:** When BOM exports from Creo change quantities in the `bom` table, the `mrp_project_parts` quantities (in the template project) can become stale. This endpoint recalculates the correct quantities from the BOM tree and updates the template project to match.
+
+**Returns:** JSON with:
+```typescript
+{
+  book_code: string
+  updated: Array<{
+    item_number: string
+    old_qty: number
+    new_qty: number
+  }>
+  unchanged: number
+  error?: string
+}
+```
+
+**Algorithm (`sync_quantities_from_bom`):**
+1. Loads all `mrp_project_parts` for the template project
+2. Fetches the `top_assembly_id` from the project
+3. Builds a parent-child BOM map from the `bom` table
+4. Recursively calculates the rollup quantity for each part from the top assembly down
+5. Compares calculated quantities to stored quantities in `mrp_project_parts`
+6. Updates any mismatched rows with the correct BOM rollup quantity
+7. Skips `zz*` reference items (not real parts)
+8. Returns list of updated items with old/new quantities
+
+**Automatic Integration in Check & Update Flow:**
+
+When the user clicks "Check for Changes" in `MasterDesignBookView.vue`, the system:
+1. Builds the master model and checks for quantity mismatches
+2. If mismatches are detected and `allow_qty_mismatch` is not set:
+   - **Automatically calls** `syncQuantities(bookCode)`
+   - Updates the database with corrected quantities
+   - Rebuilds the master model with fresh data
+   - Shows success message: `"Synced N quantities from BOM: item1: 4->6; item2: 2->4"`
+3. If mismatches still exist after sync (edge cases), shows error and prompts user to enable "Allow qty mismatch"
+4. Only then proceeds to diff and show the update modal
+
+**Implementation:**
+
+**Backend:**
+- `backend/app/services/master_design_book.py::sync_quantities_from_bom(supabase, template_project_id)`
+  - Core algorithm: BOM rollup calculation with memoization
+  - Updates `mrp_project_parts.quantity` where mismatches found
+  - Returns `{updated: [...], unchanged: int}`
+- `backend/app/services/master_design_book.py::sync_book_quantities(book_code)`
+  - Public wrapper that loads the book and template project
+  - Calls `sync_quantities_from_bom` with the template project ID
+  - Returns result with `book_code` added
+- `backend/app/routes/design_books.py`
+  - Added `POST /{book_code}/sync-quantities` endpoint
+  - Maps to `sync_book_quantities(book_code)`
+
+**Frontend:**
+- `frontend/src/services/designBook.ts::syncQuantities(bookCode)`
+  - TypeScript interface `SyncQuantitiesResult`
+  - Calls `POST /api/mrp/design-books/{book_code}/sync-quantities`
+  - Returns parsed JSON result
+- `frontend/src/views/MasterDesignBookView.vue::checkAndUpdate()`
+  - Modified to auto-call `syncQuantities()` when `!master.qtyCheck.ok && !allowQtyMismatch`
+  - Displays synced quantities in success message before proceeding
+  - Rebuilds master model after sync to ensure fresh data
+  - Falls back to error message if sync doesn't resolve all mismatches
+
+**Use Case:**
+
+**Before this feature:** When Jack exported a new mBOM from Creo that changed quantities (e.g., increased fastener count from 4 to 6), the Design Book Check & Update would fail with a quantity mismatch error. He would need to manually find and update each part quantity in the template project before proceeding.
+
+**After this feature:** The system automatically detects the mismatch, calculates the correct quantities from the BOM tree, updates the database, and proceeds with the update. Jack sees a success message showing what was synced and continues seamlessly.
+
+**Related Schema:**
+- `mrp_project_parts.quantity` — Flat quantity field (updated by sync)
+- `bom.quantity` — Per-parent-child relationship quantity (source of truth)
+- `design_books.template_project_id` — Links book to its source project
+
+**Files Changed:**
+- `backend/app/services/master_design_book.py` — Added `sync_quantities_from_bom()` and `sync_book_quantities()`
+- `backend/app/routes/design_books.py` — Added `POST /{book_code}/sync-quantities` endpoint
+- `frontend/src/services/designBook.ts` — Added `SyncQuantitiesResult` interface and `syncQuantities()` function
+- `frontend/src/views/MasterDesignBookView.vue` — Modified `checkAndUpdate()` to auto-sync on quantity mismatch
 
 ## 8. UI — MasterDesignBookView at /mrp/design-book/:bookCode
 
