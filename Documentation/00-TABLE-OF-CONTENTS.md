@@ -1,6 +1,6 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-07-09
+**Last Updated:** 2026-07-16
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
 **Current Version:** v3.9.3
@@ -49,6 +49,8 @@ New to PDM-Web? Read these in order:
 | 31 | `31-BUILD-TRACKER-SHEET.md` | Shop-floor Build Tracker print sheet: item classification, station columns, pre-fill/completion semantics, milestones, pagination, photo-capture readiness. |
 | 32 | `32-BUILD-BOOK.md` | Manufacturing Build Book: day-by-day work packages, kit/weld chapters, sequence-first design rationale, station abbreviations, section print sets (v3.9.1), document items, purchased-item display, full-book PDF endpoint. |
 | 37 | `37-KIT-BUNDLE-PRICING.md` | Kit/bundle pricing system: vendor bundles, per-project part sourcing (make vs kit), cost comparison, kit management slideout UI, routing page integration, cost estimate calculation. |
+| 38 | `38-KIT-SOURCING-IN-BUILD-DOCS.md` | Kit sourcing in Build Book and Design Book: STAGE SET renderer, per-project kit documentation sections, purchased parts tracking. |
+| 39 | `39-KIT-SOURCING-STEP-EXPORT.md` | Kit sourcing STEP export guide: BOM queries, part categorization, STEP file downloads, export folder structure, CSV generation, handling updated files from vendors. |
 
 ### Section 5: Frontend Application
 
@@ -140,7 +142,9 @@ New to PDM-Web? Read these in order:
 4. `32-BUILD-BOOK.md` -- day-by-day manufacturing Build Book (work packages + kit/weld sheets + section print sets)
 5. `06-BOM-COST-ROLLUP-GUIDE.md` -- BOM cost rollup
 6. `37-KIT-BUNDLE-PRICING.md` -- Kit/bundle pricing and vendor cost comparison
-7. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
+7. `38-KIT-SOURCING-IN-BUILD-DOCS.md` -- Kit sourcing in Build Book and Design Book
+8. `39-KIT-SOURCING-STEP-EXPORT.md` -- Exporting STEP files and BOMs for kit orders
+9. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
 
 ### Troubleshooting
 1. `19-TROUBLESHOOTING-DECISION-TREE.md` -- diagnosis
@@ -174,7 +178,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 36
+**Total Documentation Files:** 37
 **Status:** Current
 
 ---
