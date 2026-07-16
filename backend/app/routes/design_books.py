@@ -77,6 +77,16 @@ async def check_design_book(book_code: str, payload: DesignBookPayload):
     return _handle(book_code, check_master_book, book_code, payload.model_dump())
 
 
+@router.post("/{book_code}/sync-quantities")
+async def sync_design_book_quantities(book_code: str):
+    """Update template project quantities to match BOM rollup.
+
+    Call before check/update to auto-fix quantity mismatches.
+    """
+    from ..services.master_design_book import sync_book_quantities
+    return _handle(book_code, sync_book_quantities, book_code)
+
+
 @router.post("/{book_code}/update")
 async def update_design_book(book_code: str, payload: DesignBookPayload):
     """Commit: render changed sections, upload, bump revs, issue the change notice."""

@@ -18,6 +18,7 @@ import {
   getDesignBook,
   checkDesignBook,
   updateDesignBook,
+  syncQuantities,
   getSectionUrl,
   getNoticeUrl,
   downloadFullBook,
@@ -110,7 +111,7 @@ const groups = computed<SectionGroup[]>(() => {
     rows.filter(s => kinds.includes(s.kind)).sort((a, b) => a.sort_order - b.sort_order)
   const out: SectionGroup[] = []
   const spine = by(['spine'])
-  if (spine.length) out.push({ label: 'Spine', rows: spine })
+  if (spine.length) out.push({ label: 'Spine (Buy List + TOC)', rows: spine })
   const pkgs = by(['work_package'])
   if (pkgs.length) out.push({ label: 'Section I — Work Packages', rows: pkgs })
   const asms = by(['assembly', 'design_reference'])
@@ -125,6 +126,19 @@ function sectionState(s: BookSectionRow): { label: string; cls: string; reason: 
   const stale = staleBySection.value.get(s.section_code)
   if (stale?.length) return { label: 'OUT OF DATE', cls: 'state-stale', reason: stale.join(' · ') }
   return { label: 'CURRENT', cls: 'state-current', reason: '' }
+}
+
+function sectionSubtitle(s: BookSectionRow): string {
+  switch (s.kind) {
+    case 'spine':
+      return 'Cover + Buy List + Checklist + TOC'
+    case 'general_reference':
+      return 'Reference documents, specs, standards'
+    case 'design_reference':
+      return 'Overall design prints (CSD items)'
+    default:
+      return ''
+  }
 }
 
 const staleCount = computed(() => book.value?.stale_prints.length ?? 0)
@@ -150,14 +164,28 @@ async function checkAndUpdate() {
   error.value = ''
   success.value = ''
   try {
-    const master = await buildMasterModel(templateProjectCode.value)
+    let master = await buildMasterModel(templateProjectCode.value)
+
+    // Auto-sync quantities from BOM if there are mismatches
     if (!master.qtyCheck.ok && !allowQtyMismatch.value) {
-      const list = master.qtyCheck.mismatches
-        .slice(0, 6)
-        .map(m => `${m.item_number}: flat ${m.project_qty} vs BOM ${m.bom_rollup_qty}`)
-        .join('; ')
-      throw new Error(`Template quantities do not match the BOM rollup — ${list}. Enable "Allow qty mismatch" to override.`)
+      const syncResult = await syncQuantities(bookCode)
+      if (syncResult.updated.length > 0) {
+        // Show what was synced
+        const synced = syncResult.updated.map(u => `${u.item_number}: ${u.old_qty}->${u.new_qty}`).join('; ')
+        success.value = `Synced ${syncResult.updated.length} quantities from BOM: ${synced}`
+        // Rebuild model with updated quantities
+        master = await buildMasterModel(templateProjectCode.value)
+      }
+      // If still mismatched after sync, show error
+      if (!master.qtyCheck.ok) {
+        const list = master.qtyCheck.mismatches
+          .slice(0, 6)
+          .map(m => `${m.item_number}: flat ${m.project_qty} vs BOM ${m.bom_rollup_qty}`)
+          .join('; ')
+        throw new Error(`Template quantities do not match the BOM rollup — ${list}. Enable "Allow qty mismatch" to override.`)
+      }
     }
+
     const payload = toPayload(master, {
       title: newTitle.value,
       create: isFirstGen.value && !book.value,
@@ -378,7 +406,10 @@ async function purchaseListCsv() {
               </tr>
               <tr v-for="s in g.rows" :key="s.section_code" :class="{ retired: s.status === 'retired' }">
                 <td class="mono">{{ s.section_code }}</td>
-                <td>{{ s.title }}</td>
+                <td>
+                  <div>{{ s.title }}</div>
+                  <div v-if="sectionSubtitle(s)" class="section-subtitle">{{ sectionSubtitle(s) }}</div>
+                </td>
                 <td class="mono">{{ s.rev }}</td>
                 <td>{{ s.page_count ?? '—' }}</td>
                 <td>
@@ -726,4 +757,11 @@ async function purchaseListCsv() {
   font-size: 12px;
 }
 .row-btn:hover { background: #4b5563; }
+
+.section-subtitle {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+  font-style: italic;
+}
 </style>

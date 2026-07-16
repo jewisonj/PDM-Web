@@ -297,6 +297,21 @@ export async function updateDesignBook(bookCode: string, payload: DesignBookPayl
   return jsonOrThrow(resp)
 }
 
+export interface SyncQuantitiesResult {
+  book_code: string
+  updated: { item_number: string; old_qty: number; new_qty: number }[]
+  unchanged: number
+  error?: string
+}
+
+/** Sync template project quantities to match BOM rollup. Call before check/update. */
+export async function syncQuantities(bookCode: string): Promise<SyncQuantitiesResult> {
+  const resp = await fetch(`/api/mrp/design-books/${bookCode}/sync-quantities`, {
+    method: 'POST',
+  })
+  return jsonOrThrow(resp)
+}
+
 export async function getSectionUrl(bookCode: string, sectionCode: string): Promise<string> {
   const resp = await fetch(`/api/mrp/design-books/${bookCode}/sections/${encodeURIComponent(sectionCode)}/url`)
   const data = await jsonOrThrow(resp)

@@ -1479,6 +1479,93 @@ def verify_quantities(supabase, template_project_id: str) -> list[dict]:
     return mismatches
 
 
+def sync_quantities_from_bom(supabase, template_project_id: str) -> dict:
+    """Update mrp_project_parts quantities to match BOM rollup.
+
+    Returns {"updated": [...], "unchanged": int} with list of item_numbers fixed.
+    """
+    # Get current project parts and their quantities
+    parts = (
+        supabase.table("mrp_project_parts")
+        .select("id, item_id, quantity, items(item_number)")
+        .eq("project_id", template_project_id)
+        .execute()
+    )
+    proj_qty, num_of, part_id_of = {}, {}, {}
+    for row in parts.data or []:
+        proj_qty[row["item_id"]] = row["quantity"]
+        num_of[row["item_id"]] = (row.get("items") or {}).get("item_number", row["item_id"])
+        part_id_of[row["item_id"]] = row["id"]
+
+    project = (
+        supabase.table("mrp_projects").select("top_assembly_id").eq("id", template_project_id).single().execute()
+    )
+    top_id = (project.data or {}).get("top_assembly_id")
+    if not top_id or top_id not in proj_qty:
+        return {"updated": [], "unchanged": len(proj_qty)}
+
+    # Build BOM parent map
+    item_ids = list(proj_qty.keys())
+    parents: dict[str, list] = {}
+    for chunk in _chunks(item_ids, 50):
+        bom = (
+            supabase.table("bom")
+            .select("parent_item_id, child_item_id, quantity")
+            .in_("parent_item_id", chunk)
+            .execute()
+        )
+        for row in bom.data or []:
+            if row["parent_item_id"] in proj_qty and row["child_item_id"] in proj_qty:
+                parents.setdefault(row["child_item_id"], []).append(
+                    {"parent": row["parent_item_id"], "qty": row["quantity"]}
+                )
+
+    # Memoized usage calculation
+    memo: dict[str, int] = {}
+
+    def usage(item_id: str, stack: set) -> int:
+        if item_id == top_id:
+            return proj_qty.get(top_id) or 1
+        if item_id in memo:
+            return memo[item_id]
+        if item_id in stack:
+            return 0
+        stack.add(item_id)
+        total = 0
+        for p in parents.get(item_id, []):
+            total += usage(p["parent"], stack) * (p["qty"] or 0)
+        stack.discard(item_id)
+        memo[item_id] = total
+        return total
+
+    # Find and fix mismatches
+    updated = []
+    for item_id in proj_qty:
+        if item_id == top_id:
+            continue
+        # Skip zz* reference items
+        if str(num_of.get(item_id, "")).lower().startswith("zz"):
+            continue
+        expected = usage(item_id, set())
+        if expected == 0:
+            continue  # unreachable from top
+        if proj_qty[item_id] != expected:
+            # Update the quantity
+            part_row_id = part_id_of.get(item_id)
+            if part_row_id:
+                supabase.table("mrp_project_parts").update(
+                    {"quantity": expected}
+                ).eq("id", part_row_id).execute()
+                updated.append({
+                    "item_number": num_of[item_id],
+                    "old_qty": proj_qty[item_id],
+                    "new_qty": expected,
+                })
+                logger.info(f"Synced qty for {num_of[item_id]}: {proj_qty[item_id]} -> {expected}")
+
+    return {"updated": updated, "unchanged": len(proj_qty) - len(updated)}
+
+
 # ============================================================================
 # Manifest export
 # ============================================================================
@@ -1645,6 +1732,24 @@ def _diff_summary(diff: dict) -> dict:
 # ============================================================================
 # Entry points
 # ============================================================================
+
+def sync_book_quantities(book_code: str) -> dict:
+    """Update template project quantities to match BOM rollup.
+
+    Call this before check/update to auto-fix quantity mismatches.
+    Returns {"updated": [...], "unchanged": int, "book_code": str}.
+    """
+    supabase = get_supabase_admin()
+    book = _load_book(supabase, book_code)
+    if book is None:
+        raise BookNotFound(book_code)
+    template_id = book.get("template_project_id")
+    if not template_id:
+        return {"updated": [], "unchanged": 0, "book_code": book_code, "error": "No template project"}
+    result = sync_quantities_from_bom(supabase, template_id)
+    result["book_code"] = book_code
+    return result
+
 
 def check_master_book(book_code: str, payload: dict) -> dict:
     """Dry run: hash + diff + reasons. Zero downloads, zero writes."""
