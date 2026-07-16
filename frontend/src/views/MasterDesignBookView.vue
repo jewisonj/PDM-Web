@@ -21,6 +21,7 @@ import {
   getSectionUrl,
   getNoticeUrl,
   downloadFullBook,
+  downloadPurchaseList,
   type BookDetail,
   type BookSectionRow,
   type CheckResult,
@@ -48,6 +49,7 @@ const newTitle = ref(
 const checking = ref(false)
 const updating = ref(false)
 const buildingFull = ref(false)
+const downloadingList = ref(false)
 const showModal = ref(false)
 const pendingDiff = ref<CheckResult | null>(null)
 const pendingPayload = ref<DesignBookPayload | null>(null)
@@ -233,6 +235,20 @@ async function fullPdf() {
     buildingFull.value = false
   }
 }
+
+async function purchaseListCsv() {
+  if (downloadingList.value) return
+  downloadingList.value = true
+  error.value = ''
+  try {
+    const info = await downloadPurchaseList(bookCode)
+    success.value = `Purchase list downloaded — ${info.items} items`
+  } catch (e: any) {
+    error.value = e?.message || 'Purchase list failed'
+  } finally {
+    downloadingList.value = false
+  }
+}
 </script>
 
 <template>
@@ -262,6 +278,10 @@ async function fullPdf() {
         </button>
         <button class="secondary-btn" :disabled="!latestNotice" @click="downloadNotice">
           <i class="pi pi-history"></i> Change Notice
+        </button>
+        <button class="secondary-btn" :disabled="downloadingList || isFirstGen" @click="purchaseListCsv">
+          <i :class="downloadingList ? 'pi pi-spin pi-spinner' : 'pi pi-list'"></i>
+          {{ downloadingList ? 'Downloading…' : 'Purchase List' }}
         </button>
       </div>
     </header>

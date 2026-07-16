@@ -2220,3 +2220,67 @@ def get_change_notice_url(book_code: str, to_rev: int) -> dict:
     signed = supabase.storage.from_(BUCKET).create_signed_url(row["notice_storage_path"], 3600)
     url = signed.get("signedURL") or signed.get("signedUrl")
     return {"url": url, "from_rev": row["from_rev"], "to_rev": row["to_rev"], "expires_in": 3600}
+
+
+def get_purchase_list_csv(book_code: str) -> dict:
+    """Generate a CSV of purchased items from the spine's buyList.
+
+    Returns all mmc/spn items and vendor bundles in a format ready for ordering.
+    """
+    import csv
+
+    supabase = get_supabase_admin()
+    book = _load_book(supabase, book_code)
+    if book is None:
+        raise BookNotFound(book_code)
+
+    sections = _load_sections(supabase, book["id"])
+    spine = next((s for s in sections if s["section_code"] == "00-SPINE" and s["status"] == "current"), None)
+    if spine is None:
+        raise BookNotFound(f"{book_code}/00-SPINE (no spine section)")
+
+    source = spine.get("source") or {}
+    payload = source.get("payload") or {}
+    buy_list = payload.get("buyList") or []
+    bundles = payload.get("bundles") or []
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header row
+    writer.writerow(["Part #", "Source", "Description", "Qty", "Long Lead", "Type", "Ordered", "Received"])
+
+    # Bundles first (ordered as a single line item)
+    for b in bundles:
+        writer.writerow([
+            b.get("kit_number", ""),
+            b.get("vendor", ""),
+            f"{b.get('kit_name', '')} ({b.get('partCount', 0)} parts)",
+            1,
+            "",
+            "BUNDLE",
+            "",
+            "",
+        ])
+
+    # Individual purchased items
+    for item in buy_list:
+        writer.writerow([
+            item.get("displayNumber", ""),
+            _ascii(item.get("source", "")),
+            _ascii(item.get("name", "")),
+            item.get("qty", 1),
+            "YES" if item.get("longLead") else "",
+            "PART",
+            "",
+            "",
+        ])
+
+    csv_content = output.getvalue()
+    item_count = len(buy_list) + len(bundles)
+
+    return {
+        "csv": csv_content,
+        "book_rev": book["book_rev"],
+        "item_count": item_count,
+    }

@@ -329,3 +329,23 @@ export async function downloadFullBook(bookCode: string): Promise<{ pages: strin
     sections: resp.headers.get('X-Sections'),
   }
 }
+
+/** Download purchase list CSV (bundles + mmc/spn items). */
+export async function downloadPurchaseList(bookCode: string): Promise<{ items: number }> {
+  const resp = await fetch(`/api/mrp/design-books/${bookCode}/purchase-list`)
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }))
+    throw new Error(typeof err.detail === 'string' ? err.detail : `HTTP ${resp.status}`)
+  }
+  const blob = await resp.blob()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  const dispo = resp.headers.get('Content-Disposition') || ''
+  const m = dispo.match(/filename="([^"]+)"/)
+  a.download = m?.[1] || `${bookCode}-purchase-list.csv`
+  a.click()
+  URL.revokeObjectURL(a.href)
+  return {
+    items: parseInt(resp.headers.get('X-Items') || '0', 10),
+  }
+}
