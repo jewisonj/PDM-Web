@@ -216,7 +216,7 @@ export async function buildMasterModel(templateProjectCode: string): Promise<Mas
 
 export function toPayload(
   master: MasterDesignBook,
-  opts: { title?: string; create: boolean; expectedBookRev: number | null; rebaseline?: boolean }
+  opts: { title?: string; create: boolean; expectedBookRev: number | null; rebaseline?: boolean; allowQtyMismatch?: boolean }
 ): DesignBookPayload {
   return {
     meta: {
@@ -227,7 +227,7 @@ export function toPayload(
       rebaseline: opts.rebaseline ?? false,
       // ALWAYS sent when the book exists — concurrent updates must 409, not race
       expected_book_rev: opts.expectedBookRev,
-      allow_qty_mismatch: false,
+      allow_qty_mismatch: opts.allowQtyMismatch ?? false,
     },
     sections: master.sections,
   }

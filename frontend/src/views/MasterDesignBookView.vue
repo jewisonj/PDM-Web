@@ -50,6 +50,7 @@ const checking = ref(false)
 const updating = ref(false)
 const buildingFull = ref(false)
 const downloadingList = ref(false)
+const allowQtyMismatch = ref(false)
 const showModal = ref(false)
 const pendingDiff = ref<CheckResult | null>(null)
 const pendingPayload = ref<DesignBookPayload | null>(null)
@@ -150,17 +151,18 @@ async function checkAndUpdate() {
   success.value = ''
   try {
     const master = await buildMasterModel(templateProjectCode.value)
-    if (!master.qtyCheck.ok) {
+    if (!master.qtyCheck.ok && !allowQtyMismatch.value) {
       const list = master.qtyCheck.mismatches
         .slice(0, 6)
         .map(m => `${m.item_number}: flat ${m.project_qty} vs BOM ${m.bom_rollup_qty}`)
         .join('; ')
-      throw new Error(`Template quantities do not match the BOM rollup — ${list}`)
+      throw new Error(`Template quantities do not match the BOM rollup — ${list}. Enable "Allow qty mismatch" to override.`)
     }
     const payload = toPayload(master, {
       title: newTitle.value,
       create: isFirstGen.value && !book.value,
       expectedBookRev: book.value ? book.value.book_rev : null,
+      allowQtyMismatch: allowQtyMismatch.value,
     })
     pendingDiff.value = await checkDesignBook(bookCode, payload)
     pendingPayload.value = payload
@@ -263,6 +265,10 @@ async function purchaseListCsv() {
         <span v-if="book" class="rev-badge">REV {{ book.book_rev }}</span>
       </div>
       <div class="header-actions">
+        <label class="qty-override" title="Bypass quantity mismatch check (use when BOM differs intentionally)">
+          <input type="checkbox" v-model="allowQtyMismatch" />
+          Allow qty mismatch
+        </label>
         <button
           class="primary-btn"
           :disabled="checking || updating || (isFirstGen && !templateProjectCode.trim())"
@@ -480,7 +486,27 @@ async function purchaseListCsv() {
 
 .header-actions {
   display: flex;
+  align-items: center;
   gap: 12px;
+}
+
+.qty-override {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 6px 10px;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  background: #0f172a;
+}
+.qty-override:hover {
+  border-color: #4b5563;
+}
+.qty-override input {
+  cursor: pointer;
 }
 
 .mono { font-family: 'Consolas', 'Monaco', monospace; }
