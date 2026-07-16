@@ -132,6 +132,12 @@ Thumbs.db
 ~*
 
 ########################
+# Export/output directories
+########################
+STP_Export/
+files/temp/
+
+########################
 # Future Web App (Vue/FastAPI)
 ########################
 frontend/node_modules/
