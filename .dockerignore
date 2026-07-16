@@ -8,10 +8,18 @@ Documentation/
 !README.md
 
 # Legacy code (not needed for deployment)
+Legacy/
 PDM_PowerShell/
 PDM_WebServer/
 PDM_Vault/
 MRP_System/
+
+# Large directories (not needed for deployment)
+.claude/
+STP_Export/
+Local_Creo_Files/
+FreeCAD/
+STP_Tubes/
 
 # Worker (separate deployment)
 worker/
