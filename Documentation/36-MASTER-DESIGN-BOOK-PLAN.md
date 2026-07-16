@@ -195,7 +195,9 @@ inputs → identical descriptors.
   rows on the BuildBook output; currently only a count), MASTER CHECKLIST D1..Dn
   (packages + kit sequence steps + milestone bands, day-break rules, SEE column w/
   section codes), TOC (code/rev/title/pages/prints/D-days). Checklist rows must map
-  1:1 to Section I/II booklets (render-time assertion).
+  1:1 to Section I/II booklets (render-time assertion). The BUY LIST data (bundles +
+  individual purchased items) is stored in the spine section's `source.payload` and
+  can be exported as CSV via the `/purchase-list` endpoint (see §7.1).
 
 ### Full merged book (POST /full)
 **Byte-concatenation of the CURRENT stored section PDFs — never re-rendered** (a
@@ -308,11 +310,72 @@ routing/bom have NO updated_at columns):
 | `POST .../update` | the algorithm in 4.3; body = frontend-computed `{meta, sections}` |
 | `POST .../full` | merged book (byte-concat + bookmarks), streamed plain Response |
 | `GET .../sections/{code}/url` | signed URL (frontend may also self-sign via bucket read policy) |
+| `GET .../purchase-list` | CSV download of buyList (purchased items + vendor bundles) for ordering |
 
 Frontend computes the book JSON (`masterDesignBook()` / `masterSections()` in
 buildBook.ts) and POSTs it — same flow as build-book/section-prints; keeps buildBook.ts
 the single source of truth (the STATION_ABBREV drift proves Python ports drift).
 All PDF responses: plain `Response`, never `StreamingResponse(BytesIO)`.
+
+### 7.1 Purchase List CSV Export
+
+**Feature Added:** 2026-07-16
+
+The Master Design Book includes a **Purchase List CSV download** feature that extracts the complete bill of purchased items from the spine section's `buyList` payload. This provides a single-click export for procurement.
+
+**Endpoint:** `GET /api/mrp/design-books/{book_code}/purchase-list`
+
+**Returns:** CSV file with columns:
+- **Part #** — Display number (e.g., `McMaster 1234-567`)
+- **Source** — Vendor/supplier name
+- **Description** — Item name/description
+- **Qty** — Total quantity needed for one spa
+- **Long Lead** — "YES" if flagged as long lead time item
+- **Type** — `BUNDLE` for vendor kits, `PART` for individual purchased items
+- **Ordered** — Blank checkbox column for tracking
+- **Received** — Blank checkbox column for tracking
+
+**Data Source:** Reads from the `00-SPINE` section's stored `source.payload`:
+- `buyList` array — Individual mmc/spn purchased items
+- `bundles` array — Vendor kit bundles (e.g., full spa kit from vendor)
+
+**Filename Format:** `{book_code}-purchase-list-rev{N}.csv` (e.g., `spa-standard-purchase-list-rev004.csv`)
+
+**Implementation:**
+- **Backend:** `backend/app/services/master_design_book.py::get_purchase_list_csv()`
+  - Extracts `buyList` and `bundles` from spine section payload
+  - Bundles listed first (Type: BUNDLE) — ordered as single line items
+  - Individual parts follow (Type: PART) — mmc/spn items
+  - Applies `_ascii()` sanitization to vendor names and descriptions
+  - Returns CSV content + book rev + item count
+- **Frontend:** `frontend/src/services/designBook.ts::downloadPurchaseList()`
+  - Fetches CSV, triggers browser download
+  - Extracts filename from Content-Disposition header
+  - Returns item count from X-Items response header
+- **UI:** `frontend/src/views/MasterDesignBookView.vue`
+  - "Purchase List" button in header action bar
+  - Disabled for first-generation books (rev 0, no spine section yet)
+  - Shows spinner during download
+  - Success toast shows item count
+
+**Use Case:** Jack can download the purchase list CSV and send it to vendors or use it as a procurement checklist. The CSV includes blank "Ordered" and "Received" columns for manual tracking.
+
+**Related Change:** The spine section title was updated from "MASTER CHECKLIST + TOC" to "CHECKLIST + BUY LIST + TOC" to reflect that the buy list is part of the spine section content.
+
+**Files Changed:**
+- `backend/app/routes/design_books.py` — Added `GET /{book_code}/purchase-list` endpoint
+- `backend/app/services/master_design_book.py` — Added `get_purchase_list_csv()` function
+- `frontend/src/services/designBook.ts` — Added `downloadPurchaseList()` service function
+- `frontend/src/utils/masterDesignBook.ts` — Updated spine section title to "CHECKLIST + BUY LIST + TOC"
+- `frontend/src/views/MasterDesignBookView.vue` — Added "Purchase List" button and `purchaseListCsv()` handler
+
+**CSV Format Example:**
+```csv
+Part #,Source,Description,Qty,Long Lead,Type,Ordered,Received
+CSA00010-KIT,Acme Vendor,Standard Spa Kit (145 parts),1,,BUNDLE,,
+McMaster 1234-567,McMaster-Carr,Hex Bolt 1/4-20 x 1",24,,PART,,
+SPN4567,Supplier XYZ,Custom Bracket Assembly,2,YES,PART,,
+```
 
 ## 8. UI — MasterDesignBookView at /mrp/design-book/:bookCode
 
@@ -320,8 +383,8 @@ Dedicated view (dashboard slideout too narrow; MrpBuildBookView is an opposite
 lifecycle). Dark theme per style.md; nav button on MRP dashboard header.
 
 - Header: title, book rev badge, product/template meta; action bar: **Check for
-  Changes** (dry run) / **Update Book** (opens diff modal) / **Full PDF** / **Change
-  Notice**.
+  Changes** (dry run) / **Update Book** (opens diff modal) / **Full PDF** / **Purchase
+  List** / **Change Notice**.
 - Stats row: book rev, sections, last updated, out-of-date count (amber when > 0).
 - Section table grouped (Spine / I Work Packages / II Assemblies / III Reference):
   code (mono), title, rev, pages, status chip + visible reason sub-line, updated,
