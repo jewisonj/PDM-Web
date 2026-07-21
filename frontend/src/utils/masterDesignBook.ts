@@ -6,7 +6,7 @@
  * hashes, diffs, and renders into swap-able booklet PDFs:
  *
  *   00-SPINE        cover + buy list + master checklist (D1..Dn) + TOC data
- *   I-{ABBREV}-{n}  one per work package  (identity = station_code + occurrence)
+ *   I-{ABBREV}      one per station/process (identity = station_code)
  *   II-{ITEM}       one per assembly kit  (identity = item_number)
  *   II-REF          controlled design-reference documents (csd items)
  *   III-00          general reference blank template
@@ -23,7 +23,7 @@
  *    tracker's gate exemption — buildTracker.ts colState/makePartRow).
  *  - STABLE CROSS-REFS: package ids (PKG 04) and assembly rids (A01) are
  *    display ordinals that reshuffle; every cross-reference in descriptor
- *    payloads is translated to section codes (I-SAW-1 / II-CSA00020), and kit
+ *    payloads is translated to section codes (I-SAW / II-CSA00020), and kit
  *    part row ids are kit-local (P01...) rather than the tracker's global F##.
  */
 
@@ -439,19 +439,11 @@ export function masterSections(
   )
 
   // ---- section codes -------------------------------------------------------
-  // Work packages: I-{ABBREV}-{occurrence}, occurrence per station by day order.
-  // (day, station) grouping guarantees at most one package per station per day,
-  // so the occurrence index is total and deterministic.
-  const pkgsOrdered = [...book.packages].sort((a, b) => a.day - b.day || a.seq - b.seq)
-  const occCount = new Map<string, number>()
+  // Work packages: I-{ABBREV} — one section per station (all days consolidated).
+  // Parts grouped by station, not by day — daily scheduling tracked externally.
   const pkgCode = new Map<string, string>() // BookPackage.id -> section code
-  const pkgOccurrence = new Map<string, number>()
-  for (const p of pkgsOrdered) {
-    const stationCode = stationCodeOf.get(p.stationName) ?? p.stationAbbrev
-    const occ = (occCount.get(stationCode) ?? 0) + 1
-    occCount.set(stationCode, occ)
-    pkgCode.set(p.id, `I-${p.stationAbbrev}-${occ}`)
-    pkgOccurrence.set(p.id, occ)
+  for (const p of book.packages) {
+    pkgCode.set(p.id, `I-${p.stationAbbrev}`)
   }
 
   // Assemblies: II-{ITEM_NUMBER}; rid (A01) is a display ordinal only.
@@ -461,10 +453,10 @@ export function masterSections(
 
   const sections: SectionDescriptor[] = []
 
-  // ---- Section I: one descriptor per work package ---------------------------
+  // ---- Section I: one descriptor per work package (one per station) ---------
   const bundleByNumber = new Map(book.bundles.map(b => [b.kit_number, b]))
   let sort = 100
-  for (const p of pkgsOrdered) {
+  for (const p of book.packages) {
     const code = pkgCode.get(p.id)!
     const stationCode = stationCodeOf.get(p.stationName) ?? p.stationAbbrev
     const printItems: SectionPrintItem[] = []
@@ -495,12 +487,9 @@ export function masterSections(
       kind: 'work_package',
       title: p.stationName.toUpperCase(),
       sort_order: sort,
-      identity: { station_code: stationCode, occurrence: pkgOccurrence.get(p.id)! },
-      // day is printed on the header band (and must rev on a move); the global
-      // build-order ordinal (p.seq) is NOT printed in the master book — the header
-      // shows the stable section code (I-SAW-1), so hashing seq would phantom-rev
-      // every downstream booklet on any resequence. Order lives in the spine checklist.
-      display: { day: p.day },
+      identity: { station_code: stationCode },  // one section per station, no occurrence
+      // No day field - scheduling tracked externally on tracking sheet
+      display: null,
       payload: {
         stationName: p.stationName,
         stationAbbrev: p.stationAbbrev,

@@ -305,7 +305,7 @@ export function buildBook(inp: BookInputs): BuildBook {
 
   const printSet = new Set(inp.printItemIds || [])
 
-  // ---- work packages: part tasks grouped by (start_day, station) ------------
+  // ---- work packages: one per station (all days consolidated) ----------------
   // secondary ops (deburr/inspection) are folded into their primary operation
   const isSecondary = (stationId: string) =>
     SECONDARY_STATIONS.has(wsById.get(stationId)?.station_name || '')
@@ -314,24 +314,23 @@ export function buildBook(inp: BookInputs): BuildBook {
   )
   const pkgGroups = new Map<string, ScheduledTask[]>()
   for (const t of partTasks) {
-    const key = `${t.start_day}|${t.station_id}`
+    const key = t.station_id  // group by station only, not day
     if (!pkgGroups.has(key)) pkgGroups.set(key, [])
     pkgGroups.get(key)!.push(t)
   }
 
+  // Sort by station sort order only (no day dimension)
   const groupEntries = [...pkgGroups.entries()].sort((a, b) => {
-    const [dayA, stA] = a[0].split('|') as [string, string]
-    const [dayB, stB] = b[0].split('|') as [string, string]
-    return Number(dayA) - Number(dayB) || sortOrderOf(stA) - sortOrderOf(stB)
+    return sortOrderOf(a[0]) - sortOrderOf(b[0])
   })
 
   const packages: BookPackage[] = []
   const pkgOfTask = new Map<string, BookPackage>() // task id -> package
   let seq = 0
-  for (const [key, tasks] of groupEntries) {
+  for (const [stationId, tasks] of groupEntries) {
     seq++
-    const [dayStr, stationId] = key.split('|') as [string, string]
-    const day = Number(dayStr)
+    // Day is now the earliest day any task at this station starts
+    const day = Math.min(...tasks.map(t => t.start_day))
     const ws = wsById.get(stationId)
     const stationName = ws?.station_name || tasks[0]?.station_code || '?'
     tasks.sort((a, b) => a.item_number.localeCompare(b.item_number))

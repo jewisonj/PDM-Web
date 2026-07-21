@@ -329,10 +329,10 @@ async function saveEdit() {
 
     // Update local state
     const idx = images.value.findIndex(i => i.id === editingImage.value!.id)
-    if (idx >= 0) {
+    if (idx >= 0 && images.value[idx]) {
       const updated = await res.json()
       // Preserve signed URL
-      updated._signedUrl = images.value[idx]._signedUrl
+      updated._signedUrl = images.value[idx]!._signedUrl
       // Update category reference
       updated.category = categories.value.find(c => c.id === updated.category_id) || null
       images.value[idx] = updated
