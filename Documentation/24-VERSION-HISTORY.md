@@ -7,9 +7,61 @@
 
 ## Current Version
 
-### v3.9.4 (2026-07-18) -- Part Number Generator Improvements
+### v3.9.6 (2026-07-21) -- Master Design Book Work Package Consolidation
 
 **Status:** Current Production Release
+
+**Summary:** Simplified Master Design Book Section I work packages from "one per (day, station)" to "one per station" (all parts consolidated). This removes the day dimension from section identity, creating stable section codes that don't re-number when scheduling changes.
+
+#### Design Change
+
+**Work Package Consolidation: One Per Station**
+
+**Before:**
+- Packages grouped by `(day, station_id)` — e.g., `I-SAW-1` (day 0), `I-SAW-2` (day 1)
+- Section identity: `{ station_code, occurrence }`
+- Multiple sections per station based on scheduled days
+
+**After:**
+- Packages grouped by `station_id` only — e.g., `I-SAW` (all days consolidated)
+- Section identity: `{ station_code }` (occurrence removed)
+- One section per station, all parts included regardless of day
+
+**Rationale:**
+
+Days aren't finalized yet — detailed daily scheduling is tracked on a separate tracking sheet, not in the Master Design Book. The Design Book should show **WHAT parts** go through each station (the canonical build process), not **WHEN** (the schedule).
+
+Key benefits:
+1. **Stable section codes** — `I-SAW` doesn't become `I-SAW-1` and `I-SAW-2` when scheduling changes
+2. **Simpler structure** — fewer sections, less pagination, easier to navigate
+3. **No phantom re-numbering** — schedule shifts don't trigger section renaming/retiring
+4. **Matches user mental model** — "saw package" vs "first saw package on day 0"
+
+#### Migration Impact
+
+This is a **breaking change** to section identity. Old sections with `{ station_code, occurrence }` will NOT match new sections with `{ station_code }` only:
+- Old sections (e.g., `I-SAW-1`, `I-SAW-2`) will be marked **RETIRED**
+- New consolidated sections (e.g., `I-SAW`) will be marked **NEW** at rev A
+- Change notice will show: `REMOVED I-SAW-1` / `REMOVED I-SAW-2` / `NEW I-SAW`
+
+This is a one-time migration and is acceptable as a design change (not a bug). Future updates will correctly diff the consolidated sections.
+
+#### Files Changed
+
+**Frontend:**
+- `frontend/src/utils/buildBook.ts` (lines 308-334) — Changed grouping from `${t.start_day}|${t.station_id}` to `${t.station_id}`; removed day-based sorting
+- `frontend/src/utils/masterDesignBook.ts` (lines 441-510) — Removed occurrence counting logic; changed section identity to `{ station_code }` only; removed day display
+
+#### Documentation
+
+- `Documentation/36-MASTER-DESIGN-BOOK-PLAN.md` — Added §12.1 (Implementation History & Design Changes), updated §3 (Section identity table)
+- `Documentation/24-VERSION-HISTORY.md` — This entry
+
+---
+
+### v3.9.4 (2026-07-18) -- Part Number Generator Improvements
+
+**Status:** Released
 
 **Summary:** Fixed Part Number Generator to fill gaps in part number sequences instead of always incrementing from the highest number, and persisted copied numbers server-side to survive browser refresh.
 

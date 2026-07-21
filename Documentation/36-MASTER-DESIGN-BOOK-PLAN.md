@@ -52,20 +52,22 @@ Diffing always matches on **identity**, never on the printed code.
 | kind | identity (match key) | printed section_code | filename |
 |---|---|---|---|
 | spine | singleton | `00-SPINE` | `00-spine.pdf` |
-| work_package | `{station_code, occurrence}` | `I-{ABBREV}-{n}` e.g. `I-SAW-1` | `i-saw-1.pdf` |
+| work_package | `{station_code}` | `I-{ABBREV}` e.g. `I-SAW` | `i-saw.pdf` |
 | assembly | `item_number` | `II-{ITEM}` e.g. `II-CSA00020` | `ii-csa00020.pdf` |
 | design_reference | singleton | `II-REF` | `ii-ref.pdf` |
 | general_reference | `III-{nn}` | `III-00` (later `III-01+`) | `iii-00-general-reference.pdf` |
 
-- `occurrence` = 1-based index of that station's packages ordered by day (the
-  `(day, station)` grouping in buildBook.ts:289 guarantees ≤1 package per station per
-  day, so this is total and deterministic).
-- **Why not `I-01..I-NN` ordinals or `(day,station)` keys:** an inserted package or a
-  one-day slip would renumber/retire everything downstream — change notices degenerate
-  to "replace all of Section I". Station+occurrence survives day shifts (rev bump,
-  reason `MOVED D2->D3`), splits/merges (clean REPLACE/ADD/REMOVE rows), and matches
-  the holder's mental model ("second saw booklet"). ⚠ JACK: printed-code style
-  confirmation.
+- **Work package identity changed (2026-07-21):** Originally `{station_code, occurrence}` where
+  `occurrence` = 1-based index of packages per station ordered by day. Now simplified to
+  `{station_code}` only — one consolidated section per station, all days combined. Daily
+  scheduling is tracked externally on a tracking sheet, not in section identity. See §12.1
+  for full rationale and migration impact.
+- **Why `{station_code}` identity:** Station-based identity is stable across schedule changes.
+  Daily scheduling is tracked on a separate tracking sheet (not finalized yet). The Master
+  Design Book shows **WHAT parts** go through each station (the canonical build process), not
+  **WHEN** (the schedule). Station-only identity prevents phantom re-numbering when days shift,
+  simplifies the section structure, and matches the user's mental model ("saw package" vs
+  "first saw package on day 0").
 - **Why `II-{ITEM}` not `II-A01`:** the DFS `rid` (A01) reshuffles on any BOM edit;
   printing it as identity would force reprints of unchanged kits. The `A{nn}` binder
   ordinal appears only in the spine TOC (which legitimately revs).
@@ -567,3 +569,132 @@ backend/app/routes/design_books.py)
 - `mrp_project_parts` flat qty can mismatch BOM rollup — server-side rollup gate.
 - Raw mmc/spn numbers never print — purchasedDisplay()/purchasedSource().
 - SECONDARY_STATIONS (Deburr/Inspection): no packages, but present in kit sequences.
+
+---
+
+## 12. Implementation History & Design Changes
+
+### 12.1 Work Package Consolidation: One Per Station (2026-07-21)
+
+**Change:** Simplified Section I work packages from "one per (day, station)" to "one per station" (all parts consolidated).
+
+**Before:**
+- Work packages grouped by `(day, station_id)` — e.g., `I-SAW-1` (day 0), `I-SAW-2` (day 1), `I-TIG-1` (day 0), `I-TIG-2` (day 1)
+- Section identity: `{ station_code, occurrence }` where `occurrence` = 1-based index of that station's packages ordered by day
+- Display metadata: `{ day: 0 }`
+- Section code format: `I-{ABBREV}-{occurrence}` (e.g., `I-SAW-1`, `I-SAW-2`)
+
+**After:**
+- Work packages grouped by `station_id` only — e.g., `I-SAW`, `I-TIG` (all parts from all days consolidated into one section per station)
+- Section identity: `{ station_code }` (occurrence removed)
+- Display metadata: `null` (no day field)
+- Section code format: `I-{ABBREV}` (e.g., `I-SAW`, `I-TIG`)
+
+**Rationale:**
+
+Days aren't finalized yet — detailed daily scheduling is tracked on a separate tracking sheet, not in the Master Design Book. The Design Book should show **WHAT parts** go through each station (the canonical build process), not **WHEN** (the schedule).
+
+Key benefits:
+1. **Stable section codes** — `I-SAW` doesn't become `I-SAW-1` and `I-SAW-2` when scheduling changes
+2. **Simpler structure** — fewer sections, less pagination, easier to navigate
+3. **No phantom re-numbering** — schedule shifts don't trigger section renaming/retiring
+4. **Matches user mental model** — "saw package" vs "first saw package on day 0"
+
+**Impact on Existing Design Books:**
+
+This is a **breaking change** to section identity. Old sections with `{ station_code, occurrence }` will NOT match new sections with `{ station_code }` only. As a result:
+- Old sections (e.g., `I-SAW-1`, `I-SAW-2`) will be marked **RETIRED**
+- New consolidated sections (e.g., `I-SAW`) will be marked **NEW** at rev A
+- Change notice will show: `REMOVED I-SAW-1` / `REMOVED I-SAW-2` / `NEW I-SAW`
+
+This is a **one-time migration** and is acceptable as a design change (not a bug). Future updates will correctly diff the consolidated sections.
+
+**Files Modified:**
+
+1. **`frontend/src/utils/buildBook.ts` (lines 308-334):**
+   - Changed grouping key from `${t.start_day}|${t.station_id}` to `${t.station_id}`
+   - Removed day-based sorting dimension (now sorts by station `sort_order` only)
+   - Added comment: "group by station only, not day"
+   - Package day calculation: `Math.min(...tasks.map(t => t.start_day))` (earliest day any task at this station starts)
+
+2. **`frontend/src/utils/masterDesignBook.ts` (lines 441-510):**
+   - **Removed occurrence counting logic entirely** (no longer needed)
+   - Changed section code from `I-${p.stationAbbrev}-${occ}` to `I-${p.stationAbbrev}`
+   - Changed section identity from `{ station_code, occurrence }` to `{ station_code }`
+   - Changed display from `{ day: p.day }` to `null`
+   - Added comments explaining "one section per station, no occurrence" and "scheduling tracked externally on tracking sheet"
+
+**Section Structure Comparison:**
+
+| Aspect | Before (Day-Based) | After (Station-Based) |
+|--------|--------------------|-----------------------|
+| **Section Code** | `I-SAW-1`, `I-SAW-2` | `I-SAW` |
+| **Identity (match key)** | `{station_code, occurrence}` | `{station_code}` |
+| **Display** | `{day: 0}` | `null` |
+| **Parts Included** | Only parts scheduled for that station on that day | All parts for that station, across all days |
+| **Grouping Logic** | `${t.start_day}|${t.station_id}` | `${t.station_id}` |
+| **Occurrence Field** | 1-based index per station (e.g., 1st saw pkg = `1`) | Not used |
+| **Day Field** | Specific scheduled day (0, 1, 2...) | Earliest day (metadata only, not in identity) |
+
+**Code Diff (buildBook.ts:308-334):**
+
+```typescript
+// OLD:
+const key = `${t.start_day}|${t.station_id}`  // group by day AND station
+
+const groupEntries = [...pkgGroups.entries()].sort((a, b) => {
+  const [dayA, stationA] = a[0].split('|')
+  const [dayB, stationB] = b[0].split('|')
+  const dayDiff = parseInt(dayA!) - parseInt(dayB!)
+  if (dayDiff !== 0) return dayDiff
+  return sortOrderOf(stationA!) - sortOrderOf(stationB!)
+})
+
+// NEW:
+const key = t.station_id  // group by station only, not day
+
+const groupEntries = [...pkgGroups.entries()].sort((a, b) => {
+  return sortOrderOf(a[0]) - sortOrderOf(b[0])
+})
+```
+
+**Code Diff (masterDesignBook.ts:441-510):**
+
+```typescript
+// OLD:
+const pkgCode = new Map<string, string>()
+const occurrences = new Map<string, number>()  // station_code -> next occurrence number
+for (const p of book.packages) {
+  const stationCode = stationCodeOf.get(p.stationName) ?? p.stationAbbrev
+  const occ = (occurrences.get(stationCode) ?? 0) + 1
+  occurrences.set(stationCode, occ)
+  pkgCode.set(p.id, `I-${p.stationAbbrev}-${occ}`)
+}
+
+sections.push({
+  section_code: code,
+  identity: { station_code: stationCode, occurrence: occ },
+  display: { day: p.day },
+  // ...
+})
+
+// NEW:
+const pkgCode = new Map<string, string>()
+for (const p of book.packages) {
+  pkgCode.set(p.id, `I-${p.stationAbbrev}`)
+}
+
+sections.push({
+  section_code: code,
+  identity: { station_code: stationCode },  // one section per station, no occurrence
+  display: null,  // No day field - scheduling tracked externally on tracking sheet
+  // ...
+})
+```
+
+**Related Documentation:**
+- Section 3 (Section identity & codes) — Updated to reflect new identity without occurrence
+- Section 4.5 (Determinism requirement) — Still applies (canonical sorting by station only)
+- Section 5 (Rendering rules) — No changes needed (day labels already used `D1..Dn` format)
+
+**Version:** First implemented in v3.9.6 (2026-07-21)
