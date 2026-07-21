@@ -1,7 +1,7 @@
 # PDM-Web Global TODO
 
-**Last Updated:** 2026-07-09
-**Current Version:** v3.9.2
+**Last Updated:** 2026-07-18
+**Current Version:** v3.9.4
 **Project Status:** Active Development / Production Use
 
 ---
@@ -14,7 +14,17 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 
 ---
 
-## Recently Completed (v3.3 - v3.9.1)
+## Recently Completed (v3.3 - v3.9.4)
+
+### v3.9.4 (2026-07-18) - Part Number Generator Improvements
+- [x] Fixed Part Number Generator to fill gaps instead of always incrementing from highest
+- [x] New `used_item_numbers` table tracks copied/reserved numbers server-side
+- [x] Numbers persist across browser refresh (no longer lost in memory)
+- [x] Auto-cleanup trigger removes entry when item created in PDM
+- [x] Backend endpoints: `GET /api/items/available-numbers/{prefix}`, `POST /api/items/mark-number-used`
+- [x] Frontend shows counts: items in PDM + reserved numbers per prefix
+- [x] Migration: `backend/migrations/2026-07-18_used_item_numbers.sql`
+- [x] Documentation: Updated `03-DATABASE-SCHEMA.md`, `24-VERSION-HISTORY.md`
 
 ### v3.9.1 (2026-07-07) - Build Book Section Print Sets, Document Items, Purchased Display
 - [x] New Build Book toolbar print-set dropdown (Reference / Work packages / Kits optgroups) + "Download prints" button

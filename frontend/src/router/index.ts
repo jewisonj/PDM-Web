@@ -107,9 +107,27 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/mrp/purchased-parts',
+      name: 'mrp-purchased-parts',
+      component: () => import('../views/PurchasedPartsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/mrp/settings',
       name: 'mrp-settings',
       component: () => import('../views/MrpCostSettingsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/mrp/design-book-images',
+      name: 'mrp-design-book-images',
+      component: () => import('../views/MrpDesignBookImagesView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/mrp/design-book/:bookCode/images',
+      name: 'mrp-design-book-images-for-book',
+      component: () => import('../views/MrpDesignBookImagesView.vue'),
       meta: { requiresAuth: true }
     },
     {

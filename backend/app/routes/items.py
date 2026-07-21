@@ -55,6 +55,143 @@ async def list_items(
     return items
 
 
+# =============================================================================
+# Part Number Generation Endpoints (must be before /{item_number} catch-all)
+# =============================================================================
+
+# Standard prefixes used in the system
+STANDARD_PREFIXES = ['csa', 'csp', 'hbl', 'sta', 'stp', 'xxa', 'xxp', 'wma', 'wmp']
+
+
+@router.get("/available-numbers/{prefix}")
+async def get_available_numbers(
+    prefix: str,
+    count: int = Query(50, ge=1, le=200, description="Number of available numbers to return")
+):
+    """
+    Get the next N available part numbers for a given prefix.
+
+    Finds gaps in the existing number sequence and returns the lowest
+    available numbers that are:
+    - Not already in the items table
+    - Not in the used_item_numbers table (previously copied but not yet created)
+
+    Numbers increment by 10 (e.g., 00010, 00020, 00030...).
+    """
+    import re
+    supabase = get_supabase_admin()
+    prefix_lower = prefix.lower()
+
+    if prefix_lower not in STANDARD_PREFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid prefix '{prefix}'. Must be one of: {', '.join(STANDARD_PREFIXES)}"
+        )
+
+    # Get all existing item numbers with this prefix
+    items_result = supabase.table("items") \
+        .select("item_number") \
+        .ilike("item_number", f"{prefix_lower}%") \
+        .execute()
+
+    existing_items = {item["item_number"] for item in (items_result.data or [])}
+
+    # Get all used (reserved) item numbers with this prefix
+    used_result = supabase.table("used_item_numbers") \
+        .select("item_number") \
+        .ilike("item_number", f"{prefix_lower}%") \
+        .execute()
+
+    used_items = {item["item_number"] for item in (used_result.data or [])}
+
+    # Combine into set of taken numbers
+    taken = existing_items | used_items
+
+    # Find the next `count` available numbers, starting from 10 and incrementing by 10
+    available = []
+    candidate = 10  # Start at 00010
+    max_iterations = 100000  # Safety limit to prevent infinite loop
+    iterations = 0
+
+    while len(available) < count and iterations < max_iterations:
+        # Format as lowercase prefix + 5-digit zero-padded number
+        item_number = f"{prefix_lower}{str(candidate).zfill(5)}"
+
+        if item_number not in taken:
+            available.append(item_number)
+
+        candidate += 10
+        iterations += 1
+
+    # Also return some metadata
+    highest_existing = max(
+        (int(item[3:]) for item in existing_items if item[3:].isdigit()),
+        default=0
+    )
+
+    return {
+        "prefix": prefix_lower,
+        "available": available,
+        "count": len(available),
+        "highest_existing": highest_existing,
+        "total_existing": len(existing_items),
+        "total_used": len(used_items)
+    }
+
+
+@router.post("/mark-number-used")
+async def mark_number_used(body: dict):
+    """
+    Mark a part number as used (copied from generator).
+
+    This prevents the number from appearing in future available-numbers queries
+    until either:
+    - The item is actually created (trigger auto-deletes from used_item_numbers)
+    - The number is manually released
+
+    Accepts: {"item_number": "csp00040"}
+    """
+    import re
+    supabase = get_supabase_admin()
+
+    item_number = body.get("item_number", "").lower()
+
+    if not item_number:
+        raise HTTPException(status_code=400, detail="item_number is required")
+
+    # Validate format (3 letters + 4-6 digits)
+    if not re.match(r"^[a-z]{3}\d{4,6}$", item_number):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid item_number format. Must be 3 letters + 4-6 digits (e.g., csp00040)"
+        )
+
+    # Check if it already exists in items table
+    existing = supabase.table("items") \
+        .select("item_number") \
+        .eq("item_number", item_number) \
+        .execute()
+
+    if existing.data:
+        # Already exists as a real item, no need to mark as used
+        return {"message": f"Item {item_number} already exists in PDM", "already_exists": True}
+
+    # Upsert into used_item_numbers (insert or ignore if exists)
+    try:
+        supabase.table("used_item_numbers") \
+            .upsert({"item_number": item_number}, on_conflict="item_number") \
+            .execute()
+    except Exception as e:
+        # If upsert fails (e.g., already exists), that's fine
+        pass
+
+    return {"message": f"Marked {item_number} as used", "item_number": item_number}
+
+
+# =============================================================================
+# Item CRUD Endpoints (catch-all routes must be after specific routes)
+# =============================================================================
+
 @router.get("/{item_number}", response_model=ItemWithFiles)
 async def get_item(item_number: str):
     """Get item by item_number with associated files."""

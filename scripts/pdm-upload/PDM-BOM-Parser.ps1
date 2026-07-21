@@ -403,6 +403,12 @@ function Parse-MLBOMFile {
     $assemblyStack = [System.Collections.ArrayList]@()
     $bomGroups = @{}
     $parentProps = @{}
+    # Track which assemblies we've already processed children for.
+    # When an assembly is used multiple times, Creo expands each instance
+    # with its full subtree. We only want to count children from the FIRST
+    # instance - subsequent instances have identical children that would
+    # incorrectly inflate quantities.
+    $processedAssemblies = @{}
 
     foreach ($item in $itemLines) {
         # Pop assemblies at same or deeper indent level
@@ -413,8 +419,20 @@ function Parse-MLBOMFile {
         # If there's a parent assembly on the stack, this item is its child
         if ($assemblyStack.Count -gt 0) {
             $parentNumber = $assemblyStack[$assemblyStack.Count - 1].item_number
+            $parentInstanceId = $assemblyStack[$assemblyStack.Count - 1].instance_id
 
-            if (-not $item.item_number.StartsWith("zzz")) {
+            # Skip if we've already processed children for this parent assembly
+            # (this is a subsequent instance of the same assembly)
+            if ($processedAssemblies.ContainsKey($parentNumber) -and
+                $processedAssemblies[$parentNumber] -ne $parentInstanceId) {
+                # This is a duplicate instance - skip its children
+            }
+            elseif (-not $item.item_number.StartsWith("zzz")) {
+                # Mark this assembly as processed (first instance)
+                if (-not $processedAssemblies.ContainsKey($parentNumber)) {
+                    $processedAssemblies[$parentNumber] = $parentInstanceId
+                }
+
                 if (-not $bomGroups.ContainsKey($parentNumber)) {
                     $bomGroups[$parentNumber] = @{}
                     $parentEntry = $assemblyStack[$assemblyStack.Count - 1]
@@ -448,11 +466,12 @@ function Parse-MLBOMFile {
             }
         }
 
-        # If this is an assembly, push onto the stack
+        # If this is an assembly, push onto the stack with a unique instance ID
         if ($item.is_assembly) {
             $assemblyStack.Add(@{
                 indent      = $item.indent
                 item_number = $item.item_number
+                instance_id = [guid]::NewGuid().ToString()  # Unique ID per instance
                 name        = $item.name
                 material    = $item.material
                 mass        = $item.mass

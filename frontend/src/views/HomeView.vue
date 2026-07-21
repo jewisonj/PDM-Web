@@ -124,6 +124,30 @@ const mrpTools = [
       'Inline editing',
       'Batch updates'
     ]
+  },
+  {
+    title: 'Purchased Parts',
+    icon: 'pi pi-shopping-cart',
+    description: 'Manage supplier information, pricing, and reference links for purchased parts.',
+    route: '/mrp/purchased-parts',
+    features: [
+      'Supplier name & part numbers',
+      'Unit pricing',
+      'Reference links (datasheets)',
+      'Flag any part as purchased'
+    ]
+  },
+  {
+    title: 'Design Book Images',
+    icon: 'pi pi-images',
+    description: 'Upload and manage images for design books including assembly photos, jig setups, and work diagrams.',
+    route: '/mrp/design-book-images',
+    features: [
+      'Photo uploads with captions',
+      'Category organization',
+      'Link to projects/items',
+      'Embed in Design Books'
+    ]
   }
 ]
 

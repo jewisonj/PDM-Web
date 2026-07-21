@@ -26,11 +26,13 @@ import io
 import json
 import logging
 import math
+import re
 from datetime import datetime, timezone
 
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
 from .supabase import get_supabase_admin
@@ -122,6 +124,167 @@ def next_rev(rev: str | None) -> str:
     if not rev:
         return "A"
     return _int_to_rev(_rev_to_int(rev) + 1)
+
+
+# ============================================================================
+# Design Book Images — fetch and render uploaded images
+# ============================================================================
+
+IMAGE_BUCKET = "design-book-images"
+
+# Cache for downloaded images (cleared per render session)
+_image_cache: dict[str, bytes] = {}
+
+
+def _fetch_design_book_images(supabase, project_id: str) -> dict[str, list[dict]]:
+    """Fetch all design book images for a project, organized by category name.
+
+    Returns:
+        dict mapping category name -> list of image records
+    """
+    if not project_id:
+        return {}
+
+    try:
+        # Get images linked directly to project
+        result = supabase.table("design_book_images").select(
+            "*, category:design_book_image_categories(id, name)"
+        ).eq("project_id", project_id).execute()
+
+        images = result.data or []
+
+        # Also get images linked to items in this project
+        items_result = supabase.table("items").select("id").eq("project_id", project_id).execute()
+        item_ids = [item["id"] for item in (items_result.data or [])]
+
+        for item_id in item_ids:
+            img_result = supabase.table("design_book_images").select(
+                "*, category:design_book_image_categories(id, name), item:items(item_number)"
+            ).eq("item_id", item_id).execute()
+            images.extend(img_result.data or [])
+
+        # Deduplicate by id
+        seen = set()
+        unique = []
+        for img in images:
+            if img["id"] not in seen:
+                seen.add(img["id"])
+                unique.append(img)
+
+        # Group by category
+        by_category: dict[str, list[dict]] = {}
+        for img in unique:
+            cat_name = img.get("category", {}).get("name") if img.get("category") else "Uncategorized"
+            if cat_name not in by_category:
+                by_category[cat_name] = []
+            by_category[cat_name].append(img)
+
+        return by_category
+    except Exception as e:
+        logger.warning(f"Failed to fetch design book images: {e}")
+        return {}
+
+
+def _download_image(supabase, file_path: str) -> bytes | None:
+    """Download image bytes from storage, with caching."""
+    if file_path in _image_cache:
+        return _image_cache[file_path]
+
+    try:
+        parts = file_path.split("/", 1)
+        if len(parts) == 2:
+            bucket, path = parts
+        else:
+            bucket = IMAGE_BUCKET
+            path = file_path
+
+        content = supabase.storage.from_(bucket).download(path)
+        _image_cache[file_path] = content
+        return content
+    except Exception as e:
+        logger.warning(f"Failed to download image {file_path}: {e}")
+        return None
+
+
+def _draw_image(c, img_bytes: bytes, x: float, y: float, max_w: float, max_h: float) -> float:
+    """Draw an image on the canvas, maintaining aspect ratio.
+
+    Args:
+        c: ReportLab canvas
+        img_bytes: Image file bytes
+        x, y: Bottom-left position
+        max_w, max_h: Maximum dimensions
+
+    Returns:
+        Actual height used
+    """
+    try:
+        img_reader = ImageReader(io.BytesIO(img_bytes))
+        iw, ih = img_reader.getSize()
+
+        # Scale to fit within bounds while maintaining aspect ratio
+        scale_w = max_w / iw
+        scale_h = max_h / ih
+        scale = min(scale_w, scale_h, 1.0)  # Don't upscale
+
+        draw_w = iw * scale
+        draw_h = ih * scale
+
+        c.drawImage(img_reader, x, y, width=draw_w, height=draw_h)
+        return draw_h
+    except Exception as e:
+        logger.warning(f"Failed to draw image: {e}")
+        return 0
+
+
+def _clear_image_cache():
+    """Clear the image cache between render sessions."""
+    global _image_cache
+    _image_cache = {}
+
+
+def _compute_image_hash(supabase, project_id: str) -> str:
+    """Compute a hash of all images for a project to detect changes.
+
+    Uses image IDs and updated_at timestamps to create a deterministic hash
+    that changes when images are added, removed, or modified.
+    """
+    if not project_id:
+        return ""
+
+    try:
+        # Get all images for the project
+        result = supabase.table("design_book_images").select(
+            "id, updated_at"
+        ).eq("project_id", project_id).order("id").execute()
+
+        images = result.data or []
+
+        # Also get images linked to items in this project
+        items_result = supabase.table("items").select("id").eq("project_id", project_id).execute()
+        item_ids = [item["id"] for item in (items_result.data or [])]
+
+        for item_id in item_ids:
+            img_result = supabase.table("design_book_images").select(
+                "id, updated_at"
+            ).eq("item_id", item_id).order("id").execute()
+            images.extend(img_result.data or [])
+
+        # Deduplicate and sort by id for determinism
+        seen = set()
+        unique = []
+        for img in images:
+            if img["id"] not in seen:
+                seen.add(img["id"])
+                unique.append(img)
+        unique.sort(key=lambda x: x["id"])
+
+        # Build hash input from sorted image ids and timestamps
+        hash_input = "|".join(f"{img['id']}:{img.get('updated_at', '')}" for img in unique)
+        return hashlib.sha256(hash_input.encode()).hexdigest()[:16]
+    except Exception as e:
+        logger.warning(f"Failed to compute image hash: {e}")
+        return ""
 
 
 # ============================================================================
@@ -678,7 +841,9 @@ def _finalize_section(writer: PdfWriter, book_code: str, book_rev: int, section_
 # ============================================================================
 
 def _missing_nums(prints: list[dict]) -> list[str]:
-    return [p["item_number"] for p in prints if p.get("missing")]
+    # CSP9#### and CSA9#### are plumbing/reference lines - always ignore missing prints
+    plumbing_re = re.compile(r'^(csp|csa)9\d+$', re.IGNORECASE)
+    return [p["item_number"] for p in prints if p.get("missing") and not plumbing_re.match(p["item_number"])]
 
 
 def _render_package_body(b: _Body, code: str, rev: str, d: dict, prints: list[dict]):
@@ -934,7 +1099,15 @@ def _render_ref_body(b: _Body, rev: str, d: dict, prints: list[dict]):
     b.y -= 40
 
 
-def _render_general_body(b: _Body, rev: str, d: dict):
+def _render_general_body(b: _Body, rev: str, d: dict,
+                         images: dict[str, list[dict]] | None = None,
+                         supabase=None):
+    """Render the general reference section with uploaded images.
+
+    Args:
+        images: dict mapping category name -> list of image records
+        supabase: Supabase client for downloading images
+    """
     payload = d.get("payload") or {}
     _header_band(b, "III-00   GENERAL REFERENCE", f"REV {rev}")
     c = b.c
@@ -943,6 +1116,7 @@ def _render_general_body(b: _Body, rev: str, d: dict):
     c.drawString(MARGIN, b.y - 8, "NOTES AND PHOTOS CAPTURED ON THE FLOOR. LATER SUBSECTIONS (III-01+) ADD INGESTED DOCUMENTS.")
     b.y -= 18
 
+    # Notes pages (blank lined pages for floor notes)
     for _ in range(int(payload.get("notesPages") or 6)):
         c.showPage()
         b.y = PAGE_H - MARGIN
@@ -958,7 +1132,72 @@ def _render_general_body(b: _Body, rev: str, d: dict):
             c.line(MARGIN, y, PAGE_W - MARGIN, y)
             y -= 24
 
-    for _ in range(int(payload.get("photoPages") or 4)):
+    # Collect all photos from various categories
+    photo_images = []
+    if images:
+        # Categories that should appear in the photo section
+        photo_categories = ["Assembly", "Jig Setup", "Tool Reference", "Quality Check", "Safety", "Work Diagram"]
+        for cat in photo_categories:
+            photo_images.extend(images.get(cat, []))
+
+    # Render uploaded photos first
+    if photo_images and supabase:
+        frame_w, frame_h, gutter = 260, 280, 12
+        idx = 0
+        while idx < len(photo_images):
+            c.showPage()
+            b.y = PAGE_H - MARGIN
+            _sec_title(b, "BUILD AREA PHOTOS")
+            top = b.y - 6
+
+            for row in range(2):
+                for col in range(2):
+                    if idx >= len(photo_images):
+                        # Draw empty frame for remaining slots
+                        x = MARGIN + col * (frame_w + gutter)
+                        y = top - row * (frame_h + 46) - frame_h
+                        c.setLineWidth(1)
+                        c.setStrokeColor(INK)
+                        c.rect(x, y, frame_w, frame_h, fill=0, stroke=1)
+                        c.setFont("Helvetica", 6.5)
+                        c.setFillColor(INK)
+                        c.drawString(x, y - 12, "PHOTO: ______________________________")
+                        c.drawString(x, y - 24, "NOTE:  ______________________________")
+                    else:
+                        img = photo_images[idx]
+                        x = MARGIN + col * (frame_w + gutter)
+                        y = top - row * (frame_h + 46) - frame_h
+
+                        # Draw frame
+                        c.setLineWidth(1)
+                        c.setStrokeColor(INK)
+                        c.rect(x, y, frame_w, frame_h, fill=0, stroke=1)
+
+                        # Try to download and draw the image
+                        img_bytes = _download_image(supabase, img.get("file_path", ""))
+                        if img_bytes:
+                            # Draw image inside frame with padding
+                            padding = 4
+                            _draw_image(c, img_bytes, x + padding, y + padding,
+                                       frame_w - 2 * padding, frame_h - 2 * padding)
+
+                        # Draw caption and notes below frame
+                        c.setFont("Helvetica", 6.5)
+                        c.setFillColor(INK)
+                        caption = _ascii(img.get("caption") or img.get("file_name") or "")[:50]
+                        notes = _ascii(img.get("notes") or "")[:50]
+                        c.drawString(x, y - 12, f"PHOTO: {caption}")
+                        c.drawString(x, y - 24, f"NOTE:  {notes}")
+                        idx += 1
+            b.y = 40
+
+    # Add extra blank photo pages if requested
+    extra_pages = int(payload.get("photoPages") or 4)
+    # Reduce extra pages based on how many we used for uploaded images
+    used_pages = math.ceil(len(photo_images) / 4) if photo_images else 0
+    remaining_pages = max(0, extra_pages - used_pages)
+
+    for _ in range(remaining_pages):
         c.showPage()
         b.y = PAGE_H - MARGIN
         _sec_title(b, "BUILD AREA PHOTOS")
@@ -1183,8 +1422,15 @@ def _render_spine_body(b: _Body, book: dict, spine: dict, toc_rows: list[dict], 
 
 
 def render_section(descriptor: dict, prints: list[dict], pdf_cache: dict[str, bytes],
-                   book_meta: dict, rev: str, spine_extra: dict | None = None) -> tuple[bytes, int]:
-    """Render one section booklet: body pages + bound prints + footer pass."""
+                   book_meta: dict, rev: str, spine_extra: dict | None = None,
+                   images: dict[str, list[dict]] | None = None,
+                   supabase=None) -> tuple[bytes, int]:
+    """Render one section booklet: body pages + bound prints + footer pass.
+
+    Args:
+        images: dict mapping category name -> list of image records (for general_reference)
+        supabase: Supabase client for downloading images
+    """
     kind = descriptor["kind"]
     code = descriptor["section_code"]
     b = _Body()
@@ -1199,7 +1445,7 @@ def render_section(descriptor: dict, prints: list[dict], pdf_cache: dict[str, by
     elif kind == "design_reference":
         _render_ref_body(b, rev, descriptor, prints)
     elif kind == "general_reference":
-        _render_general_body(b, rev, descriptor)
+        _render_general_body(b, rev, descriptor, images, supabase)
     else:
         raise ValueError(f"Unknown section kind: {kind}")
 
@@ -1647,6 +1893,15 @@ def _prepare(supabase, book: dict, payload: dict) -> dict:
     spine_desc = next(d for d in descriptors if d["kind"] == "spine")
     non_spine = [d for d in descriptors if d["kind"] != "spine"]
 
+    # Inject image hash into general_reference descriptor to trigger re-render when images change
+    # This ensures III-00 is re-rendered when images are added/removed/modified
+    if book.get("template_project_id"):
+        image_hash = _compute_image_hash(supabase, book["template_project_id"])
+        for d in non_spine:
+            if d.get("kind") == "general_reference":
+                d.setdefault("payload", {})["_image_hash"] = image_hash
+                break
+
     incoming = []
     for d in non_spine:
         prints = resolve_prints(d, file_by_num)
@@ -1687,9 +1942,11 @@ def _prepare(supabase, book: dict, payload: dict) -> dict:
                                 "reasons": reasons})
 
     warnings = []
+    # CSP9X/CSA9X are plumbing/reference lines - never warn about missing prints
+    ignore_re = re.compile(r'^(csp|csa)9\d+$', re.IGNORECASE)
     for entry in incoming:
         for p in entry["prints"]:
-            if p.get("missing"):
+            if p.get("missing") and not ignore_re.match(p["item_number"]):
                 warnings.append({
                     "type": "missing_print",
                     "section_code": entry["descriptor"]["section_code"],
@@ -1889,6 +2146,15 @@ def update_master_book(book_code: str, payload: dict) -> dict:
                     pdf_cache[futures[fut]] = _compress_pdf(data)
     logger.info(f"Design book {book_code}: rendering {len(to_render)} sections, {len(pdf_cache)} prints cached")
 
+    # Fetch design book images for the template project (for general_reference section)
+    design_book_images: dict[str, list[dict]] = {}
+    if book.get("template_project_id"):
+        _clear_image_cache()  # Clear image cache for this render session
+        design_book_images = _fetch_design_book_images(supabase, book["template_project_id"])
+        if design_book_images:
+            total_imgs = sum(len(imgs) for imgs in design_book_images.values())
+            logger.info(f"Design book {book_code}: fetched {total_imgs} images for embedding")
+
     book_meta = {
         "book_code": book_code, "book_rev": new_rev, "title": book["title"],
         "product_item_number": book["product_item_number"],
@@ -1924,7 +2190,8 @@ def update_master_book(book_code: str, payload: dict) -> dict:
         }).eq("id", row["id"]).execute()
 
     for e in normal_entries:
-        _render_upload_commit(supabase, book, book_meta, e, pdf_cache, section_results, target_paths)
+        _render_upload_commit(supabase, book, book_meta, e, pdf_cache, section_results, target_paths,
+                              images=design_book_images)
 
     # spine LAST — its TOC needs final page counts of everything rendered this run
     toc = _toc_rows(diff["added"] + diff["changed"] + diff["unchanged"])
@@ -1936,6 +2203,7 @@ def update_master_book(book_code: str, payload: dict) -> dict:
         _render_upload_commit(
             supabase, book, book_meta, e, pdf_cache, section_results, target_paths,
             spine_extra={"toc_rows": toc, "rev_history": rev_history},
+            images=design_book_images,
         )
 
     # metadata-only sync for unchanged sections whose binder position or title
@@ -2071,11 +2339,19 @@ def _notice_diff_entries(diff: dict) -> list[dict]:
     return entries
 
 
-def _render_upload_commit(supabase, book, book_meta, entry, pdf_cache, results, target_paths=None, spine_extra=None):
-    """Render one section, upload it, then (and only then) upsert its DB row."""
+def _render_upload_commit(supabase, book, book_meta, entry, pdf_cache, results, target_paths=None, spine_extra=None,
+                          images: dict[str, list[dict]] | None = None):
+    """Render one section, upload it, then (and only then) upsert its DB row.
+
+    Args:
+        images: dict mapping category name -> list of image records (for general_reference)
+    """
     d = entry["descriptor"]
     code = d["section_code"]
-    pdf_bytes, page_count = render_section(d, entry["prints"], pdf_cache, book_meta, entry["rev"], spine_extra)
+    pdf_bytes, page_count = render_section(
+        d, entry["prints"], pdf_cache, book_meta, entry["rev"], spine_extra,
+        images=images, supabase=supabase
+    )
     entry["page_count"] = page_count
 
     storage_path = f"{book_meta['book_code']}/{_section_filename(code)}"

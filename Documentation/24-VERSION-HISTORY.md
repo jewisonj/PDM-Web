@@ -7,9 +7,66 @@
 
 ## Current Version
 
-### v3.9.3 (2026-07-16) -- Master Design Book Enhancements
+### v3.9.4 (2026-07-18) -- Part Number Generator Improvements
 
 **Status:** Current Production Release
+
+**Summary:** Fixed Part Number Generator to fill gaps in part number sequences instead of always incrementing from the highest number, and persisted copied numbers server-side to survive browser refresh.
+
+#### Features Added
+
+**1. Gap-Filling Number Generation**
+
+- **Backend Endpoint:** `GET /api/items/available-numbers/{prefix}`
+  - Returns lowest available numbers per prefix (fills gaps first)
+  - Considers both items in PDM and reserved numbers in `used_item_numbers` table
+  - Replaces frontend's direct Supabase queries with centralized API logic
+
+- **Problem Solved:** Previously, generator found highest number and incremented (e.g., if csp0030 existed, always returned csp0031+), skipping all gaps in lower ranges. Now returns lowest available numbers, filling gaps first.
+
+**2. Server-Side Number Reservation**
+
+- **Database Table:** `used_item_numbers` (new)
+  - Tracks copied/reserved numbers that aren't yet in PDM
+  - Auto-cleanup trigger removes entry when item is created in PDM
+  - RLS enabled for authenticated users
+  - Migration: `backend/migrations/2026-07-18_used_item_numbers.sql`
+
+- **Backend Endpoint:** `POST /api/items/mark-number-used`
+  - Marks number as reserved when copied to clipboard
+  - Returns success confirmation
+
+- **Problem Solved:** Previously, copied numbers were only tracked in browser memory and lost on refresh. Now persisted server-side so numbers stay reserved across sessions.
+
+**3. Improved UI Feedback**
+
+- Shows count of items in PDM and reserved numbers per prefix
+- Numbers disappear immediately from list when copied
+- Calls API instead of direct Supabase queries
+
+#### Use Case
+
+Jack needs a new part number. Opens Part Number Generator, sees csp0015 (gap from deleted part) instead of csp0031 (highest + 1). Clicks csp0015, copies to clipboard, number disappears from list and stays gone after browser refresh. When Jack creates the item in PDM, the reservation is auto-deleted.
+
+#### Files Changed
+
+**Backend:**
+- `backend/app/routes/items.py` — Added `/available-numbers/{prefix}` and `/mark-number-used` endpoints
+- `backend/migrations/2026-07-18_used_item_numbers.sql` — Created `used_item_numbers` table with auto-cleanup trigger
+
+**Frontend:**
+- `frontend/src/views/PartNumbersView.vue` — Refactored to call API, added counts display
+
+#### Documentation
+
+- `Documentation/24-VERSION-HISTORY.md` — This entry
+- `Documentation/03-DATABASE-SCHEMA.md` — Added `used_item_numbers` table section
+
+---
+
+### v3.9.3 (2026-07-16) -- Master Design Book Enhancements
+
+**Status:** Released
 
 **Summary:** Two key enhancements to the Master Design Book system: (1) CSV export for purchase lists to streamline procurement, and (2) automatic BOM quantity synchronization to fix stale template project quantities when mBOM exports change.
 

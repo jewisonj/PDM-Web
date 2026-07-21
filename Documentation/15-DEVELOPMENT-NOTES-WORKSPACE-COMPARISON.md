@@ -1328,6 +1328,7 @@ A `.env` file in `backend/` provides these values for local development. In prod
 35. **Vite proxy timeout for long operations** -- Added `timeout: 300000` (5 minutes) to Vite dev server proxy config in `frontend/vite.config.ts` to prevent "Unexpected end of JSON" errors during print packet generation. The default proxy timeout of ~30-60 seconds was too short for operations that download multiple PDFs, create overlays, and combine into one packet. **Development only** - production is unaffected since the backend serves the frontend directly (no proxy layer). Backend continues processing even if client disconnects.
 36. **DXF filenames include thickness and quantity** -- DXF bundle downloads from MRP dashboard now use descriptive filenames: `{item_number}_thk-{thickness}_qty-{quantity}.dxf`. Thickness is formatted as 4-digit thousandths of inch (0.25" → 0250, 0.125" → 0125). This prevents shop floor errors when loading files into waterjet CAM software - operator can verify correct material thickness from filename without opening the file. Format matches industry standard (part_spec_qty pattern). **UUID dictionary keys must be strings** - when building lookup dictionaries with UUIDs from Supabase, always convert to string with `str(uuid)` for both keys and lookups, as UUID equality checks can fail silently.
 37. **Backend reload requires killing all Python processes** -- On Windows, uvicorn's `--reload` flag doesn't always properly restart when code changes. Multiple zombie Python processes can accumulate on port 8001, and requests may be routed to old processes with stale code. **Always kill ALL Python processes before restarting backend:** `taskkill /F /IM python.exe`, then verify port 8001 is free with `netstat -ano | findstr 8001`, then start a single clean backend. VS Code integrated terminals can auto-start multiple servers. Use a single dedicated terminal for backend development.
+38. **FastAPI route ordering matters** -- Parameterized routes like `@router.get("/{item_id}")` must be defined AFTER all specific routes (e.g., `/list`, `/upload`). FastAPI matches routes in definition order, and parameterized routes act as catch-alls that intercept any path. Always organize routes: specific paths first, then parameterized paths at the end. Test all endpoints after reorganizing routes.
 
 ---
 
@@ -1724,6 +1725,244 @@ The upload pipeline uses a full-replacement strategy:
 
 ---
 
-**Last Updated:** 2026-06-02
-**Version:** 3.7.7
+### 43. Design Book Image Management System Improvements
+
+**Symptom (Route Conflict):** When accessing `/api/design-book-images/list` or `/api/design-book-images/upload`, the API returned 404 or responded with the wrong handler. The parameterized `/{image_id}` route was catching all paths.
+
+**Symptom (Upload Form State):** After uploading an image in the Design Book Images view, the project ID was cleared from the upload form. Subsequent uploads lost the project association, requiring the user to re-select the project each time.
+
+**Symptom (Design Book Re-rendering):** When images were added, modified, or removed from the Design Book image library, the III-00 (General Reference) section was not detected as changed during the Check & Update workflow. The section would not re-render with updated images.
+
+**Root Cause (Route Conflict):** FastAPI route matching is order-dependent. The parameterized route `@router.get("/{image_id}")` was defined before specific paths like `/list` and `/upload`. Since `/{image_id}` matches any path segment, it intercepted requests intended for `/list` and `/upload`, treating them as image IDs.
+
+**Root Cause (Upload Form State):** The `resetUploadForm()` function cleared ALL form fields after successful upload, including `uploadProjectId`. When viewing images in a Design Book context (where `bookCode` is set and the project ID is pre-selected), clearing `uploadProjectId` lost this context.
+
+**Root Cause (Design Book Re-rendering):** The Master Design Book diffing algorithm compares content hashes to detect changes. The III-00 (General Reference) section descriptor did not include any image-related data in its hash input. When images changed in the `design_book_images` table, the descriptor payload remained the same, so the content hash stayed the same, and the section was marked as "unchanged."
+
+**Diagnosis:**
+
+**Route Conflict:**
+1. Tested `/api/design-book-images/list` endpoint from frontend - returned 422 validation error (tried to parse "list" as UUID)
+2. Checked route definition order in `backend/app/routes/design_book_images.py`
+3. Found `@router.get("/{image_id}")` at line 348, before specific routes
+4. Confirmed FastAPI matches routes in definition order (first match wins)
+
+**Upload Form State:**
+1. Uploaded first image in Design Book context - worked fine, project ID pre-filled
+2. Uploaded second image - project dropdown showed "Select project (optional)..." instead of template project
+3. Added logging to `resetUploadForm()` - confirmed `uploadProjectId` was being cleared
+4. Checked if `bookCode` prop was available - yes, it was set
+5. Realized the reset function needed to preserve `uploadProjectId` when in Design Book mode
+
+**Design Book Re-rendering:**
+1. Added images to Design Book image library
+2. Clicked "Check for Changes" in Master Design Book view
+3. Diff showed no changes, even though new images existed
+4. Reviewed `master_design_book.py` hash input builder
+5. Confirmed III-00 descriptor had static payload with no image references
+6. Realized images needed to be represented in the hash input to trigger re-render
+
+**Fix (Route Conflict):** Reorganized routes in `backend/app/routes/design_book_images.py` to place specific paths BEFORE parameterized routes:
+
+**Before:**
+```python
+@router.get("")  # Empty path for list
+async def list_images(...):
+    ...
+
+@router.post("/upload")  # Specific path
+async def upload_image(...):
+    ...
+
+@router.get("/{image_id}")  # Parameterized - catches everything!
+async def get_image(image_id: UUID):
+    ...
+```
+
+**After:**
+```python
+# Specific paths FIRST
+@router.get("/list")  # Changed from "" to "/list"
+async def list_images(...):
+    ...
+
+@router.post("/upload")
+async def upload_image(...):
+    ...
+
+# Parameterized routes LAST
+@router.get("/{image_id}")
+async def get_image(image_id: UUID):
+    ...
+```
+
+Also updated frontend to use the new path: `/api/design-book-images/list` instead of `/api/design-book-images`
+
+**Fix (Upload Form State):** Modified `resetUploadForm()` to preserve `uploadProjectId` when in Design Book context:
+
+```javascript
+function resetUploadForm() {
+  uploadFile.value = null
+  uploadPreview.value = null
+  uploadCaption.value = ''
+  uploadNotes.value = ''
+  uploadCategoryId.value = ''
+  // Keep uploadProjectId if we're in a design book context
+  if (!bookCode.value) {
+    uploadProjectId.value = ''
+  }
+  uploadItemSearch.value = ''
+  uploadItemId.value = ''
+  uploadWidthPct.value = 100
+}
+```
+
+**Logic:** If `bookCode` is set (Design Book mode), preserve the project ID. Otherwise (standalone image management), clear it.
+
+**Fix (Design Book Re-rendering):** Added image hash computation and injection into III-00 descriptor payload:
+
+**New Function (`_compute_image_hash`):**
+```python
+def _compute_image_hash(supabase, project_id: str) -> str:
+    """Compute a hash of all images for a project to detect changes.
+
+    Uses image IDs and updated_at timestamps to create a deterministic hash
+    that changes when images are added, removed, or modified.
+    """
+    if not project_id:
+        return ""
+
+    try:
+        # Get all images for the project
+        result = supabase.table("design_book_images")\
+            .select("id, updated_at")\
+            .eq("project_id", project_id)\
+            .order("id")\
+            .execute()
+
+        if not result.data:
+            return ""
+
+        # Build deterministic string: id1:timestamp1|id2:timestamp2|...
+        parts = []
+        for img in result.data:
+            parts.append(f"{img['id']}:{img['updated_at']}")
+
+        # Hash the concatenated string
+        import hashlib
+        return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
+    except Exception as e:
+        print(f"Warning: Failed to compute image hash: {e}")
+        return ""
+```
+
+**Injection Point (in `check_book` and `update_book`):**
+```python
+# Inject image hash into general_reference descriptor to trigger re-render when images change
+# This ensures III-00 is re-rendered when images are added/removed/modified
+if book.get("template_project_id"):
+    image_hash = _compute_image_hash(supabase, book["template_project_id"])
+    for d in non_spine:
+        if d.get("kind") == "general_reference":
+            d.setdefault("payload", {})["_image_hash"] = image_hash
+            break
+```
+
+**How It Works:**
+1. Before hashing descriptors, compute image hash from project's images
+2. Find the III-00 (general_reference) descriptor
+3. Inject `_image_hash` into its `payload` dictionary
+4. When the descriptor is hashed, the image hash participates
+5. If images changed, hash changes, section detected as changed, re-renders
+
+**Why This Approach:**
+- Deterministic: Same images → same hash (ordered by ID, formatted consistently)
+- Lightweight: Only queries image IDs and timestamps (not full records or file bytes)
+- Non-invasive: Injects into payload (which is already part of hash input), doesn't modify core schema
+- Fast: Single query, simple string concatenation, standard SHA-256
+
+**Files Changed:**
+
+**Route Conflict:**
+- `backend/app/routes/design_book_images.py` (lines 158, 348+)
+  - Changed `/` to `/list` for list endpoint
+  - Reorganized routes: specific paths first, parameterized routes last
+- `frontend/src/views/MrpDesignBookImagesView.vue` (line ~180)
+  - Updated API call from `/api/design-book-images` to `/api/design-book-images/list`
+
+**Upload Form State:**
+- `frontend/src/views/MrpDesignBookImagesView.vue` (lines 293-306)
+  - Modified `resetUploadForm()` to preserve `uploadProjectId` when `bookCode` is set
+
+**Design Book Re-rendering:**
+- `backend/app/services/master_design_book.py` (lines 246-267)
+  - Added `_compute_image_hash()` function
+- `backend/app/services/master_design_book.py` (lines 1896-1903)
+  - Injected image hash into III-00 descriptor payload before hashing
+
+**Why This Matters:**
+
+**Route Conflict:** Without proper route ordering, the API becomes unpredictable. The parameterized route acts as a catch-all, breaking all specific endpoints defined after it. This is a common pitfall in path-based routing frameworks.
+
+**Upload Form State:** In workflow-oriented UIs, preserving context across operations reduces friction. When a user is working within a specific Design Book, they expect the project association to persist for all uploads, not reset after each one.
+
+**Design Book Re-rendering:** The Master Design Book is a controlled document where accuracy is critical. When images change, the printed III-00 section must be re-rendered to show the current image set. Without hash participation, stale images would persist in the document, violating the change detection contract.
+
+**Benefits:**
+
+**Route Conflict:**
+- API endpoints work as documented
+- Frontend can call `/list` without UUID validation errors
+- Clear separation between specific operations and ID-based lookups
+
+**Upload Form State:**
+- Reduces clicks: no need to re-select project after each upload
+- Prevents errors: images automatically tagged with correct project
+- Better UX: context preservation matches user mental model
+
+**Design Book Re-rendering:**
+- Automatic change detection: adding/removing images triggers III-00 re-render
+- Accurate revision tracking: change notices show when images changed
+- No manual intervention: system detects and handles image changes transparently
+
+**Prevention:**
+
+**Route Conflict:**
+- **Always define specific paths before parameterized paths** in FastAPI routers
+- **Use explicit path prefixes** (`/list`, `/upload`) instead of empty strings or root paths
+- **Test all endpoints after route reorganization** to verify routing behavior
+- **Consider route priority** when designing API path structure
+
+**Upload Form State:**
+- **Preserve workflow context** when resetting forms between operations
+- **Check for ambient state** (like `bookCode`, `projectId`) before clearing fields
+- **Design reset logic** based on use cases: standalone vs. workflow-embedded
+- **Test multi-step workflows** to catch context loss issues
+
+**Design Book Re-rendering:**
+- **Include related data in hash inputs** when that data affects rendered output
+- **Use deterministic hashing** for cache invalidation and change detection
+- **Compute hashes from source data** (DB queries), not rendered artifacts (PDFs)
+- **Test change detection** with add/modify/delete scenarios for all data types
+
+**Related Patterns:**
+- Similar to route ordering in Express.js, Flask, and other path-based routers
+- Form state preservation is analogous to wizard/multi-step form patterns
+- Hash-based change detection is the same pattern used for BOM rollup cache invalidation
+
+**Applies To:**
+- FastAPI route definition order (all parameterized routes should be last)
+- Any UI with workflow context (preserve context across operations in the same flow)
+- Cache invalidation and change detection systems (content-addressable hashing)
+
+**Commit:** (Current session - Design Book Image Management)
+
+**Related Docs:**
+- `Documentation/36-MASTER-DESIGN-BOOK-PLAN.md` — Master Design Book architecture
+- `Documentation/24-VERSION-HISTORY.md` — Version history (to be updated)
+
+---
+
+**Last Updated:** 2026-07-21
+**Version:** 3.9.4
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

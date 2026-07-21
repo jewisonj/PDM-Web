@@ -1,31 +1,31 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { supabase } from '../services/supabase'
 
 const router = useRouter()
 
 interface PrefixData {
   prefix: string
-  highest: string
-  highestNum: number
-  count: number
+  available: string[]
+  highest_existing: number
+  total_existing: number
+  total_used: number
 }
 
-const prefixes = ref<PrefixData[]>([])
+const prefixData = ref<Map<string, PrefixData>>(new Map())
 const loading = ref(true)
 const error = ref('')
 const copiedNumber = ref('')
 const selectedPrefix = ref<string | null>(null)
-const usedNumbers = ref<Set<string>>(new Set())
 
 // Standard prefixes in our system
 const STANDARD_PREFIXES = ['CSA', 'CSP', 'HBL', 'STA', 'STP', 'XXA', 'XXP', 'WMA', 'WMP']
 
 // Filtered prefixes based on selection
 const filteredPrefixes = computed(() => {
-  if (!selectedPrefix.value) return prefixes.value
-  return prefixes.value.filter(p => p.prefix === selectedPrefix.value)
+  const allPrefixes = Array.from(prefixData.value.values())
+  if (!selectedPrefix.value) return allPrefixes
+  return allPrefixes.filter(p => p.prefix.toUpperCase() === selectedPrefix.value)
 })
 
 async function loadPrefixes() {
@@ -33,46 +33,23 @@ async function loadPrefixes() {
   error.value = ''
 
   try {
-    const { data, error: queryError } = await supabase
-      .from('items')
-      .select('item_number')
-
-    if (queryError) throw queryError
-
-    // Process items to find highest for each prefix
-    const prefixMap = new Map<string, { highest: string, highestNum: number, count: number }>()
-
-    // Initialize standard prefixes
-    STANDARD_PREFIXES.forEach(p => {
-      prefixMap.set(p, { highest: '', highestNum: 0, count: 0 })
-    })
-
-    data?.forEach(item => {
-      const itemNum = item.item_number?.toLowerCase() || ''
-      const match = itemNum.match(/^([a-z]{3})(\d+)$/)
-      if (match) {
-        const prefix = match[1].toUpperCase()
-        const num = parseInt(match[2], 10)
-
-        const existing = prefixMap.get(prefix) || { highest: '', highestNum: 0, count: 0 }
-        existing.count++
-        if (num > existing.highestNum) {
-          existing.highestNum = num
-          existing.highest = itemNum
-        }
-        prefixMap.set(prefix, existing)
+    // Fetch available numbers for all prefixes in parallel
+    const promises = STANDARD_PREFIXES.map(async (prefix) => {
+      const response = await fetch(`/api/items/available-numbers/${prefix.toLowerCase()}?count=50`)
+      if (!response.ok) {
+        throw new Error(`Failed to load ${prefix}: ${response.statusText}`)
       }
+      return response.json()
     })
 
-    // Convert to array and sort
-    prefixes.value = Array.from(prefixMap.entries())
-      .map(([prefix, data]) => ({
-        prefix,
-        highest: data.highest || `${prefix.toLowerCase()}00000`,
-        highestNum: data.highestNum,
-        count: data.count
-      }))
-      .sort((a, b) => a.prefix.localeCompare(b.prefix))
+    const results = await Promise.all(promises)
+
+    // Build the prefix data map
+    const newData = new Map<string, PrefixData>()
+    for (const result of results) {
+      newData.set(result.prefix.toUpperCase(), result)
+    }
+    prefixData.value = newData
 
   } catch (e: any) {
     error.value = e.message || 'Failed to load part numbers'
@@ -81,42 +58,40 @@ async function loadPrefixes() {
   }
 }
 
-function generateNextNumbers(prefixData: PrefixData, count: number = 50): string[] {
-  const numbers: string[] = []
-  const prefix = prefixData.prefix.toLowerCase()
-
-  // Start from next 10-increment after highest
-  let nextNum = Math.ceil((prefixData.highestNum + 1) / 10) * 10
-  if (nextNum <= prefixData.highestNum) nextNum += 10
-
-  for (let i = 0; i < count; i++) {
-    const numStr = String(nextNum).padStart(5, '0')
-    numbers.push(`${prefix}${numStr}`)
-    nextNum += 10
-  }
-
-  return numbers
-}
-
-async function copyToClipboard(partNumber: string) {
+async function copyAndMarkUsed(partNumber: string, prefixKey: string) {
   try {
+    // Copy to clipboard
     await navigator.clipboard.writeText(partNumber)
     copiedNumber.value = partNumber
-    usedNumbers.value.add(partNumber)
+
+    // Mark as used on the server
+    const response = await fetch('/api/items/mark-number-used', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_number: partNumber })
+    })
+
+    if (response.ok) {
+      // Remove from local list (optimistic update)
+      const data = prefixData.value.get(prefixKey)
+      if (data) {
+        data.available = data.available.filter(n => n !== partNumber)
+        data.total_used++
+      }
+    }
+
+    // Clear copied indicator after delay
     setTimeout(() => {
       copiedNumber.value = ''
     }, 2000)
+
   } catch (e) {
-    console.error('Failed to copy:', e)
+    console.error('Failed to copy/mark:', e)
   }
 }
 
 function selectPrefix(prefix: string | null) {
   selectedPrefix.value = prefix
-}
-
-function clearUsedNumbers() {
-  usedNumbers.value = new Set()
 }
 
 function goHome() {
@@ -138,7 +113,7 @@ onMounted(() => {
         </button>
         <div>
           <h1>Part Number Generator</h1>
-          <p class="subtitle">Click any part number to copy it to clipboard</p>
+          <p class="subtitle">Click any part number to copy and reserve it</p>
         </div>
       </div>
       <button class="refresh-btn" @click="loadPrefixes" :disabled="loading">
@@ -165,24 +140,14 @@ onMounted(() => {
       >
         {{ prefix }}
       </button>
-      <button
-        v-if="usedNumbers.size > 0"
-        class="clear-used-btn"
-        @click="clearUsedNumbers"
-        title="Clear used numbers"
-      >
-        <i class="pi pi-refresh"></i>
-        Clear Used ({{ usedNumbers.size }})
-      </button>
     </div>
 
     <div class="instructions-card">
       <h3><i class="pi pi-info-circle"></i> How to Use</h3>
       <p>
-        These are the next 50 available part numbers for each prefix.
-        Numbers increment by 10 from the highest existing number.
-        Click any number to copy it to your clipboard for use in CAD.
-        <strong>Used numbers turn red</strong> so you can track what you've copied.
+        These are the next 50 available part numbers for each prefix, filling gaps first.
+        Click any number to <strong>copy it to clipboard and reserve it</strong>.
+        Reserved numbers won't appear again until you actually create the item in PDM.
       </p>
     </div>
 
@@ -197,21 +162,21 @@ onMounted(() => {
     </div>
 
     <div v-else class="prefixes-grid">
-      <div v-for="prefixData in filteredPrefixes" :key="prefixData.prefix" class="prefix-card">
+      <div v-for="data in filteredPrefixes" :key="data.prefix" class="prefix-card">
         <div class="prefix-header">
-          <div class="prefix-name">{{ prefixData.prefix }}#####</div>
+          <div class="prefix-name">{{ data.prefix.toUpperCase() }}#####</div>
           <div class="prefix-info">
-            Highest in use: <strong>{{ prefixData.highest.toUpperCase() || 'None' }}</strong>
-            | Next available: <strong>{{ generateNextNumbers(prefixData)[0]?.toUpperCase() }}</strong>
+            Highest in use: <strong>{{ data.prefix.toLowerCase() }}{{ String(data.highest_existing).padStart(5, '0') }}</strong>
+            | {{ data.total_existing }} in PDM | {{ data.total_used }} reserved
           </div>
         </div>
         <div class="numbers-grid">
           <div
-            v-for="num in generateNextNumbers(prefixData)"
+            v-for="num in data.available"
             :key="num"
             class="number-chip"
-            :class="{ copied: copiedNumber === num, used: usedNumbers.has(num) }"
-            @click="copyToClipboard(num)"
+            :class="{ copied: copiedNumber === num }"
+            @click="copyAndMarkUsed(num, data.prefix.toUpperCase())"
           >
             {{ num.toUpperCase() }}
             <span v-if="copiedNumber === num" class="copied-badge">Copied!</span>
@@ -222,7 +187,7 @@ onMounted(() => {
 
     <div v-if="copiedNumber" class="toast">
       <i class="pi pi-check-circle"></i>
-      Copied {{ copiedNumber.toUpperCase() }} to clipboard
+      Copied {{ copiedNumber.toUpperCase() }} to clipboard (reserved)
     </div>
   </div>
 </template>
@@ -342,27 +307,6 @@ onMounted(() => {
   color: #fff;
 }
 
-.clear-used-btn {
-  margin-left: auto;
-  background: #fef2f2;
-  border: 1px solid #fca5a5;
-  color: #dc2626;
-  padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  transition: all 0.15s;
-}
-
-.clear-used-btn:hover {
-  background: #fee2e2;
-  border-color: #f87171;
-}
-
 .instructions-card {
   background: #e0f2fe;
   border: 1px solid #7dd3fc;
@@ -479,18 +423,6 @@ onMounted(() => {
   background: #dcfce7;
   border-color: #22c55e;
   color: #166534;
-}
-
-.number-chip.used {
-  background: #fef2f2;
-  border-color: #f87171;
-  color: #dc2626;
-  opacity: 0.7;
-}
-
-.number-chip.used:hover {
-  background: #fee2e2;
-  opacity: 1;
 }
 
 .copied-badge {

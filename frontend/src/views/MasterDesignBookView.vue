@@ -317,6 +317,9 @@ async function purchaseListCsv() {
           <i :class="downloadingList ? 'pi pi-spin pi-spinner' : 'pi pi-list'"></i>
           {{ downloadingList ? 'Downloading…' : 'Purchase List' }}
         </button>
+        <button class="secondary-btn" @click="router.push(`/mrp/design-book/${bookCode}/images`)">
+          <i class="pi pi-images"></i> Images
+        </button>
       </div>
     </header>
 

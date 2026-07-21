@@ -660,6 +660,53 @@ CREATE TABLE project_item_source (
 
 ---
 
+### used_item_numbers
+
+Tracks part numbers that have been copied from the Part Number Generator but not yet created as items in PDM. Prevents duplicate number generation and survives browser refresh.
+
+```sql
+CREATE TABLE used_item_numbers (
+    item_number TEXT PRIMARY KEY,
+    used_at     TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Key Points:**
+- `item_number` - The reserved part number (e.g., `csp0040`).
+- `used_at` - When the number was copied/reserved.
+- **Auto-cleanup:** When an item is created in the `items` table, a trigger automatically removes the corresponding entry from `used_item_numbers`.
+- **Index:** `idx_used_item_numbers_prefix` on `substring(item_number, 1, 3)` for fast prefix-based queries.
+
+**Trigger:**
+```sql
+CREATE OR REPLACE FUNCTION cleanup_used_item_number_on_create()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM used_item_numbers WHERE item_number = NEW.item_number;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_cleanup_used_item_number
+    AFTER INSERT ON items
+    FOR EACH ROW
+    EXECUTE FUNCTION cleanup_used_item_number_on_create();
+```
+
+**Workflow:**
+1. User opens Part Number Generator (`/part-numbers`)
+2. Frontend calls `GET /api/items/available-numbers/{prefix}` to get lowest available numbers
+3. User clicks a number to copy it → Frontend calls `POST /api/items/mark-number-used` → Number inserted into `used_item_numbers`
+4. Number disappears from available list immediately
+5. On browser refresh, number is still reserved (persisted in database)
+6. When user creates the item in PDM, trigger auto-deletes the entry from `used_item_numbers`
+
+**RLS:** Enabled. Authenticated users can read and write all entries.
+
+**Related Documentation:** Version History v3.9.4
+
+---
+
 ## Indexes
 
 The following indexes exist for query performance:
@@ -678,6 +725,7 @@ The following indexes exist for query performance:
 | `idx_project_item_source_project_id` | project_item_source | project_id | Get all item sources for a project |
 | `idx_project_item_source_item_id` | project_item_source | item_id | Find source for an item |
 | `idx_project_item_source_kit_id` | project_item_source | kit_id | Find all parts in a kit |
+| `idx_used_item_numbers_prefix` | used_item_numbers | substring(item_number, 1, 3) | Fast prefix-based queries for number generation |
 
 Additionally, all `UNIQUE` constraints and primary keys automatically create indexes.
 
@@ -933,6 +981,7 @@ Migrations are managed through Supabase and applied in order:
 | 20260130010003 | update_work_queue_task_types | Add NEST_PARTS to work_queue task_type constraint |
 | 20260130010004 | add_nest_rls_policies | RLS policies for nest tables |
 | 20260130020000 | add_updated_at_to_files | Added `updated_at` column to files table with auto-update trigger |
+| 2026-07-18 | used_item_numbers | Part Number Generator reservation tracking table with auto-cleanup trigger |
 
 ---
 
