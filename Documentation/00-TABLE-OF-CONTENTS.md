@@ -1,9 +1,9 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-07-21
+**Last Updated:** 2026-07-22
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.9.6
+**Current Version:** v3.9.7
 
 ---
 
@@ -52,6 +52,7 @@ New to PDM-Web? Read these in order:
 | 38 | `38-KIT-SOURCING-IN-BUILD-DOCS.md` | Kit sourcing in Build Book and Design Book: STAGE SET renderer, per-project kit documentation sections, purchased parts tracking. |
 | 39 | `39-KIT-SOURCING-STEP-EXPORT.md` | Kit sourcing STEP export guide: BOM queries, part categorization, STEP file downloads, export folder structure, CSV generation, handling updated files from vendors. |
 | 43 | `43-DESIGN-BOOK-IMAGE-MANAGEMENT.md` | Design Book image management system: image hash detection for auto re-rendering, FastAPI route ordering fix, upload form state preservation, image library integration with Master Design Book III-00 section. |
+| 44 | `44-SUPPLIER-PORTAL.md` | Supplier Portal: external vendor access to approved files, separate JWT auth, file type restrictions, two-way comments, admin management, item access control. |
 
 ### Section 5: Frontend Application
 
@@ -179,7 +180,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 38
+**Total Documentation Files:** 39
 **Status:** Current
 
 ---

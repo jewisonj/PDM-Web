@@ -1,9 +1,26 @@
 <script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
+import { apiCall } from '../services/supabase'
 
 const authStore = useAuthStore()
 const router = useRouter()
+
+// Supplier unread count for admin badge
+const supplierUnreadCount = ref(0)
+
+onMounted(async () => {
+  // Only fetch for admins
+  if (authStore.isAdmin) {
+    try {
+      const result = await apiCall<{ count: number }>('/admin/suppliers/comments/unread')
+      supplierUnreadCount.value = result.count
+    } catch {
+      // Silently fail - user might not have admin access
+    }
+  }
+})
 
 const pdmTools = [
   {
@@ -220,6 +237,32 @@ async function logout() {
           </div>
         </div>
       </section>
+
+      <!-- Admin Section - only visible to admins -->
+      <section v-if="authStore.isAdmin" class="tools-section admin-section">
+        <h2>Admin Tools</h2>
+        <div class="tools-grid">
+          <div
+            class="tool-card"
+            @click="navigateTo('/admin/suppliers')"
+          >
+            <span v-if="supplierUnreadCount > 0" class="notification-badge">
+              {{ supplierUnreadCount }}
+            </span>
+            <div class="tool-icon">
+              <i class="pi pi-users"></i>
+            </div>
+            <h3>Supplier Portal</h3>
+            <p class="tool-description">Manage supplier accounts, grant item access, and respond to supplier questions.</p>
+            <ul class="tool-features">
+              <li>Create/manage suppliers</li>
+              <li>Assign item access</li>
+              <li>Review comments</li>
+              <li>File type restrictions</li>
+            </ul>
+          </div>
+        </div>
+      </section>
     </main>
 
     <footer class="home-footer">
@@ -431,6 +474,33 @@ async function logout() {
 
 .mrp-section .tool-features li::before {
   background: #059669;
+}
+
+.admin-section h2 {
+  border-color: #7c3aed;
+}
+
+.admin-section .tool-icon {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+}
+
+.admin-section .tool-features li::before {
+  background: #7c3aed;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #dc2626;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  min-width: 20px;
+  text-align: center;
+  z-index: 1;
 }
 
 .home-footer {

@@ -707,6 +707,167 @@ CREATE TRIGGER trigger_cleanup_used_item_number
 
 ---
 
+### suppliers
+
+Stores external supplier accounts for the Supplier Portal feature. Suppliers use separate JWT authentication (not Supabase Auth) to access approved items and download files.
+
+```sql
+CREATE TABLE suppliers (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_name    VARCHAR(255) NOT NULL UNIQUE,
+    login_email     VARCHAR(255) NOT NULL UNIQUE,
+    password_hash   VARCHAR(255) NOT NULL,
+    is_active       BOOLEAN NOT NULL DEFAULT true,
+    contact_name    VARCHAR(255),
+    phone           VARCHAR(50),
+    address         TEXT,
+    notes           TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_suppliers_login_email ON suppliers(login_email);
+CREATE INDEX idx_suppliers_company_name ON suppliers(company_name);
+```
+
+**Key Points:**
+- `company_name` - Unique supplier identifier (e.g., "Acme Manufacturing").
+- `login_email` - Email used for supplier portal login (unique).
+- `password_hash` - bcrypt hashed password (never stored in plaintext).
+- `is_active` - Toggle to disable supplier access without deleting account.
+- `contact_name`, `phone`, `address` - Optional contact information.
+- `notes` - Admin notes about the supplier relationship.
+
+**Security:**
+- Passwords hashed using bcrypt with automatic salt generation.
+- Only active suppliers (`is_active=true`) can log in.
+- Password hash never returned in API responses.
+
+**Authentication:**
+- Separate from Supabase Auth (custom JWT system).
+- Tokens stored in `localStorage.pdm_supplier_token` (frontend).
+- Token expiration: 24 hours (configurable).
+
+**RLS:** No RLS policies (accessed only via backend service functions with supplier JWT validation).
+
+**Related Documentation:** `44-SUPPLIER-PORTAL.md`
+
+---
+
+### supplier_item_access
+
+Defines which items each supplier can view and which file types they can download.
+
+```sql
+CREATE TABLE supplier_item_access (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    supplier_id     UUID NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    item_id         UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    file_types      TEXT[] NOT NULL DEFAULT '{}',
+    notes           TEXT,
+    granted_at      TIMESTAMPTZ DEFAULT NOW(),
+    granted_by      UUID REFERENCES users(id),
+
+    CONSTRAINT unique_supplier_item_access UNIQUE (supplier_id, item_id)
+);
+
+CREATE INDEX idx_supplier_item_access_supplier ON supplier_item_access(supplier_id);
+CREATE INDEX idx_supplier_item_access_item ON supplier_item_access(item_id);
+```
+
+**Key Points:**
+- `supplier_id` - Which supplier has access.
+- `item_id` - Which item they can view.
+- `file_types` - Array of allowed file extensions (e.g., `['pdf', 'step', 'dxf']`).
+- `notes` - Admin notes about why access was granted.
+- `granted_at` - When access was granted (audit trail).
+- `granted_by` - Which admin user granted access (audit trail).
+
+**File Type Restrictions:**
+
+Common allowed types:
+- `pdf` - Drawings (PDF exports)
+- `step` - 3D models (neutral CAD format)
+- `dxf` - 2D flat patterns (sheet metal)
+
+Typically restricted types:
+- `prt` - Creo source files
+- `asm` - Creo assemblies
+- `drw` - Creo drawings
+
+**Access Logic:**
+1. Supplier sees only items with entries in `supplier_item_access`.
+2. For each item, supplier can only download files matching the `file_types` array.
+3. Attempting to download restricted file type returns 403 Forbidden.
+4. Empty `file_types` array = view metadata only, no downloads.
+
+**Constraints:**
+- Each supplier can only have one access entry per item (unique constraint).
+- Deleting supplier cascades and removes all access grants.
+- Deleting item cascades and removes all access grants.
+
+**RLS:** No RLS policies (access control enforced by backend supplier JWT validation).
+
+**Related Documentation:** `44-SUPPLIER-PORTAL.md`
+
+---
+
+### supplier_comments
+
+Enables two-way communication between suppliers and admins about specific items.
+
+```sql
+CREATE TABLE supplier_comments (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    supplier_id     UUID NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    item_id         UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    author_type     VARCHAR(20) NOT NULL,
+    content         TEXT NOT NULL,
+    is_read         BOOLEAN NOT NULL DEFAULT false,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+
+    CONSTRAINT valid_author_type CHECK (author_type IN ('supplier', 'admin'))
+);
+
+CREATE INDEX idx_supplier_comments_supplier ON supplier_comments(supplier_id);
+CREATE INDEX idx_supplier_comments_item ON supplier_comments(item_id);
+CREATE INDEX idx_supplier_comments_unread ON supplier_comments(is_read) WHERE is_read = false;
+```
+
+**Key Points:**
+- `supplier_id` - Which supplier the comment thread belongs to.
+- `item_id` - Which item the comment is about.
+- `author_type` - Either `'supplier'` (from supplier portal) or `'admin'` (from admin view).
+- `content` - The comment text.
+- `is_read` - Tracks whether admin has seen supplier comments (only for `author_type='supplier'`).
+- `created_at` - Comment timestamp.
+
+**Comment Flow:**
+1. Supplier posts question → `author_type='supplier'`, `is_read=false`.
+2. Admin sees unread count badge on dashboard.
+3. Admin views comment → Backend marks `is_read=true`.
+4. Admin replies → `author_type='admin'`, no `is_read` tracking needed.
+5. Supplier sees reply in their item detail view.
+
+**Unread Count Badge:**
+
+Admin dashboard shows count of unread supplier comments:
+```sql
+SELECT COUNT(*) FROM supplier_comments
+WHERE author_type = 'supplier' AND is_read = false
+```
+
+**Constraints:**
+- Deleting supplier cascades and removes all their comments.
+- Deleting item cascades and removes all comments about that item.
+- `author_type` must be either `'supplier'` or `'admin'`.
+
+**RLS:** No RLS policies (access control enforced by backend authentication).
+
+**Related Documentation:** `44-SUPPLIER-PORTAL.md`
+
+---
+
 ## Indexes
 
 The following indexes exist for query performance:
@@ -726,6 +887,13 @@ The following indexes exist for query performance:
 | `idx_project_item_source_item_id` | project_item_source | item_id | Find source for an item |
 | `idx_project_item_source_kit_id` | project_item_source | kit_id | Find all parts in a kit |
 | `idx_used_item_numbers_prefix` | used_item_numbers | substring(item_number, 1, 3) | Fast prefix-based queries for number generation |
+| `idx_suppliers_login_email` | suppliers | login_email | Fast supplier login lookup |
+| `idx_suppliers_company_name` | suppliers | company_name | Search suppliers by company name |
+| `idx_supplier_item_access_supplier` | supplier_item_access | supplier_id | Get all items a supplier can access |
+| `idx_supplier_item_access_item` | supplier_item_access | item_id | Find which suppliers have access to an item |
+| `idx_supplier_comments_supplier` | supplier_comments | supplier_id | Get all comments by a supplier |
+| `idx_supplier_comments_item` | supplier_comments | item_id | Get all comments about an item |
+| `idx_supplier_comments_unread` | supplier_comments | is_read (WHERE is_read = false) | Find unread supplier comments (partial index) |
 
 Additionally, all `UNIQUE` constraints and primary keys automatically create indexes.
 
@@ -764,6 +932,12 @@ mrp_projects  1--*  mrp_project_parts
               1--*  project_item_source
 
 project_kits  1--*  project_item_source
+
+suppliers  1--*  supplier_item_access
+           1--*  supplier_comments
+
+items  1--*  supplier_item_access
+       1--*  supplier_comments
 ```
 
 ---

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useSupplierAuthStore } from '../stores/supplierAuth'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -149,20 +150,82 @@ const router = createRouter({
     //   component: () => import('../views/MrpPrintLookupView.vue'),
     //   meta: { requiresAuth: true }
     // },
+
+    // === Supplier Portal Routes ===
+    {
+      path: '/supplier-login',
+      name: 'supplier-login',
+      component: () => import('../views/supplier/SupplierLoginView.vue'),
+      meta: { requiresAuth: false, supplierRoute: true }
+    },
+    {
+      path: '/supplier/portal',
+      name: 'supplier-portal',
+      component: () => import('../views/supplier/SupplierPortalView.vue'),
+      meta: { requiresSupplierAuth: true }
+    },
+    {
+      path: '/supplier/item/:itemNumber',
+      name: 'supplier-item',
+      component: () => import('../views/supplier/SupplierItemView.vue'),
+      meta: { requiresSupplierAuth: true }
+    },
+
+    // === Admin Supplier Management ===
+    {
+      path: '/admin/suppliers',
+      name: 'admin-suppliers',
+      component: () => import('../views/admin/AdminSuppliersView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/admin/suppliers/:id',
+      name: 'admin-supplier-detail',
+      component: () => import('../views/admin/AdminSupplierDetailView.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
   ]
 })
 
 // Navigation guard
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
+  const supplierAuthStore = useSupplierAuthStore()
 
-  // Always wait for auth to initialize before making decisions
+  // Initialize both auth stores
   await authStore.initialize()
+  supplierAuthStore.initialize()
 
+  // Supplier routes - check supplier auth
+  if (to.meta.requiresSupplierAuth) {
+    if (!supplierAuthStore.isAuthenticated) {
+      return { name: 'supplier-login', query: { redirect: to.fullPath } }
+    }
+    return // Allow access
+  }
+
+  // Redirect authenticated supplier away from supplier login
+  if (to.name === 'supplier-login' && supplierAuthStore.isAuthenticated) {
+    return { name: 'supplier-portal' }
+  }
+
+  // Admin routes - check internal auth + admin role
+  if (to.meta.requiresAdmin) {
+    if (!authStore.isAuthenticated) {
+      return { name: 'login', query: { redirect: to.fullPath } }
+    }
+    if (!authStore.isAdmin) {
+      return { name: 'home' }
+    }
+    return // Allow access
+  }
+
+  // Regular internal routes - check internal auth
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } }
   }
 
+  // Redirect authenticated internal user away from login
   if (to.name === 'login' && authStore.isAuthenticated) {
     return { name: 'home' }
   }

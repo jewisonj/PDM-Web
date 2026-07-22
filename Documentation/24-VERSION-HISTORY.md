@@ -7,9 +7,238 @@
 
 ## Current Version
 
-### v3.9.6 (2026-07-21) -- Master Design Book Work Package Consolidation
+### v3.9.7 (2026-07-22) -- Supplier Portal
 
 **Status:** Current Production Release
+
+**Summary:** Added external Supplier Portal allowing vendors to securely access approved files, download neutral CAD formats, and communicate with admins via per-item comments. Separate JWT authentication system ensures suppliers never receive Supabase credentials.
+
+#### Features Added
+
+**1. Supplier Authentication System**
+
+- **Separate from Supabase Auth:** Custom JWT-based authentication using PyJWT and bcrypt
+- **Backend Service:** `backend/app/services/supplier_auth.py`
+  - Password hashing with bcrypt (auto-generated salt)
+  - JWT token creation with 24-hour expiration
+  - Token validation for protected routes
+- **Frontend Store:** `frontend/src/stores/supplierAuth.ts`
+  - Separate localStorage key: `pdm_supplier_token`
+  - No cross-contamination with internal user auth
+  - Automatic token refresh on navigation
+
+**2. Supplier Portal Interface**
+
+- **Login Page:** `/supplier-login`
+  - Email and password authentication
+  - Error handling for invalid/inactive accounts
+  - Session persistence via localStorage
+
+- **Portal Home:** `/supplier/portal`
+  - Grid of items supplier has access to
+  - Shows item metadata, allowed file types
+  - Click card to view item detail
+
+- **Item Detail:** `/supplier/item/:itemNumber`
+  - Full item metadata display
+  - File list with download buttons
+  - File type restrictions enforced (green=allowed, gray=restricted)
+  - Comment thread with supplier questions and admin replies
+  - Post new questions
+
+**3. Admin Management Interface**
+
+- **Supplier Management:** `/admin/suppliers`
+  - Table of all supplier accounts
+  - Create/edit/delete suppliers
+  - Toggle active/inactive status
+  - Unread comments count badge per supplier
+
+- **Supplier Detail:** `/admin/suppliers/:id`
+  - Edit account information
+  - Change password
+  - Grant/revoke item access with file type restrictions
+  - View and respond to supplier comments
+  - Auto-mark comments as read
+
+- **Dashboard Integration:**
+  - Unread comments badge on main dashboard
+  - Quick access to suppliers with pending questions
+
+**4. Access Control System**
+
+- **Item Access Grants:** Admins control which items each supplier can view
+- **File Type Restrictions:** Per-item control of allowed downloads
+  - Common: PDF (drawings), STEP (3D models), DXF (flat patterns)
+  - Restricted: PRT/ASM/DRW (source CAD files)
+- **Server-Side Enforcement:** All download requests validated server-side (403 for unauthorized)
+- **Audit Trail:** Track who granted access and when
+
+**5. Two-Way Communication**
+
+- **Per-Item Comments:** Suppliers ask questions about specific items
+- **Unread Tracking:** Admin sees count of unread supplier questions
+- **Email-Ready Design:** Comment system designed for future email notifications
+- **Threaded Display:** Chronological view of supplier questions and admin replies
+
+#### Database Schema
+
+**Three New Tables:**
+
+1. **suppliers** - Supplier accounts
+   - `company_name`, `login_email`, `password_hash` (bcrypt)
+   - `is_active` toggle for disabling access
+   - Contact info (name, phone, address)
+   - Admin notes
+
+2. **supplier_item_access** - Item access control
+   - Links supplier to item
+   - `file_types` array (e.g., `['pdf', 'step', 'dxf']`)
+   - `granted_by` for audit trail
+   - Unique constraint per (supplier, item)
+
+3. **supplier_comments** - Two-way communication
+   - `author_type`: 'supplier' or 'admin'
+   - `is_read` flag for unread tracking
+   - CASCADE delete with supplier/item
+
+**Indexes:** Added 6 indexes for efficient queries (login, access checks, unread comments)
+
+**Migration:** `backend/migrations/044_create_supplier_portal_tables.sql`
+
+#### API Endpoints
+
+**Supplier Routes** (`/api/supplier/*`):
+- `POST /login` - Authenticate and get JWT token
+- `GET /me` - Get current supplier profile
+- `GET /items` - List accessible items
+- `GET /items/{item_number}` - Item detail with files
+- `GET /files/{file_id}/download` - Download file (access controlled)
+- `GET /comments/{item_number}` - Get comment thread
+- `POST /comments/{item_number}` - Post question
+
+**Admin Routes** (`/api/admin/suppliers/*`):
+- `GET /suppliers` - List all suppliers
+- `GET /suppliers/{id}` - Supplier detail
+- `POST /suppliers` - Create supplier
+- `PATCH /suppliers/{id}` - Update supplier
+- `DELETE /suppliers/{id}` - Delete supplier
+- `POST /suppliers/{id}/access` - Grant item access
+- `PATCH /suppliers/{id}/access/{access_id}` - Update access
+- `DELETE /suppliers/{id}/access/{access_id}` - Revoke access
+- `GET /comments/unread` - Unread count
+- `POST /comments/{id}/mark-read` - Mark as read
+- `POST /suppliers/{id}/comments/{item_number}` - Admin reply
+
+#### Files Changed
+
+**Backend:**
+- `backend/app/models/supplier_schemas.py` (new) - Pydantic models
+- `backend/app/services/supplier_auth.py` (new) - JWT and password hashing
+- `backend/app/routes/supplier.py` (new) - Supplier portal APIs
+- `backend/app/routes/admin_suppliers.py` (new) - Admin management APIs
+- `backend/app/main.py` - Added route registration
+- `backend/requirements.txt` - Added PyJWT, bcrypt
+
+**Frontend:**
+- `frontend/src/types/supplier.ts` (new) - TypeScript interfaces
+- `frontend/src/stores/supplierAuth.ts` (new) - Pinia auth store
+- `frontend/src/views/supplier/SupplierLoginView.vue` (new)
+- `frontend/src/views/supplier/SupplierPortalView.vue` (new)
+- `frontend/src/views/supplier/SupplierItemView.vue` (new)
+- `frontend/src/views/admin/AdminSuppliersView.vue` (new)
+- `frontend/src/views/admin/AdminSupplierDetailView.vue` (new)
+- `frontend/src/router/index.ts` - Added supplier routes
+- `frontend/src/views/DashboardView.vue` - Added unread comments badge
+
+**Database:**
+- 3 new tables: `suppliers`, `supplier_item_access`, `supplier_comments`
+- 6 new indexes for query performance
+
+#### Configuration
+
+**Environment Variables** (`backend/.env`):
+```bash
+SUPPLIER_JWT_SECRET=your-secure-random-secret-here
+SUPPLIER_JWT_EXPIRATION_HOURS=24
+SUPPLIER_BCRYPT_ROUNDS=12
+```
+
+**Security Notes:**
+- Never commit secrets to version control
+- Use different secrets for dev/production
+- Rotate secrets periodically
+
+#### Use Cases
+
+**Admin Creating Supplier:**
+1. Navigate to `/admin/suppliers`
+2. Click "Create Supplier"
+3. Enter company name, email, password, contact info
+4. Share credentials securely with supplier
+
+**Admin Granting Access:**
+1. Open supplier detail page
+2. Add item access
+3. Select allowed file types (PDF, STEP, DXF)
+4. Add notes about why access was granted
+
+**Supplier Workflow:**
+1. Log in at `/supplier-login`
+2. See grid of accessible items
+3. Click item to view detail
+4. Download allowed files
+5. Post questions about item
+6. Receive admin responses in thread
+
+**Admin Responding to Questions:**
+1. See unread badge on dashboard
+2. Click "Suppliers" to see which suppliers have questions
+3. Click supplier to view detail
+4. Read questions, post replies
+5. Questions auto-marked as read
+
+#### Security Considerations
+
+- **Password Hashing:** bcrypt with auto-salt (cost factor 12)
+- **Token Expiration:** 24 hours (configurable)
+- **File Type Enforcement:** Server-side validation on all downloads
+- **Separate Auth System:** Suppliers never get Supabase credentials
+- **Cascading Deletes:** Removing supplier cleans up all access/comments
+- **Audit Trail:** Track who granted access and when
+
+#### Future Enhancements
+
+**Priority 1:**
+- Download audit logging (track file downloads)
+- Email notifications (new questions, admin replies)
+- Force password change on first login
+- Password expiration policy
+
+**Priority 2:**
+- Bulk access grants (all items in a project)
+- Template access patterns (e.g., "Sheet Metal Vendor")
+- Revision-specific access control
+- Expiring access grants
+
+**Priority 3:**
+- Two-factor authentication
+- SSO integration (SAML/OAuth)
+- Mobile app for suppliers
+- IP whitelisting
+
+#### Documentation
+
+- `Documentation/44-SUPPLIER-PORTAL.md` (new) - Complete feature documentation
+- `Documentation/03-DATABASE-SCHEMA.md` - Added supplier tables
+- `Documentation/24-VERSION-HISTORY.md` - This entry
+- `Documentation/00-TABLE-OF-CONTENTS.md` - Updated index
+
+---
+
+### v3.9.6 (2026-07-21) -- Master Design Book Work Package Consolidation
+
+**Status:** Released
 
 **Summary:** Simplified Master Design Book Section I work packages from "one per (day, station)" to "one per station" (all parts consolidated). This removes the day dimension from section identity, creating stable section codes that don't re-number when scheduling changes.
 
