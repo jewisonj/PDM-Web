@@ -331,7 +331,14 @@ def build_hash_input(descriptor: dict, prints: list[dict], renderer_version: int
 
 
 def _identity_key(identity: dict) -> str:
-    return canonical_json(identity or {})
+    """Normalize identity for matching.
+
+    Work packages changed from {"occurrence": N, "station_code": "XXX"}
+    to {"station_code": "XXX"} after consolidation. Strip occurrence
+    before hashing so old and new formats match correctly.
+    """
+    normalized = {k: v for k, v in (identity or {}).items() if k != 'occurrence'}
+    return canonical_json(normalized)
 
 
 # ============================================================================
