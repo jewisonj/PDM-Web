@@ -84,6 +84,7 @@ export interface RoutingData {
   station_id: string
   sequence: number
   est_time_min: number | null
+  time_basis?: 'per_unit' | 'per_line_item'  // per_unit = multiply by qty, per_line_item = fixed time
   workstations: {
     station_code: string
     station_name: string
@@ -296,6 +297,12 @@ export function createScheduledTasks(
         }
       }
 
+      // Respect time_basis: per_line_item = fixed time, per_unit = multiply by qty
+      const timeBasis = r.time_basis || 'per_unit'
+      const durationMin = timeBasis === 'per_line_item'
+        ? (r.est_time_min || 0)           // Fixed time regardless of quantity
+        : (r.est_time_min || 0) * part.quantity  // Traditional: multiply by quantity
+
       const task: ScheduledTask = {
         id: taskId,
         item_id: itemId,
@@ -303,7 +310,7 @@ export function createScheduledTasks(
         station_id: r.station_id,
         station_code: r.workstations?.station_code || '',
         sequence: r.sequence,
-        duration_min: (r.est_time_min || 0) * part.quantity,
+        duration_min: durationMin,
         quantity: part.quantity,
         start_day: 0,
         start_hour: 0,

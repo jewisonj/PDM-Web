@@ -66,6 +66,7 @@ export interface MasterRoutingInput {
   station_id: string
   sequence: number
   est_time_min: number | null
+  time_basis?: 'per_unit' | 'per_line_item'  // per_unit = multiply by qty, per_line_item = fixed time
   notes?: string | null
   workstations: { station_code: string; station_name: string } | null
 }

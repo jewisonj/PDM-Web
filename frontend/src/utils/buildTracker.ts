@@ -108,6 +108,8 @@ export interface TrackerRoutingInput {
   item_id: string
   station_id: string
   sequence: number
+  est_time_min?: number | null
+  time_basis?: 'per_unit' | 'per_line_item'  // per_unit = multiply by qty, per_line_item = fixed time
   notes?: string | null
   workstations: { station_code: string; station_name: string } | null
 }
@@ -344,17 +346,20 @@ export interface TrackerBundle {
  * Routing synthesized for kit-supplied parts: they arrive finished, so the shop
  * receives them, inspects them, and stages them to their area.
  *
- * Times are PER UNIT and deliberately small. The 5-min house norm on Receiving is
- * the cost of an individually purchased item (unpack, count and log one McMaster
- * box); a bundle arrives as a single shipment of many pre-cut parts. Buying finished
- * parts must never cost MORE shop labor than making them — at 5/5/5 the SPA0030
- * bundle charged 435 min against the 193 min of in-house work it replaced, which
- * lengthened the schedule instead of shortening it.
+ * Times use per_line_item basis: they are FIXED regardless of quantity.
+ * Receiving 5 min represents unpacking and logging one shipment line,
+ * not 5 min per individual piece. This is consistent with how purchased
+ * parts are received - the work is per part NUMBER, not per piece.
  */
-export const KIT_SUPPLIED_ROUTING: { stationName: string; sequence: number; estMin: number }[] = [
-  { stationName: 'Receiving', sequence: 10, estMin: 1 },
-  { stationName: 'Inspection', sequence: 20, estMin: 2 },
-  { stationName: 'Part Staging', sequence: 30, estMin: 1 },
+export const KIT_SUPPLIED_ROUTING: {
+  stationName: string
+  sequence: number
+  estMin: number
+  timeBasis: 'per_unit' | 'per_line_item'
+}[] = [
+  { stationName: 'Receiving', sequence: 10, estMin: 5, timeBasis: 'per_line_item' },
+  { stationName: 'Inspection', sequence: 20, estMin: 2, timeBasis: 'per_line_item' },
+  { stationName: 'Part Staging', sequence: 30, estMin: 2, timeBasis: 'per_line_item' },
 ]
 
 /**
@@ -384,6 +389,7 @@ export interface SourcedRoutingRow {
   station_id: string
   sequence: number
   est_time_min: number | null
+  time_basis?: 'per_unit' | 'per_line_item'  // per_unit = multiply by qty, per_line_item = fixed time
   notes?: string | null
   workstations: { station_code: string; station_name: string } | null
 }
@@ -424,6 +430,7 @@ export function applyKitSourcing<M extends { item_id: string }>(args: {
         station_id: ws.id,
         sequence: op.sequence,
         est_time_min: op.estMin,
+        time_basis: op.timeBasis,  // per_line_item for receiving operations
         notes: null,
         workstations: { station_code: ws.station_code, station_name: ws.station_name },
       })

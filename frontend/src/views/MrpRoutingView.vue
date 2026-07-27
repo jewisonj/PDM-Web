@@ -59,6 +59,7 @@ interface RoutingStep {
   station_name?: string
   sequence: number
   est_time_min: number
+  time_basis: 'per_unit' | 'per_line_item'  // per_unit = multiply by qty, per_line_item = fixed time
   notes: string
   cost_override: number | null
 }
@@ -218,7 +219,8 @@ const routingStatusOptions = [
 ]
 
 // Routing templates with optional default times per station
-// stations can be string[] or {code, time}[] for default times
+// stations can be string[] or {code, time, basis}[] for default times
+// basis: 'per_unit' = multiply by qty (default), 'per_line_item' = fixed time regardless of qty
 const routingTemplates = [
   { key: 'FORMED_SM', label: 'Formed SM', stations: ['012', '013', '011', '050'] },
   { key: 'FLAT_SM', label: 'Flat SM', stations: ['012', '011', '050'] },
@@ -226,9 +228,9 @@ const routingTemplates = [
   { key: 'WELD_ASM', label: 'Weld Asm', stations: ['014', '015', '017', '050'] },
   { key: 'MECH_ASM', label: 'Mech Asm', stations: ['025', '050'] },
   { key: 'PURCHASED', label: 'Purchased', stations: [
-    { code: '005', time: 10 },
-    { code: '020', time: 5 },
-    { code: '050', time: 5 }
+    { code: '005', time: 5, basis: 'per_line_item' },   // Receiving - 5 min per line item
+    { code: '020', time: 2, basis: 'per_line_item' },   // Part Staging - 2 min per line item
+    { code: '050', time: 2, basis: 'per_line_item' }    // Inspection - 2 min per line item
   ]}
 ]
 
@@ -1082,6 +1084,7 @@ function addRoutingStep() {
     station_name: station.station_name,
     sequence: lastSequence + 10,
     est_time_min: estTime,
+    time_basis: 'per_unit',  // Default to per_unit for manually added stations
     notes: '',
     cost_override: null
   })
@@ -1123,9 +1126,12 @@ function applyTemplate(templateKey: string) {
   if (!template) return
 
   routing.value = template.stations.map((stationEntry, i) => {
-    // Handle both string format and {code, time} object format
+    // Handle both string format and {code, time, basis} object format
     const stationCode = typeof stationEntry === 'string' ? stationEntry : stationEntry.code
     const defaultTime = typeof stationEntry === 'object' ? stationEntry.time : 0
+    const timeBasis = typeof stationEntry === 'object' && stationEntry.basis
+      ? stationEntry.basis as 'per_unit' | 'per_line_item'
+      : 'per_unit'
 
     const station = workstations.value.find(w => w.station_code === stationCode)
 
@@ -1145,6 +1151,7 @@ function applyTemplate(templateKey: string) {
       station_name: station?.station_name,
       sequence: (i + 1) * 10,
       est_time_min: estTime,
+      time_basis: timeBasis,
       notes: '',
       cost_override: null
     }
@@ -1169,6 +1176,7 @@ async function saveRouting() {
     station_id: r.station_id,
     sequence: r.sequence,
     est_time_min: r.est_time_min || 0,
+    time_basis: r.time_basis || 'per_unit',
     notes: r.notes || null,
     cost_override: r.cost_override ?? null
   }))

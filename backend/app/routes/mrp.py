@@ -125,7 +125,7 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
 
     # Load routing for all items
     routing_result = supabase.table("routing").select(
-        "item_id, station_id, sequence, est_time_min, cost_override"
+        "item_id, station_id, sequence, est_time_min, cost_override, time_basis"
     ).in_("item_id", item_ids).order("sequence").execute()
 
     routing_by_item: dict[str, list] = {}
@@ -173,21 +173,28 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
             continue
 
         # Calculate per-operation costs
+        # Track fixed (per_line_item) vs variable (per_unit) costs separately
         item_operations = []
-        item_labor = 0.0
-        item_outsourced = 0.0
+        item_labor_fixed = 0.0      # per_line_item operations - don't multiply by qty
+        item_labor_variable = 0.0   # per_unit operations - multiply by qty
+        item_outsourced_fixed = 0.0
+        item_outsourced_variable = 0.0
 
         for step in routing_by_item.get(item_id, []):
             ws = ws_map.get(step["station_id"], {})
             op_cost = 0.0
             is_outsourced = ws.get("is_outsourced", False)
+            time_basis = step.get("time_basis", "per_unit")
 
             if is_outsourced:
                 cost = step.get("cost_override")
                 if cost is None:
                     cost = ws.get("outsourced_cost_default") or 0
                 op_cost = float(cost)
-                item_outsourced += op_cost
+                if time_basis == "per_line_item":
+                    item_outsourced_fixed += op_cost
+                else:
+                    item_outsourced_variable += op_cost
             else:
                 override = step.get("cost_override")
                 if override is not None:
@@ -196,13 +203,17 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
                     rate = float(ws.get("hourly_rate") or default_labor_rate)
                     time_min = float(step.get("est_time_min") or 0)
                     op_cost = (time_min / 60) * rate
-                item_labor += op_cost
+                if time_basis == "per_line_item":
+                    item_labor_fixed += op_cost
+                else:
+                    item_labor_variable += op_cost
 
             item_operations.append({
                 "station_code": ws.get("station_code", ""),
                 "station_name": ws.get("station_name", ""),
                 "is_outsourced": is_outsourced,
                 "est_time_min": float(step.get("est_time_min") or 0),
+                "time_basis": time_basis,
                 "cost": round(op_cost, 2),
             })
 
@@ -218,8 +229,11 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
                     "total_cost": 0.0,
                     "items": set(),
                 }
-            ops_accumulator[sid]["total_time_min"] += float(step.get("est_time_min") or 0) * qty
-            ops_accumulator[sid]["total_cost"] += op_cost * qty
+            # Respect time_basis: per_line_item = fixed time, per_unit = multiply by qty
+            time_basis = step.get("time_basis", "per_unit")
+            time_multiplier = 1 if time_basis == "per_line_item" else qty
+            ops_accumulator[sid]["total_time_min"] += float(step.get("est_time_min") or 0) * time_multiplier
+            ops_accumulator[sid]["total_cost"] += op_cost * time_multiplier
             ops_accumulator[sid]["items"].add(item.get("item_number", ""))
 
         # Calculate material cost (same logic as cost-estimate)
@@ -247,21 +261,29 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
                 else:
                     item_material += (float(rm.get("qty_required") or 0) / 12) * per_ft
 
-        unit_cost = item_labor + item_outsourced + item_material
-        extended = unit_cost * qty
+        # Calculate total costs respecting time_basis:
+        # - Fixed costs (per_line_item): charged once regardless of qty
+        # - Variable costs (per_unit): multiplied by qty
 
-        total_labor += item_labor * qty
+        # Extended = fixed costs (once) + variable costs (per qty)
+        extended = (item_labor_fixed + item_outsourced_fixed +
+                    (item_labor_variable + item_outsourced_variable + item_material) * qty)
+
+        # Unit cost = variable costs per piece (for comparison/quoting)
+        unit_cost = item_labor_variable + item_outsourced_variable + item_material
+
+        total_labor += item_labor_fixed + item_labor_variable * qty
         total_material += item_material * qty
-        total_outsourced += item_outsourced * qty
+        total_outsourced += item_outsourced_fixed + item_outsourced_variable * qty
 
         manufactured_items.append({
             "item_id": item_id,
             "item_number": item.get("item_number", ""),
             "name": item.get("name", ""),
             "quantity": qty,
-            "material_cost": round(item_material, 2),
-            "labor_cost": round(item_labor, 2),
-            "outsourced_cost": round(item_outsourced, 2),
+            "material_cost": round(item_material * qty, 2),
+            "labor_cost": round(item_labor_fixed + item_labor_variable * qty, 2),
+            "outsourced_cost": round(item_outsourced_fixed + item_outsourced_variable * qty, 2),
             "unit_cost": round(unit_cost, 2),
             "extended_cost": round(extended, 2),
             "operations": item_operations,
