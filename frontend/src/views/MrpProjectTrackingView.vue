@@ -261,6 +261,7 @@ async function loadProject() {
       station_id,
       sequence,
       est_time_min,
+      time_basis,
       workstations (
         station_code,
         station_name

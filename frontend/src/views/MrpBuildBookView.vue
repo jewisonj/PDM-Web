@@ -57,7 +57,7 @@ async function loadAll() {
         .or(`parent_item_id.in.(${itemIds.join(',')}),child_item_id.in.(${itemIds.join(',')})`),
       supabase
         .from('routing')
-        .select('id, item_id, station_id, sequence, est_time_min, notes, workstations (station_code, station_name)')
+        .select('id, item_id, station_id, sequence, est_time_min, time_basis, notes, workstations (station_code, station_name)')
         .in('item_id', itemIds)
         .order('sequence'),
       supabase.from('workstations').select('id, station_code, station_name, station_group, sort_order'),
