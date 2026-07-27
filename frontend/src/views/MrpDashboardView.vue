@@ -19,6 +19,7 @@ interface ProjectPart {
   has_routing: boolean
   is_manual: boolean
   est_time_min: number
+  fixed_time_min: number  // per_line_item operations (don't multiply by qty)
   routing_count: number
 }
 
@@ -129,7 +130,9 @@ const referenceDocs = computed(() =>
 const totalParts = computed(() => projectParts.value.length)
 
 const totalHours = computed(() => {
-  const totalMinutes = projectParts.value.reduce((sum, p) => sum + (p.quantity * p.est_time_min), 0)
+  // Total = fixed time (once per line item) + variable time (per unit × quantity)
+  const totalMinutes = projectParts.value.reduce((sum, p) =>
+    sum + p.fixed_time_min + (p.quantity * p.est_time_min), 0)
   return Math.round(totalMinutes / 60 * 10) / 10
 })
 
@@ -163,7 +166,8 @@ const remainingHours = computed(() => {
       completeParts++
     } else {
       // Part is not complete - add its time to remaining
-      remainingMinutes += part.quantity * part.est_time_min
+      // Fixed time (once) + variable time (per qty)
+      remainingMinutes += part.fixed_time_min + (part.quantity * part.est_time_min)
     }
   }
   return Math.round(remainingMinutes / 60 * 10) / 10
@@ -241,15 +245,20 @@ async function loadProjectParts(projectId: string) {
     // Batch query 1: Get ALL routing data for all items at once
     const { data: allRoutingData } = await supabase
       .from('routing')
-      .select('item_id, est_time_min')
+      .select('item_id, est_time_min, time_basis')
       .in('item_id', itemIds)
 
-    // Build routing lookup map: item_id -> { steps: count, totalTime: minutes }
-    const routingByItem = new Map<string, { steps: number, totalTime: number }>()
+    // Build routing lookup map: item_id -> { steps, variableTime (per_unit), fixedTime (per_line_item) }
+    const routingByItem = new Map<string, { steps: number, variableTime: number, fixedTime: number }>()
     for (const r of allRoutingData || []) {
-      const existing = routingByItem.get(r.item_id) || { steps: 0, totalTime: 0 }
+      const existing = routingByItem.get(r.item_id) || { steps: 0, variableTime: 0, fixedTime: 0 }
       existing.steps++
-      existing.totalTime += r.est_time_min || 0
+      const time = r.est_time_min || 0
+      if (r.time_basis === 'per_line_item') {
+        existing.fixedTime += time  // Fixed time regardless of quantity
+      } else {
+        existing.variableTime += time  // Multiply by quantity
+      }
       routingByItem.set(r.item_id, existing)
     }
 
@@ -275,7 +284,7 @@ async function loadProjectParts(projectId: string) {
 
     // Process parts using batched data (no additional queries needed)
     const partsWithRouting = (data || []).map((pp: any) => {
-      const routing = routingByItem.get(pp.item_id) || { steps: 0, totalTime: 0 }
+      const routing = routingByItem.get(pp.item_id) || { steps: 0, variableTime: 0, fixedTime: 0 }
 
       return {
         id: pp.id,
@@ -286,7 +295,8 @@ async function loadProjectParts(projectId: string) {
         is_assembly: assemblyIds.has(pp.item_id),
         has_routing: routing.steps > 0,
         is_manual: pp.is_manual || false,
-        est_time_min: routing.totalTime,
+        est_time_min: routing.variableTime,  // Per-unit time (multiply by qty)
+        fixed_time_min: routing.fixedTime,   // Per-line-item time (fixed)
         routing_count: routing.steps
       }
     })
