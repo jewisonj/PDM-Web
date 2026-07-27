@@ -274,7 +274,100 @@ full re-issue (every section revs), with each section's change notice reading
     the shop. Bumping it forces the unchanged-content booklets (e.g. `II-CSA00020`, rev A→B)
     to re-render too, so no booklet is left printing stale terminology under an old rev.
 
-## 7. Risks
+## 7. Purchase List CSV Enhancement (2026-07-27)
+
+**Problem:** The purchase list CSV export (`GET /api/design-books/{book_code}/purchase-list-csv`)
+originally showed vendor bundles as a single line item. This was insufficient for incoming
+inspection — when a bundle arrives, the shop needs to verify all individual kit parts against
+their prints, not just check off one bundle row.
+
+**Solution:** Modified `get_purchase_list_csv()` in `backend/app/services/master_design_book.py`
+to include individual kit parts under each bundle header.
+
+### CSV Structure (Before)
+
+```csv
+Part #,Source,Description,Qty,Long Lead,Type,Ordered,Received
+KIT-001,Precision Tube Laser,Tube Laser Bundle (18 parts),1,,BUNDLE,,
+mmc9056k362,McMaster-Carr,M8 Socket Cap Screw,100,,PART,,
+```
+
+**Problem:** No visibility into which 18 parts are in the bundle.
+
+### CSV Structure (After)
+
+```csv
+Part #,Source,Description,Qty,Long Lead,Type,Ordered,Received
+KIT-001,Precision Tube Laser,Tube Laser Bundle (18 parts),1,,BUNDLE,,
+  csp00010,KIT-001,TUBE 2X2X.125 28.43 LONG,2,,KIT PART,,
+  csp00020,KIT-001,TUBE 2X2X.125 24.75 LONG,2,,KIT PART,,
+  csp00030,KIT-001,TUBE 1.5X1.5X.125 22.0 LONG,4,,KIT PART,,
+  ...
+
+mmc9056k362,McMaster-Carr,M8 Socket Cap Screw,100,,PART,,
+```
+
+**Benefits:**
+- Individual kit parts are indented (leading space) for visual grouping
+- `Type` column shows `"KIT PART"` to distinguish from loose purchased parts
+- `Source` column shows the kit number (e.g., `KIT-001`) instead of vendor
+- Quantities match the project BOM (fetched from `mrp_project_parts`)
+- Blank row separates bundles from individual purchased parts
+
+### Implementation Details
+
+**Data Sources:**
+1. **Bundle metadata** - From spine `payload.bundles[]` (kit number, vendor, part count)
+2. **Kit parts** - Query `project_item_source` joined with `items` and `project_kits`
+   - Filter: `source_type='kit'` for the template project
+3. **Part quantities** - Query `mrp_project_parts` for the template project
+
+**Code Changes (lines 2636-2711):**
+1. Fetch kit parts from database if bundles exist and template project is set
+2. Build `kit_parts_by_number` map: `{kit_number: [{item_number, name, qty}, ...]}`
+3. For each bundle, write:
+   - Bundle header row (kit number, vendor, "X parts", Type=BUNDLE)
+   - Individual kit part rows (indented, Type=KIT PART, Source=kit_number)
+4. Blank separator row
+5. Individual purchased parts (mmc/spn, Type=PART)
+
+**Use Case:**
+When `KIT-001` arrives from the vendor, the shop can:
+1. Unpack the bundle
+2. Use the CSV checklist to verify all 18 parts are included
+3. Cross-check each part against its bound print (stored in the receiving booklet)
+4. Check off both the bundle row and each individual part row
+5. Route verified parts to their staging areas
+
+**Related Changes:**
+- **KIT-001 created for SPA0040** (2026-07-27): Copied the PTL tube bundle structure
+  from SPA0030 to the new project. 33 parts total at $10,755.85. Note: `csp00060` was
+  not included because it was commonized into `csp00050` across both projects.
+
+### CSV Export Endpoint
+
+```
+GET /api/design-books/{book_code}/purchase-list-csv
+```
+
+**Response:**
+```json
+{
+  "csv": "Part #,Source,Description,Qty,Long Lead,Type,Ordered,Received\nKIT-001,...",
+  "book_rev": 3,
+  "item_count": 42
+}
+```
+
+**Notes:**
+- `item_count` includes bundle headers, kit parts, and individual purchased parts
+- CSV is UTF-8 encoded, with ASCII transliteration for special characters (`_ascii()` chokepoint)
+- Empty cells for `Long Lead`, `Ordered`, `Received` are user-fillable checkboxes
+- Parts are sorted by `item_number` within each kit
+
+---
+
+## 8. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -285,3 +378,4 @@ full re-issue (every section revs), with each section's change notice reading
 | Renderer bump hides the sourcing reason from the floor | Keep data reasons on renderer bump |
 | Narrowing ref test to `zzz` reclassifies `zzc*` | Broaden shared helper to `^zz` |
 | Two books disagree (project vs master) | Phase D wires both |
+| Kit parts missing from purchase checklist CSV | Individual parts now listed under bundle headers (fixed 2026-07-27) |

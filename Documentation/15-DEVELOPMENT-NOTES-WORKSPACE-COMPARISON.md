@@ -1963,6 +1963,89 @@ if book.get("template_project_id"):
 
 ---
 
-**Last Updated:** 2026-07-21
-**Version:** 3.9.4
+### 44. Purchase List CSV Must Include Individual Kit Parts
+
+**Date:** 2026-07-27
+**Symptom:** The purchase list CSV export showed vendor bundles as a single line item, making it impossible for the shop to verify individual parts on receipt.
+**Root Cause:** The `get_purchase_list_csv()` function only exported bundle metadata (kit number, vendor, total part count), not the individual parts within each bundle.
+**Impact:** When KIT-001 (18 tube parts) arrived from the vendor, the shop had no checklist to verify all parts were included and matched the bound prints in the receiving booklet.
+
+**The Fix:**
+
+Modified `backend/app/services/master_design_book.py::get_purchase_list_csv()` (lines 2636-2711) to:
+
+1. Query `project_item_source` joined with `project_kits` and `items` to fetch all parts with `source_type='kit'`
+2. Query `mrp_project_parts` to get part quantities for the template project
+3. Build a `kit_parts_by_number` map: `{kit_number: [{item_number, name, qty}, ...]}`
+4. For each bundle in the CSV:
+   - Write bundle header row (Type=BUNDLE)
+   - Write individual kit part rows underneath (Type=KIT PART, indented with leading space)
+5. Separate bundles from individual purchased parts with a blank row
+
+**CSV Structure Change:**
+
+Before:
+```csv
+Part #,Source,Description,Qty,Long Lead,Type,Ordered,Received
+KIT-001,Precision Tube Laser,Tube Laser Bundle (18 parts),1,,BUNDLE,,
+mmc9056k362,McMaster-Carr,M8 Socket Cap Screw,100,,PART,,
+```
+
+After:
+```csv
+Part #,Source,Description,Qty,Long Lead,Type,Ordered,Received
+KIT-001,Precision Tube Laser,Tube Laser Bundle (18 parts),1,,BUNDLE,,
+  csp00010,KIT-001,TUBE 2X2X.125 28.43 LONG,2,,KIT PART,,
+  csp00020,KIT-001,TUBE 2X2X.125 24.75 LONG,2,,KIT PART,,
+  ...
+
+mmc9056k362,McMaster-Carr,M8 Socket Cap Screw,100,,PART,,
+```
+
+**How to Diagnose:**
+
+1. Export purchase list CSV: `GET /api/design-books/{book_code}/purchase-list-csv`
+2. Check if bundles have individual parts listed underneath
+3. Verify `Type` column shows BUNDLE / KIT PART / PART distinctions
+4. Confirm quantities match the project BOM (`mrp_project_parts`)
+
+**Why This Matters:**
+
+**Incoming Inspection:** When vendor bundles arrive, the shop needs to verify every part against its print. A bundle header alone doesn't provide the detail needed for this quality control step. The shop flow is:
+1. Unpack bundle
+2. Cross-check each part number against CSV checklist
+3. Match physical parts to bound prints in I-RCV receiving booklet
+4. Check off both bundle and individual parts
+5. Route verified parts to staging areas
+
+**Traceability:** The CSV provides a complete audit trail of what was ordered and received. Without individual part visibility, it's impossible to track which specific parts were missing or incorrect in a vendor shipment.
+
+**Prevention:**
+
+- **Export full hierarchies** when dealing with bundles/kits/assemblies - users need detail, not just summary
+- **Include child items in checklists** for verification workflows (purchasing, receiving, inspection)
+- **Query related tables** (like `project_item_source`) to reconstruct full context when exporting data
+- **Use indentation/formatting** in CSV exports to show hierarchical relationships visually
+- **Test with real workflow** - have shop personnel review CSV format before finalizing
+
+**Related Work:**
+
+- **KIT-001 created for SPA0040** (2026-07-27): Copied PTL tube bundle from SPA0030 to new project. 33 parts total at $10,755.85. Note: `csp00060` was excluded because it was commonized into `csp00050` across both projects.
+
+**Applies To:**
+- CSV/Excel export features where hierarchical data must be represented
+- Purchase/receiving workflows requiring item-by-item verification
+- Any "bundle" or "kit" concept where the whole contains multiple trackable parts
+
+**Commit:** (Current session - Kit Management)
+
+**Related Docs:**
+- `Documentation/37-KIT-BUNDLE-PRICING.md` — Kit/bundle pricing system
+- `Documentation/38-KIT-SOURCING-IN-BUILD-DOCS.md` — Section 7: Purchase List CSV Enhancement
+- `Documentation/36-MASTER-DESIGN-BOOK-PLAN.md` — Master Design Book architecture
+
+---
+
+**Last Updated:** 2026-07-27
+**Version:** 3.9.7
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

@@ -2614,6 +2614,7 @@ def get_purchase_list_csv(book_code: str) -> dict:
     """Generate a CSV of purchased items from the spine's buyList.
 
     Returns all mmc/spn items and vendor bundles in a format ready for ordering.
+    Includes individual kit parts under each bundle header for checklist verification.
     """
     import csv
 
@@ -2632,16 +2633,54 @@ def get_purchase_list_csv(book_code: str) -> dict:
     buy_list = payload.get("buyList") or []
     bundles = payload.get("bundles") or []
 
+    # Fetch kit parts if we have bundles and a template project
+    kit_parts_by_number: dict[str, list[dict]] = {}
+    project_id = book.get("template_project_id")
+    if bundles and project_id:
+        # Query kit parts directly - join project_kits, project_item_source, items, mrp_project_parts
+        kit_query = (
+            supabase.table("project_item_source")
+            .select("kit_id, items!inner(item_number, name), project_kits!inner(kit_number)")
+            .eq("project_id", project_id)
+            .eq("source_type", "kit")
+            .execute()
+        )
+        # Get quantities from mrp_project_parts
+        qty_query = (
+            supabase.table("mrp_project_parts")
+            .select("item_id, quantity, items!inner(item_number)")
+            .eq("project_id", project_id)
+            .execute()
+        )
+        qty_map = {r["items"]["item_number"]: r["quantity"] for r in (qty_query.data or [])}
+
+        for row in (kit_query.data or []):
+            kit_num = row.get("project_kits", {}).get("kit_number")
+            item_info = row.get("items", {})
+            item_number = item_info.get("item_number", "")
+            if kit_num:
+                if kit_num not in kit_parts_by_number:
+                    kit_parts_by_number[kit_num] = []
+                kit_parts_by_number[kit_num].append({
+                    "item_number": item_number,
+                    "name": item_info.get("name", ""),
+                    "qty": qty_map.get(item_number, 1),
+                })
+
     output = io.StringIO()
     writer = csv.writer(output)
 
     # Header row
     writer.writerow(["Part #", "Source", "Description", "Qty", "Long Lead", "Type", "Ordered", "Received"])
 
-    # Bundles first (ordered as a single line item)
+    item_count = 0
+
+    # Bundles with their parts listed underneath
     for b in bundles:
+        kit_number = b.get("kit_number", "")
+        # Bundle header row
         writer.writerow([
-            b.get("kit_number", ""),
+            kit_number,
             b.get("vendor", ""),
             f"{b.get('kit_name', '')} ({b.get('partCount', 0)} parts)",
             1,
@@ -2650,8 +2689,28 @@ def get_purchase_list_csv(book_code: str) -> dict:
             "",
             "",
         ])
+        item_count += 1
 
-    # Individual purchased items
+        # Kit parts under the bundle (indented with leading space)
+        kit_parts = kit_parts_by_number.get(kit_number, [])
+        for part in sorted(kit_parts, key=lambda p: p.get("item_number", "")):
+            writer.writerow([
+                f"  {part.get('item_number', '')}",  # Indented
+                kit_number,  # Source is the kit
+                _ascii(part.get("name", "")),
+                part.get("qty", 1),
+                "",
+                "KIT PART",
+                "",
+                "",
+            ])
+            item_count += 1
+
+    # Blank row to separate bundles from individual purchases
+    if bundles and buy_list:
+        writer.writerow([])
+
+    # Individual purchased items (mmc/spn)
     for item in buy_list:
         writer.writerow([
             item.get("displayNumber", ""),
@@ -2663,9 +2722,9 @@ def get_purchase_list_csv(book_code: str) -> dict:
             "",
             "",
         ])
+        item_count += 1
 
     csv_content = output.getvalue()
-    item_count = len(buy_list) + len(bundles)
 
     return {
         "csv": csv_content,

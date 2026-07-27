@@ -778,6 +778,36 @@ Allow marking parts as "partial kit" (e.g., vendor supplies pre-cut parts, you d
 
 ---
 
+## Kit Purchase List CSV
+
+**Related:** See `38-KIT-SOURCING-IN-BUILD-DOCS.md` section 7 for the purchase list CSV enhancement.
+
+The Master Design Book purchase list CSV (`GET /api/design-books/{book_code}/purchase-list-csv`)
+includes individual kit parts under each bundle header for incoming inspection verification.
+
+**Example Output:**
+
+```csv
+Part #,Source,Description,Qty,Long Lead,Type,Ordered,Received
+KIT-001,Precision Tube Laser,Tube Laser Bundle (18 parts),1,,BUNDLE,,
+  csp00010,KIT-001,TUBE 2X2X.125 28.43 LONG,2,,KIT PART,,
+  csp00020,KIT-001,TUBE 2X2X.125 24.75 LONG,2,,KIT PART,,
+  ...
+
+mmc9056k362,McMaster-Carr,M8 Socket Cap Screw,100,,PART,,
+```
+
+**Benefits:**
+- Shop can verify all individual kit parts on receipt
+- Kit parts are indented for visual grouping
+- Type column distinguishes BUNDLE / KIT PART / PART
+- Quantities match the project BOM
+
+**Implementation:** `backend/app/services/master_design_book.py::get_purchase_list_csv()`
+(enhanced 2026-07-27)
+
+---
+
 ## Related Documentation
 
 - **Database Schema:** `03-DATABASE-SCHEMA.md` - Full table definitions (update with kit tables)
@@ -785,9 +815,10 @@ Allow marking parts as "partial kit" (e.g., vendor supplies pre-cut parts, you d
 - **Cost Estimation:** `06-BOM-COST-ROLLUP-GUIDE.md` - Update with kit pricing integration
 - **API Reference:** `04-SERVICES-REFERENCE.md` - Add kit endpoints
 - **UI Standards:** `35-UI-DESIGN-STANDARDS.md` - Kit management UI patterns
+- **Kit Sourcing in Build Docs:** `38-KIT-SOURCING-IN-BUILD-DOCS.md` - Purchase list CSV enhancement
 
 ---
 
-**Last Updated:** 2026-07-09
+**Last Updated:** 2026-07-27
 **Version:** v3.9.3
 **Author:** Claude Code (documentation agent)
