@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     This script monitors C:\PDM-Upload for new files and:
-    - Uploads STEP, PDF, DXF, SVG files to the PDM-Web API
+    - Uploads STEP, PDF, DXF, SVG, CAD, IMAGE (jpg/png), and STL files to the PDM-Web API
     - Parses BOM text files and uploads BOM relationships
     - Parses parameter text files and updates item properties
 

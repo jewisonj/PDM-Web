@@ -36,6 +36,7 @@ def get_file_type(filename: str) -> str:
         "png": "IMAGE",
         "jpg": "IMAGE",
         "jpeg": "IMAGE",
+        "stl": "STL",
     }
     return type_map.get(ext, "OTHER")
 

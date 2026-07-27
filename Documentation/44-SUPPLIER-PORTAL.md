@@ -1379,6 +1379,251 @@ Track all file downloads with:
 
 ---
 
+## 3D Model Viewer and Annotations
+
+**Version:** Added in v3.9.8 (2026-07-27)
+
+### Overview
+
+Suppliers can now view and annotate STL files directly in the browser using an interactive 3D viewer. This enables precise communication about specific features, dimensions, or manufacturing questions by clicking directly on the 3D model.
+
+### Features
+
+**Interactive 3D Viewer:**
+- Three.js-based STL mesh renderer
+- OrbitControls for intuitive camera navigation (rotate, pan, zoom)
+- Automatic camera framing to fit model
+- Dark theme matching PDM aesthetic
+
+**Click-to-Annotate:**
+- Enter annotation mode with "Add Note" button
+- Click on model surface to place annotation marker
+- System captures exact 3D position and surface normal vector
+- Enter text content (question, note, or comment)
+- Annotations saved to database with author attribution
+
+**Visual Markers:**
+- Blue spheres for internal user annotations
+- Green spheres for supplier annotations
+- CSS2D labels that scale properly with camera zoom
+- Hover to view annotation content
+- Click annotation to see full detail and timestamp
+
+**Two-Way Communication:**
+- Both suppliers and internal users see all annotations on the same model
+- Color coding distinguishes author type
+- Chronological timestamp tracking
+- Delete annotation (author only)
+
+### Database Schema
+
+New table: `model_annotations`
+
+```sql
+CREATE TABLE model_annotations (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id     UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    item_id     UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    position_x  NUMERIC NOT NULL,
+    position_y  NUMERIC NOT NULL,
+    position_z  NUMERIC NOT NULL,
+    normal_x    NUMERIC,
+    normal_y    NUMERIC,
+    normal_z    NUMERIC,
+    content     TEXT NOT NULL,
+    author_type TEXT NOT NULL CHECK (author_type IN ('user', 'supplier')),
+    author_id   TEXT NOT NULL,
+    author_name TEXT NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_model_annotations_file ON model_annotations(file_id);
+CREATE INDEX idx_model_annotations_item ON model_annotations(item_id);
+```
+
+### API Endpoints
+
+**Supplier Routes:**
+
+**GET `/api/supplier/items/{item_number}/files/{file_id}/annotations`**
+
+Get all annotations for an STL file (requires supplier access to item).
+
+Response (200):
+```json
+[
+  {
+    "id": "uuid",
+    "position_x": 12.5,
+    "position_y": -3.2,
+    "position_z": 8.7,
+    "normal_x": 0.0,
+    "normal_y": 1.0,
+    "normal_z": 0.0,
+    "content": "What is the tolerance for this hole?",
+    "author_type": "supplier",
+    "author_id": "supplier_uuid",
+    "author_name": "Acme Manufacturing",
+    "created_at": "2026-07-27T10:30:00Z"
+  },
+  {
+    "id": "uuid",
+    "position_x": 12.5,
+    "position_y": -3.2,
+    "position_z": 8.7,
+    "normal_x": 0.0,
+    "normal_y": 1.0,
+    "normal_z": 0.0,
+    "content": "±0.005\" as shown on drawing",
+    "author_type": "user",
+    "author_id": "user_uuid",
+    "author_name": "Jack (Engineer)",
+    "created_at": "2026-07-27T11:15:00Z"
+  }
+]
+```
+
+**POST `/api/supplier/items/{item_number}/files/{file_id}/annotations`**
+
+Create a new annotation (requires supplier access to item).
+
+Request:
+```json
+{
+  "position_x": 15.3,
+  "position_y": 2.1,
+  "position_z": -5.8,
+  "normal_x": 0.707,
+  "normal_y": 0.707,
+  "normal_z": 0.0,
+  "content": "Can we add a chamfer here for easier assembly?"
+}
+```
+
+Response (201):
+```json
+{
+  "id": "uuid",
+  "file_id": "file_uuid",
+  "item_id": "item_uuid",
+  "position_x": 15.3,
+  "position_y": 2.1,
+  "position_z": -5.8,
+  "normal_x": 0.707,
+  "normal_y": 0.707,
+  "normal_z": 0.0,
+  "content": "Can we add a chamfer here for easier assembly?",
+  "author_type": "supplier",
+  "author_id": "supplier_uuid",
+  "author_name": "Acme Manufacturing",
+  "created_at": "2026-07-27T14:00:00Z"
+}
+```
+
+**User Routes (for internal reference):**
+
+- `GET /api/files/{file_id}/annotations` - Get annotations (user access)
+- `POST /api/files/{file_id}/annotations` - Create annotation (user access)
+- `DELETE /api/annotations/{annotation_id}` - Delete annotation (author only)
+
+### Allowed File Types Update
+
+The default file type array has been expanded to include STL and IMAGE:
+
+```python
+# backend/app/routes/supplier.py
+allowed_types = access_result.data.get("file_types", ["PDF", "STEP", "IMAGE", "STL"])
+```
+
+**Updated File Type Mapping:**
+- `PDF` - Technical drawings (DXF converted to PDF, engineering specs)
+- `STEP` - 3D CAD models for CAM programming
+- `IMAGE` - Reference photos, assembly instructions, material certifications
+- `STL` - 3D mesh for visualization and annotation (new in v3.9.8)
+
+### Usage Workflow
+
+**For Suppliers:**
+1. Log in to supplier portal
+2. Navigate to item detail page
+3. Click "View 3D" button on STL file
+4. Interactive viewer opens with model loaded
+5. Click "Add Note" to enter annotation mode
+6. Click on model surface where question applies
+7. Enter question text and save
+8. Annotation appears as green sphere on model
+9. Internal team sees annotation and can reply
+
+**For Internal Users:**
+1. View same item in ItemDetailView
+2. Click "View 3D" on STL file
+3. See supplier's green annotations
+4. Click "Add Note" to respond
+5. Click near supplier's annotation
+6. Enter response and save
+7. Annotation appears as blue sphere
+8. Supplier sees response on next login
+
+### Item Metadata Fields Added
+
+The following fields were added to `SupplierItemView` API responses:
+
+```typescript
+interface SupplierItemView {
+  // ... existing fields
+  thickness?: number    // Part thickness in inches (for material calculations)
+  mass?: number         // Part mass in pounds (for shipping/handling)
+}
+```
+
+**Why These Matter:**
+- `thickness` - Critical for material quoting and waterjet cutting speeds
+- `mass` - Important for shipping cost estimation and handling equipment selection
+
+### Implementation Files
+
+**Frontend:**
+- `frontend/src/components/StlViewer.vue` - Three.js viewer component (new)
+- `frontend/src/views/supplier/SupplierItemView.vue` - Added "View 3D" button and viewer integration
+- `frontend/src/views/ItemDetailView.vue` - Added "View 3D" button for internal users
+- `frontend/src/types/supplier.ts` - Added `thickness` and `mass` to `SupplierItemView`
+
+**Backend:**
+- `backend/app/routes/annotations.py` - User annotation CRUD routes (new)
+- `backend/app/routes/supplier.py` - Added supplier annotation endpoints (lines 415-516)
+- `backend/app/models/schemas.py` - Added `Annotation`, `AnnotationCreate` Pydantic schemas
+- `backend/app/models/supplier_schemas.py` - Added `thickness`, `mass` to `SupplierItemView`
+
+### Security Considerations
+
+**Access Control:**
+- Suppliers can only annotate files they have explicit access to
+- Supplier JWT token required for all annotation operations
+- Backend verifies `supplier_item_access` before allowing annotation creation
+- Annotations cascade-delete when file or item is deleted
+
+**Data Privacy:**
+- Annotations visible to both supplier and internal users (intentional for two-way communication)
+- Author type and name stored for attribution
+- No sensitive data exposed in annotation endpoints beyond what supplier already has access to
+
+**Performance:**
+- Annotations loaded once when viewer opens (not real-time polling)
+- CSS2D labels more performant than sprite-based labels
+- Denormalized `author_name` avoids joins when rendering
+
+### Future Enhancements
+
+**Potential Improvements:**
+- Arrow indicators showing surface normal direction
+- Annotation threading/replies (vs separate annotations)
+- Real-time notification when internal team replies to supplier annotation
+- Measurement tools (distance, angle) in 3D viewer
+- Section views and clipping planes for complex assemblies
+- Annotation export to PDF for offline review
+
+---
+
 ## Troubleshooting
 
 ### Supplier Cannot Log In
@@ -1495,5 +1740,5 @@ Track all file downloads with:
 ---
 
 **Document Status:** Complete
-**Last Updated:** 2026-07-22
-**Version:** v3.9.6
+**Last Updated:** 2026-07-27
+**Version:** v3.9.8

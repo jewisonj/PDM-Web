@@ -111,7 +111,7 @@ async def get_supplier_items(supplier: dict = Depends(get_current_supplier)):
             continue
 
         # Get allowed file types
-        allowed_types = access.get("file_types", ["PDF", "STEP"])
+        allowed_types = access.get("file_types", ["PDF", "STEP", "IMAGE"])
 
         # Get files matching allowed types
         files_result = supabase.table("files")\
@@ -149,6 +149,8 @@ async def get_supplier_items(supplier: dict = Depends(get_current_supplier)):
             revision=item_data.get("revision", "A"),
             lifecycle_state=item_data.get("lifecycle_state", "Design"),
             material=item_data.get("material"),
+            thickness=item_data.get("thickness"),
+            mass=item_data.get("mass"),
             allowed_file_types=allowed_types,
             files=files,
             unread_comments=unread_result.count or 0,
@@ -186,7 +188,7 @@ async def get_supplier_item(item_number: str, supplier: dict = Depends(get_curre
     if not access_result.data:
         raise HTTPException(status_code=403, detail="Access denied to this item")
 
-    allowed_types = access_result.data.get("file_types", ["PDF", "STEP"])
+    allowed_types = access_result.data.get("file_types", ["PDF", "STEP", "IMAGE"])
 
     # Get files
     files_result = supabase.table("files")\
@@ -224,6 +226,8 @@ async def get_supplier_item(item_number: str, supplier: dict = Depends(get_curre
         revision=item_data.get("revision", "A"),
         lifecycle_state=item_data.get("lifecycle_state", "Design"),
         material=item_data.get("material"),
+        thickness=item_data.get("thickness"),
+        mass=item_data.get("mass"),
         allowed_file_types=allowed_types,
         files=files,
         unread_comments=unread_result.count or 0,
@@ -263,7 +267,7 @@ async def download_supplier_file(
     if not access_result.data:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    allowed_types = access_result.data.get("file_types", ["PDF", "STEP"])
+    allowed_types = access_result.data.get("file_types", ["PDF", "STEP", "IMAGE"])
 
     # Get file
     file_result = supabase.table("files")\
@@ -402,6 +406,110 @@ async def create_supplier_comment(
 
     result = supabase.table("supplier_comments")\
         .insert(comment_data)\
+        .execute()
+
+    return result.data[0]
+
+
+# === Model Annotations for Suppliers ===
+@router.get("/items/{item_number}/files/{file_id}/annotations")
+async def get_supplier_file_annotations(
+    item_number: str,
+    file_id: UUID,
+    supplier: dict = Depends(get_current_supplier)
+):
+    """Get annotations for a file (supplier access)."""
+    supabase = get_supabase_admin()
+    supplier_id = supplier["id"]
+
+    # Verify supplier has access to this item
+    item_result = supabase.table("items")\
+        .select("id")\
+        .eq("item_number", item_number.lower())\
+        .single()\
+        .execute()
+
+    if not item_result.data:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    item_id = item_result.data["id"]
+
+    access = supabase.table("supplier_item_access")\
+        .select("id")\
+        .eq("supplier_id", supplier_id)\
+        .eq("item_id", item_id)\
+        .single()\
+        .execute()
+
+    if not access.data:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # Get annotations
+    result = supabase.table("model_annotations")\
+        .select("*")\
+        .eq("file_id", str(file_id))\
+        .order("created_at")\
+        .execute()
+
+    return result.data or []
+
+
+@router.post("/items/{item_number}/files/{file_id}/annotations")
+async def create_supplier_annotation(
+    item_number: str,
+    file_id: UUID,
+    position_x: float,
+    position_y: float,
+    position_z: float,
+    content: str,
+    normal_x: Optional[float] = None,
+    normal_y: Optional[float] = None,
+    normal_z: Optional[float] = None,
+    supplier: dict = Depends(get_current_supplier)
+):
+    """Create annotation on a file (supplier access)."""
+    supabase = get_supabase_admin()
+    supplier_id = supplier["id"]
+
+    # Verify access
+    item_result = supabase.table("items")\
+        .select("id")\
+        .eq("item_number", item_number.lower())\
+        .single()\
+        .execute()
+
+    if not item_result.data:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    item_id = item_result.data["id"]
+
+    access = supabase.table("supplier_item_access")\
+        .select("id")\
+        .eq("supplier_id", supplier_id)\
+        .eq("item_id", item_id)\
+        .single()\
+        .execute()
+
+    if not access.data:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    data = {
+        "file_id": str(file_id),
+        "item_id": item_id,
+        "position_x": position_x,
+        "position_y": position_y,
+        "position_z": position_z,
+        "normal_x": normal_x,
+        "normal_y": normal_y,
+        "normal_z": normal_z,
+        "content": content,
+        "author_type": "supplier",
+        "author_id": supplier_id,
+        "author_name": supplier.get("company_name", "Supplier"),
+    }
+
+    result = supabase.table("model_annotations")\
+        .insert(data)\
         .execute()
 
     return result.data[0]

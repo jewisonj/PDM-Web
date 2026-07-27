@@ -291,6 +291,35 @@ class CuttingParameter(CuttingParameterBase):
         from_attributes = True
 
 
+# === Model Annotation Schemas ===
+class AnnotationBase(BaseModel):
+    position_x: float
+    position_y: float
+    position_z: float
+    normal_x: Optional[float] = None
+    normal_y: Optional[float] = None
+    normal_z: Optional[float] = None
+    content: str
+
+
+class AnnotationCreate(AnnotationBase):
+    pass
+
+
+class Annotation(AnnotationBase):
+    id: UUID
+    item_id: UUID
+    file_id: UUID
+    author_type: str  # 'user' or 'supplier'
+    author_id: UUID
+    author_name: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
 # Forward reference resolution
 BOMTreeNode.model_rebuild()
 ItemWithFiles.model_rebuild()

@@ -7,9 +7,80 @@
 
 ## Current Version
 
-### v3.9.7 (2026-07-22) -- Supplier Portal
+### v3.9.8 (2026-07-27) -- Routing Time Basis (Per-Unit vs Per-Line-Item)
 
 **Status:** Current Production Release
+
+**Summary:** Added `time_basis` field to the routing table to distinguish between per-unit times (multiply by quantity) and per-line-item times (fixed regardless of quantity). This fixes purchased parts routing time inflation where receiving operations were incorrectly multiplying by piece count.
+
+#### Problem Solved
+
+**Before:** A purchased part like DOORHINGE with qty 12 and a 10-minute receiving operation showed 120 minutes (12 × 10) in the schedule and cost estimate.
+
+**After:** The same part shows 10 minutes total, because receiving a shipment line takes fixed time regardless of piece count inside the box.
+
+#### Database Changes
+
+**New Column:** `routing.time_basis`
+```sql
+ALTER TABLE routing ADD COLUMN time_basis TEXT DEFAULT 'per_unit'
+  CHECK (time_basis IN ('per_unit', 'per_line_item'));
+```
+
+**Values:**
+- `'per_unit'` (default) - Time multiplies by quantity (manufacturing operations: cutting, welding, painting)
+- `'per_line_item'` - Fixed time regardless of quantity (procurement operations: receiving, inspection sampling, kitting)
+
+**Auto-Migration:**
+- Existing mmc/spn prefixed parts with Receiving/Staging operations were automatically migrated to `time_basis: 'per_line_item'`
+- Manufacturing operations remain `'per_unit'`
+
+#### Code Changes
+
+**Backend:**
+- `backend/app/routes/mrp.py` - Cost calculation now respects time_basis (fixed vs variable labor costs)
+
+**Frontend:**
+- `frontend/src/utils/scheduling.ts` - Duration calculation checks time_basis before multiplying by quantity
+- `frontend/src/utils/buildTracker.ts` - KIT_SUPPLIED_ROUTING uses `per_line_item` by default
+- `frontend/src/views/MrpRoutingView.vue` - PURCHASED template creates receiving operations with `per_line_item`
+- `frontend/src/utils/masterDesignBook.ts` - Interface updated to include time_basis field
+
+#### Impact
+
+- **Design Book schedules** show realistic times for purchased parts (5-10 min per part NUMBER, not per piece)
+- **Project cost estimates** are accurate (receiving isn't inflated by quantity)
+- **Build Tracker** work packages display correct time estimates for kit-supplied items
+
+#### Use Cases
+
+**Per-Unit (Multiply by Quantity):**
+- Cutting 10 brackets = 10× cutting time
+- Welding 8 frames = 8× welding time
+- Painting 30 parts = 30× painting time
+
+**Per-Line-Item (Fixed Time):**
+- Receiving one shipment box = 5 min (whether 1 or 100 pieces inside)
+- QC sampling inspection = fixed time (not inspecting every piece)
+- Kitting one kit set = fixed time (regardless of how many kits ordered)
+
+#### Backward Compatibility
+
+- Existing routing records default to `'per_unit'` (preserves current behavior)
+- Null values are treated as `'per_unit'`
+- No manual data migration required
+
+#### Documentation
+
+- `Documentation/15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md` — Section 41 (implementation details)
+- `Documentation/03-DATABASE-SCHEMA.md` — routing table schema updated
+- `Documentation/24-VERSION-HISTORY.md` — This entry
+
+---
+
+### v3.9.7 (2026-07-22) -- Supplier Portal
+
+**Status:** Released
 
 **Summary:** Added external Supplier Portal allowing vendors to securely access approved files, download neutral CAD formats, and communicate with admins via per-item comments. Separate JWT authentication system ensures suppliers never receive Supabase credentials.
 

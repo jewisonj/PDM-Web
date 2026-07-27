@@ -2,7 +2,8 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useSupplierAuthStore } from '../../stores/supplierAuth'
-import type { SupplierItemView, SupplierComment } from '../../types/supplier'
+import type { SupplierItemView, SupplierComment, SupplierFileView } from '../../types/supplier'
+import StlViewer from '../../components/StlViewer.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -16,6 +17,11 @@ const error = ref<string | null>(null)
 const newComment = ref('')
 const postingComment = ref(false)
 const downloadingFile = ref<string | null>(null)
+
+// 3D Viewer state
+const showStlViewer = ref(false)
+const selectedStlFile = ref<SupplierFileView | null>(null)
+const stlViewerUrl = ref('')
 
 onMounted(async () => {
   await loadData()
@@ -59,6 +65,23 @@ async function downloadFile(fileId: string, fileName: string) {
   } finally {
     downloadingFile.value = null
   }
+}
+
+async function openStlViewer(file: SupplierFileView) {
+  try {
+    const result = await supplierAuth.getDownloadUrl(itemNumber.value, file.id)
+    stlViewerUrl.value = result.url
+    selectedStlFile.value = file
+    showStlViewer.value = true
+  } catch (e) {
+    alert(e instanceof Error ? e.message : 'Failed to load 3D model')
+  }
+}
+
+function closeStlViewer() {
+  showStlViewer.value = false
+  selectedStlFile.value = null
+  stlViewerUrl.value = ''
 }
 
 async function postComment() {
@@ -154,13 +177,22 @@ function getFileTypeClass(type: string): string {
                 <span class="file-size">{{ formatFileSize(file.file_size) }}</span>
                 <span v-if="file.revision" class="file-rev">Rev {{ file.revision }}</span>
               </div>
-              <button
-                class="download-btn"
-                @click="downloadFile(file.id, file.file_name)"
-                :disabled="downloadingFile === file.id"
-              >
-                {{ downloadingFile === file.id ? 'Opening...' : 'Download' }}
-              </button>
+              <div class="file-actions">
+                <button
+                  v-if="file.file_type === 'STL'"
+                  class="view-3d-btn"
+                  @click.stop="openStlViewer(file)"
+                >
+                  View 3D
+                </button>
+                <button
+                  class="download-btn"
+                  @click="downloadFile(file.id, file.file_name)"
+                  :disabled="downloadingFile === file.id"
+                >
+                  {{ downloadingFile === file.id ? 'Opening...' : 'Download' }}
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -205,6 +237,22 @@ function getFileTypeClass(type: string): string {
         </section>
       </template>
     </main>
+
+    <!-- 3D STL Viewer -->
+    <StlViewer
+      v-if="showStlViewer && selectedStlFile && item"
+      :stl-url="stlViewerUrl"
+      :file-id="selectedStlFile.id"
+      :item-id="item.id"
+      :item-number="item.item_number"
+      :author-info="{
+        type: 'supplier',
+        id: supplierAuth.supplier?.id || '',
+        name: supplierAuth.supplier?.company_name || 'Supplier'
+      }"
+      api-base="/api/supplier"
+      @close="closeStlViewer"
+    />
   </div>
 </template>
 
@@ -380,6 +428,7 @@ h3 {
 .file-type-badge.step { background: #dbeafe; color: #1e40af; }
 .file-type-badge.dxf { background: #fef3c7; color: #92400e; }
 .file-type-badge.svg { background: #d1fae5; color: #065f46; }
+.file-type-badge.stl { background: #ede9fe; color: #7c3aed; }
 
 .file-name {
   color: #334155;
@@ -397,6 +446,26 @@ h3 {
   background: #f1f5f9;
   padding: 2px 6px;
   border-radius: 4px;
+}
+
+.file-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.view-3d-btn {
+  background: #7c3aed;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.view-3d-btn:hover {
+  background: #6d28d9;
 }
 
 .download-btn {

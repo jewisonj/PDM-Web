@@ -3,7 +3,7 @@
 **Last Updated:** 2026-07-27
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.9.7
+**Current Version:** v3.9.8
 
 ---
 

@@ -3,7 +3,9 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useItemsStore } from '../stores/items'
 import { useAuthStore } from '../stores/auth'
-import type { BOMTreeNode } from '../types'
+import type { BOMTreeNode, FileInfo } from '../types'
+import { getSignedUrlFromPath } from '../services/storage'
+import StlViewer from '../components/StlViewer.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -56,6 +58,7 @@ function getFileIcon(type: string) {
     SVG: '🎨',
     PDF: '📕',
     IMAGE: '🖼️',
+    STL: '🔷',
     OTHER: '📎',
   }
   return icons[type] || '📎'
@@ -84,6 +87,33 @@ const isAssembly = computed(() => {
 })
 
 const downloadingAssembly = ref(false)
+
+// 3D Viewer state
+const showStlViewer = ref(false)
+const selectedStlFile = ref<FileInfo | null>(null)
+const stlViewerUrl = ref('')
+
+async function openStlViewer(file: FileInfo) {
+  if (!file.file_path) return
+  try {
+    const url = await getSignedUrlFromPath(file.file_path)
+    if (!url) {
+      console.error('Failed to get signed URL')
+      return
+    }
+    stlViewerUrl.value = url
+    selectedStlFile.value = file
+    showStlViewer.value = true
+  } catch (e) {
+    console.error('Failed to load STL:', e)
+  }
+}
+
+function closeStlViewer() {
+  showStlViewer.value = false
+  selectedStlFile.value = null
+  stlViewerUrl.value = ''
+}
 
 async function downloadAssemblyPackage() {
   if (!itemNumber.value) return
@@ -248,7 +278,16 @@ async function downloadAssemblyPackage() {
                   {{ file.file_type }} &bull; {{ formatSize(file.file_size) }} &bull; {{ formatDate(file.created_at) }}
                 </div>
               </div>
-              <button class="btn-icon">⬇️</button>
+              <div class="file-actions">
+                <button
+                  v-if="file.file_type === 'STL'"
+                  class="btn-view-3d"
+                  @click="openStlViewer(file)"
+                >
+                  View 3D
+                </button>
+                <button class="btn-icon">⬇️</button>
+              </div>
             </div>
             <div v-if="!itemsStore.currentItem.files?.length" class="empty">
               No files uploaded yet
@@ -305,6 +344,22 @@ async function downloadAssemblyPackage() {
         </div>
       </div>
     </div>
+
+    <!-- 3D STL Viewer -->
+    <StlViewer
+      v-if="showStlViewer && selectedStlFile && itemsStore.currentItem"
+      :stl-url="stlViewerUrl"
+      :file-id="selectedStlFile.id"
+      :item-id="itemsStore.currentItem.id"
+      :item-number="itemsStore.currentItem.item_number"
+      :author-info="{
+        type: 'user',
+        id: authStore.user?.id || '',
+        name: authStore.user?.username || 'User'
+      }"
+      api-base="/api"
+      @close="closeStlViewer"
+    />
   </div>
 </template>
 
@@ -479,6 +534,28 @@ async function downloadAssemblyPackage() {
 .file-meta {
   color: #666;
   font-size: 0.85rem;
+}
+
+.file-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-view-3d {
+  background: #7c3aed;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-view-3d:hover {
+  background: #6d28d9;
 }
 
 .btn-icon {

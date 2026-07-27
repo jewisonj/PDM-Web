@@ -25,6 +25,8 @@ export interface SupplierItemView {
   revision: string
   lifecycle_state: string
   material?: string
+  thickness?: number
+  mass?: number
   allowed_file_types: string[]
   files: SupplierFileView[]
   unread_comments: number

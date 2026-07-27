@@ -2046,6 +2046,214 @@ mmc9056k362,McMaster-Carr,M8 Socket Cap Screw,100,,PART,,
 
 ---
 
+### 39. STL Viewer with 3D Annotations
+
+**What was built:** Interactive Three.js-based 3D model viewer with click-to-annotate capability for both internal users and external suppliers.
+
+**Files Created:**
+- `frontend/src/components/StlViewer.vue` - Three.js STL viewer component with CSS2D labels
+- `backend/app/routes/annotations.py` - Annotation CRUD API routes
+
+**Database Changes:**
+New table: `model_annotations`
+```sql
+CREATE TABLE model_annotations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id UUID NOT NULL REFERENCES files(id),
+    item_id UUID NOT NULL REFERENCES items(id),
+    position_x NUMERIC NOT NULL,
+    position_y NUMERIC NOT NULL,
+    position_z NUMERIC NOT NULL,
+    normal_x NUMERIC,
+    normal_y NUMERIC,
+    normal_z NUMERIC,
+    content TEXT NOT NULL,
+    author_type TEXT NOT NULL CHECK (author_type IN ('user', 'supplier')),
+    author_id TEXT NOT NULL,
+    author_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+**Architecture Decisions:**
+1. **Three.js + OrbitControls** for 3D rendering with intuitive camera control
+2. **CSS2DRenderer** for annotation labels that scale properly with zoom
+3. **Raycasting for click detection** to find exact surface position and normal vector
+4. **Dual authentication support** - Works with both user JWT tokens (`/api/files/{file_id}/annotations`) and supplier tokens (`/api/supplier/items/{item_number}/files/{file_id}/annotations`)
+5. **Color-coded markers** - Blue spheres for user annotations, green for supplier annotations
+6. **Position + Normal storage** - Stores both 3D position and surface normal for future enhancement (e.g., arrow indicators)
+
+**Integration Points:**
+- `ItemDetailView.vue` - "View 3D" button for STL files opens viewer with annotation mode
+- `SupplierItemView.vue` - Suppliers can view and annotate STL models shared with them
+- Both users and suppliers see all annotations on the same model (two-way communication)
+
+**How to Use:**
+1. Click "View 3D" on any STL file
+2. Click "Add Note" button to enter annotation mode
+3. Click on the 3D model surface to place an annotation marker
+4. Enter note text and save
+5. Annotations appear as colored spheres with hover labels
+6. Click any annotation to view full content and timestamp
+
+**Prevention/Best Practices:**
+- Always store both `position` and `normal` even if normal isn't used yet (future-proofs for directional indicators)
+- Use CSS2D labels (not sprite-based) for better text readability and accessibility
+- Separate annotation endpoints by auth type to enforce proper RLS
+- Store `author_name` denormalized to avoid joins when displaying annotations
+
+**Files Changed:**
+- `frontend/src/components/StlViewer.vue` (NEW)
+- `backend/app/routes/annotations.py` (NEW)
+- `frontend/src/views/ItemDetailView.vue` - Added STL viewer integration
+- `frontend/src/views/supplier/SupplierItemView.vue` - Added STL viewer for suppliers
+- `backend/app/models/schemas.py` - Added `Annotation`, `AnnotationCreate` schemas
+- `backend/app/routes/__init__.py` - Registered annotations router
+
+**Testing:**
+1. Upload STL file to an item
+2. Open 3D viewer from item detail page
+3. Add annotation as user
+4. Grant supplier access to same item (with STL file type)
+5. Supplier logs in, opens 3D viewer, adds annotation
+6. Both annotations visible to both parties with color coding
+
+---
+
+### 40. Supplier Portal File Type and Field Enhancements
+
+**What was added:** Extended Supplier Portal to support IMAGE file type in addition to PDF and STEP, plus added `thickness` and `mass` fields to supplier item responses.
+
+**Root Cause:** Suppliers were initially restricted to PDF (drawings) and STEP (3D models) for manufacturability. However, reference images (photos, diagrams, assembly instructions) are often critical for quoting and production. Additionally, thickness and mass data were missing from supplier API responses even though they're visible in internal views.
+
+**Files Changed:**
+- `backend/app/routes/supplier.py`:
+  - Line 114: Added `'IMAGE'` to default `file_types` array
+  - Lines 152-153, 229-230: Added `thickness` and `mass` to `SupplierItemView` responses
+  - Lines 415-516: Added supplier annotation endpoints (`GET`/`POST /api/supplier/items/{item_number}/files/{file_id}/annotations`)
+
+- `backend/app/models/supplier_schemas.py`:
+  - Added `thickness: Optional[float]` and `mass: Optional[float]` to `SupplierItemView` schema
+
+- `frontend/src/types/supplier.ts`:
+  - Added `thickness?: number` and `mass?: number` to `SupplierItemView` interface
+
+- `frontend/src/views/supplier/SupplierItemView.vue`:
+  - Added STL viewer integration (lines 6, 22-24, 70-85, 242-255)
+  - Added "View 3D" button for STL files (lines 182-188)
+
+**Impact:**
+- Suppliers can now download reference images (photos, assembly diagrams)
+- Suppliers see part thickness and mass in portal (critical for material/weight calculations)
+- Suppliers can add 3D annotations to STL files visible to internal team
+
+**File Type Mapping:**
+- PDF - Technical drawings (DXF converted to PDF)
+- STEP - 3D CAD models for CAM programming
+- IMAGE - Reference photos, assembly instructions, material certifications
+- STL - 3D mesh for visualization and annotation (added in this session)
+
+**Prevention:**
+- When adding new file types, update both `file_types` array default AND supplier access UI
+- Always include relevant item metadata (`thickness`, `mass`, `material`) in supplier responses
+- Document which file types serve which supplier use cases
+
+---
+
+### 41. Per-Unit vs Per-Line-Item Time Basis for MRP Routing
+
+**What was built:** Added `time_basis` field to routing operations to distinguish between per-unit times (multiply by quantity) and per-line-item times (fixed regardless of quantity).
+
+**Symptom:** Kit-supplied parts with receiving operations (e.g., "5 min receiving") were inflating project schedules when ordered in quantity. Ordering 20 pieces showed 100 minutes of receiving time (20 × 5 min), but in reality, receiving one shipment line takes 5 minutes total regardless of piece count.
+
+**Root Cause:** The scheduling system multiplied ALL routing times by quantity. This is correct for manufacturing operations (cutting 10 brackets takes 10× the time of cutting 1), but incorrect for procurement operations like receiving, inspection, or kitting. These are per-line-item activities, not per-piece.
+
+**Database Changes:**
+Added `time_basis` column to `routing` table:
+```sql
+ALTER TABLE routing ADD COLUMN time_basis TEXT DEFAULT 'per_unit'
+  CHECK (time_basis IN ('per_unit', 'per_line_item'));
+```
+
+**Code Changes:**
+- `frontend/src/utils/buildTracker.ts`:
+  - Lines 112, 392: Added `time_basis?: 'per_unit' | 'per_line_item'` to routing interfaces
+  - Line 433: Set `time_basis: op.timeBasis` when creating routing from kit operations
+
+- `frontend/src/utils/scheduling.ts`:
+  - Line 87: Added `time_basis` to `RoutingStep` interface
+  - Lines 300-304: Implemented time_basis logic in schedule calculation:
+    ```typescript
+    const timeBasis = r.time_basis || 'per_unit'
+    const durationMin = timeBasis === 'per_line_item'
+      ? (r.est_time_min || 0)           // Fixed time regardless of quantity
+      : (r.est_time_min || 0) * part.quantity  // Traditional: multiply by quantity
+    ```
+
+- `frontend/src/views/MrpRoutingView.vue`:
+  - Line 62: Added `time_basis: 'per_unit' | 'per_line_item'` to `RoutingRow` interface
+  - Line 1087: Default new manual stations to `'per_unit'`
+  - Line 1154: Preserve `time_basis` when adding stations from templates
+  - Line 1179: Default to `'per_unit'` when loading existing routing if field is null
+
+**Use Cases:**
+
+**Per-Unit (Multiply by Quantity):**
+- Fabrication: Cutting 10 brackets = 10× cutting time
+- Machining: Drilling 50 holes = 50× drilling time
+- Assembly: Welding 8 frames = 8× welding time
+- Finishing: Painting 30 parts = 30× painting time
+
+**Per-Line-Item (Fixed Time):**
+- Receiving: Unpacking one shipment box = fixed 5 min regardless of piece count inside
+- Inspection (sampling): QC check of batch = fixed time (not every piece)
+- Kitting: Preparing one kit set = fixed time regardless of how many kits are ordered
+- Vendor quoting: Time to get quote is per RFQ, not per piece
+
+**How It Works:**
+1. Kit-supplied parts get `RCVE` (Receiving) station with `time_basis: 'per_line_item'`
+2. Routing editor shows time basis in UI (future enhancement: toggle in routing view)
+3. Build Tracker schedule calculation respects time basis
+4. Build Book work packages show correct time estimates
+
+**Backward Compatibility:**
+- Existing routing records default to `'per_unit'` (preserves current behavior)
+- No data migration required
+- Null values treated as `'per_unit'`
+
+**Testing:**
+1. Create kit with receiving operation (5 min)
+2. Add kit part to project with quantity 20
+3. Build Tracker schedule shows 5 min total (not 100 min)
+4. Change to `'per_unit'` → schedule shows 100 min
+5. Change back to `'per_line_item'` → schedule shows 5 min
+
+**Prevention:**
+- When adding new routing templates, consider whether the operation scales with quantity
+- Receiving, inspection, and kitting operations should default to `'per_line_item'`
+- Manufacturing operations (cut, weld, paint) should use `'per_unit'`
+- Document time basis in routing notes if non-obvious
+
+**Files Changed:**
+- Database migration: `ALTER TABLE routing ADD COLUMN time_basis TEXT DEFAULT 'per_unit' CHECK (time_basis IN ('per_unit', 'per_line_item'))` - **APPLIED** (column now exists in production)
+- `backend/app/routes/mrp.py` - Cost calculation respects time_basis (fixed vs variable labor costs)
+- `frontend/src/utils/buildTracker.ts` - Added time_basis support in build tracker, KIT_SUPPLIED_ROUTING uses per_line_item
+- `frontend/src/utils/scheduling.ts` - Implemented time_basis calculation logic (duration calculation checks time_basis)
+- `frontend/src/views/MrpRoutingView.vue` - Added time_basis to routing editor interface, PURCHASED template uses per_line_item
+- `frontend/src/utils/masterDesignBook.ts` - Added time_basis to routing interface
+
+**Auto-Migration Applied:**
+- Existing mmc/spn prefixed parts with Receiving/Staging operations were automatically migrated to use `time_basis: 'per_line_item'`
+- Manufacturing operations (cutting, welding, assembly) remain `'per_unit'`
+
+**Follow-Up Tasks:**
+1. ~~Create database migration file for `time_basis` column~~ - **COMPLETE**
+2. Add UI toggle in Routing Editor to set time_basis per station (currently defaults correct, but no manual toggle)
+3. ~~Update routing templates to set correct defaults (RCVE = per_line_item, FAB/WELD/ASSY = per_unit)~~ - **COMPLETE**
+4. Show time basis indicator in Build Tracker station columns (e.g., "5m (per line)" vs "5m (per unit)")
+
+---
+
 **Last Updated:** 2026-07-27
-**Version:** 3.9.7
+**Version:** 3.9.8
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

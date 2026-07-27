@@ -11,6 +11,7 @@ const items = ref<SupplierItemView[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 const searchQuery = ref('')
+const thumbnailUrls = ref<Map<string, string>>(new Map())
 
 const filteredItems = computed(() => {
   if (!searchQuery.value) return items.value
@@ -22,9 +23,37 @@ const filteredItems = computed(() => {
   )
 })
 
+/**
+ * Fetch thumbnail URL for an item and cache it
+ */
+async function fetchThumbnailUrl(item: SupplierItemView) {
+  const imageFile = item.files.find(f => f.file_type === 'IMAGE')
+  if (!imageFile) return
+
+  try {
+    const response = await supplierAuth.getDownloadUrl(item.item_number, imageFile.id)
+    thumbnailUrls.value.set(item.id, response.url)
+  } catch (e) {
+    console.warn(`Failed to load thumbnail for ${item.item_number}:`, e)
+  }
+}
+
+/**
+ * Load thumbnails for all items with IMAGE files
+ */
+async function loadThumbnails() {
+  const promises = items.value
+    .filter(item => item.files.some(f => f.file_type === 'IMAGE'))
+    .map(item => fetchThumbnailUrl(item))
+
+  await Promise.allSettled(promises)
+}
+
 onMounted(async () => {
   try {
     items.value = await supplierAuth.getItems()
+    // Load thumbnails after items are loaded
+    await loadThumbnails()
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to load items'
   } finally {
@@ -45,11 +74,35 @@ function formatFileTypes(types: string[]): string {
   return types.join(', ')
 }
 
-function formatFileSize(bytes?: number): string {
-  if (!bytes) return '-'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+function exportToCsv() {
+  const headers = ['Part Number', 'Name', 'Revision', 'Material', 'Thickness', 'Weight (lb)', 'Lifecycle', 'File Types']
+  const rows = filteredItems.value.map(item => [
+    item.item_number,
+    item.name || '',
+    item.revision,
+    item.material || '',
+    item.thickness?.toString() || '',
+    item.mass?.toString() || '',
+    item.lifecycle_state,
+    formatFileTypes(item.allowed_file_types)
+  ])
+
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+  ].join('\n')
+
+  const blob = new Blob([csvContent], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `supplier-items-${new Date().toISOString().split('T')[0]}.csv`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+function getThumbnailUrl(item: SupplierItemView): string | null {
+  return thumbnailUrls.value.get(item.id) || null
 }
 </script>
 
@@ -76,6 +129,10 @@ function formatFileSize(bytes?: number): string {
           class="search-input"
         />
         <span class="item-count">{{ filteredItems.length }} items</span>
+        <button class="export-btn" @click="exportToCsv">
+          <i class="pi pi-download"></i>
+          Export CSV
+        </button>
       </div>
 
       <div v-if="loading" class="loading-state">
@@ -91,40 +148,65 @@ function formatFileSize(bytes?: number): string {
         <p>Contact your account manager to request access to items.</p>
       </div>
 
-      <div v-else class="items-grid">
-        <div
-          v-for="item in filteredItems"
-          :key="item.id"
-          class="item-card"
-          @click="viewItem(item.item_number)"
-        >
-          <div class="item-header">
-            <span class="item-number">{{ item.item_number }}</span>
-            <span class="item-revision">Rev {{ item.revision }}</span>
-          </div>
-
-          <div class="item-name">{{ item.name || 'Untitled Part' }}</div>
-
-          <div class="item-meta">
-            <span v-if="item.material" class="material">{{ item.material }}</span>
-            <span :class="['lifecycle', item.lifecycle_state.toLowerCase()]">
-              {{ item.lifecycle_state }}
-            </span>
-          </div>
-
-          <div class="item-footer">
-            <span class="file-count">
-              {{ item.files.length }} file{{ item.files.length !== 1 ? 's' : '' }}
-            </span>
-            <span class="file-types">
-              {{ formatFileTypes(item.allowed_file_types) }}
-            </span>
-          </div>
-
-          <div v-if="item.unread_comments > 0" class="unread-badge">
-            {{ item.unread_comments }} new
-          </div>
-        </div>
+      <div v-else class="table-container">
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th style="width: 60px;">Thumb</th>
+              <th style="width: 140px;">Part Number</th>
+              <th>Name</th>
+              <th style="width: 60px;">Rev</th>
+              <th style="width: 120px;">Material</th>
+              <th class="hide-below-1200" style="width: 80px;">Thick</th>
+              <th class="hide-below-1200" style="width: 90px;">Weight</th>
+              <th style="width: 100px;">Status</th>
+              <th style="width: 150px;">Files</th>
+              <th style="width: 80px;">Comments</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="item in filteredItems"
+              :key="item.id"
+              @click="viewItem(item.item_number)"
+              class="item-row"
+            >
+              <td>
+                <img
+                  v-if="getThumbnailUrl(item)"
+                  :src="getThumbnailUrl(item)!"
+                  alt="Thumbnail"
+                  class="thumbnail"
+                />
+                <div v-else class="thumbnail-placeholder">
+                  <i class="pi pi-image"></i>
+                </div>
+              </td>
+              <td>
+                <span class="item-number">{{ item.item_number }}</span>
+              </td>
+              <td>{{ item.name || 'Untitled Part' }}</td>
+              <td>{{ item.revision }}</td>
+              <td>{{ item.material || '-' }}</td>
+              <td class="hide-below-1200">{{ item.thickness || '-' }}</td>
+              <td class="hide-below-1200">{{ item.mass || '-' }}</td>
+              <td>
+                <span :class="['lifecycle-badge', item.lifecycle_state.toLowerCase()]">
+                  {{ item.lifecycle_state }}
+                </span>
+              </td>
+              <td>
+                <span class="file-types">{{ formatFileTypes(item.allowed_file_types) }}</span>
+              </td>
+              <td>
+                <span v-if="item.unread_comments > 0" class="unread-badge">
+                  {{ item.unread_comments }} new
+                </span>
+                <span v-else class="no-comments">-</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </main>
   </div>
@@ -205,6 +287,26 @@ function formatFileSize(bytes?: number): string {
   font-size: 14px;
 }
 
+.export-btn {
+  margin-left: auto;
+  background: #059669;
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+
+.export-btn:hover {
+  background: #047857;
+}
+
 .loading-state,
 .error-state,
 .empty-state {
@@ -226,111 +328,116 @@ function formatFileSize(bytes?: number): string {
   margin: 0;
 }
 
-.items-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1rem;
-}
-
-.item-card {
-  position: relative;
+.table-container {
   background: white;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
-  padding: 1.25rem;
+  overflow: hidden;
+}
+
+.items-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.items-table thead {
+  background: #f8fafc;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.items-table th {
+  padding: 12px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+}
+
+.items-table tbody tr {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.items-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.item-row {
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.15s;
 }
 
-.item-card:hover {
-  border-color: #1e40af;
-  box-shadow: 0 4px 16px rgba(30, 64, 175, 0.12);
-  transform: translateY(-2px);
+.item-row:hover {
+  background: #f8fafc;
 }
 
-.item-header {
+.items-table td {
+  padding: 12px;
+  font-size: 14px;
+  color: #334155;
+}
+
+.thumbnail {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.thumbnail-placeholder {
+  width: 44px;
+  height: 44px;
+  background: #f1f5f9;
+  border-radius: 4px;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 18px;
 }
 
 .item-number {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  font-size: 1.1rem;
   font-weight: 600;
   color: #1e40af;
 }
 
-.item-revision {
-  color: #64748b;
-  font-size: 0.85rem;
-  background: #f1f5f9;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.item-name {
-  color: #334155;
-  margin-bottom: 0.75rem;
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-.item-meta {
-  display: flex;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-  font-size: 12px;
-}
-
-.material {
-  color: #64748b;
-}
-
-.lifecycle {
-  padding: 2px 8px;
-  border-radius: 10px;
+.lifecycle-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 12px;
   font-weight: 500;
   text-transform: uppercase;
   font-size: 10px;
 }
 
-.lifecycle.design { background: #e0e7ff; color: #3730a3; }
-.lifecycle.review { background: #fef3c7; color: #92400e; }
-.lifecycle.released { background: #d1fae5; color: #065f46; }
-.lifecycle.obsolete { background: #f3f4f6; color: #6b7280; }
+.lifecycle-badge.design { background: #e0e7ff; color: #3730a3; }
+.lifecycle-badge.review { background: #fef3c7; color: #92400e; }
+.lifecycle-badge.released { background: #d1fae5; color: #065f46; }
+.lifecycle-badge.obsolete { background: #f3f4f6; color: #6b7280; }
 
-.item-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-top: 0.75rem;
-  border-top: 1px solid #f1f5f9;
+.file-types {
+  color: #64748b;
   font-size: 12px;
 }
 
-.file-count {
-  color: #1e40af;
-  font-weight: 500;
-}
-
-.file-types {
-  color: #94a3b8;
-  background: #f8fafc;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
 .unread-badge {
-  position: absolute;
-  top: -8px;
-  right: -8px;
   background: #dc2626;
   color: white;
   font-size: 11px;
   font-weight: 600;
-  padding: 4px 8px;
+  padding: 3px 8px;
   border-radius: 12px;
+}
+
+.no-comments {
+  color: #cbd5e1;
+}
+
+@media (max-width: 1200px) {
+  .hide-below-1200 {
+    display: none;
+  }
 }
 </style>

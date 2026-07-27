@@ -93,7 +93,7 @@ function Get-FileAction {
     $ext = [IO.Path]::GetExtension($FilePath).ToLower()
 
     # Ignore service files and common non-upload files
-    $ignoreExtensions = @('.ps1', '.bat', '.cmd', '.log', '.ini', '.config', '.json', '.md', '.txt', '.jpg', '.jpeg', '.png', '.gif')
+    $ignoreExtensions = @('.ps1', '.bat', '.cmd', '.log', '.ini', '.config', '.json', '.md', '.txt', '.gif')
     $ignoreFiles = @('pdm-upload-config.ps1', 'pdm-upload-functions.ps1', 'pdm-upload-service.ps1',
                      'pdm-bom-parser.ps1', 'start-pdmupload.bat', 'install-pdmupload.ps1',
                      'test-api.ps1', 'desktop.ini', 'thumbs.db')
@@ -124,6 +124,10 @@ function Get-FileAction {
         '.prt'  { return 'Upload' }
         '.asm'  { return 'Upload' }
         '.drw'  { return 'Upload' }
+        '.jpg'  { return 'Upload' }
+        '.jpeg' { return 'Upload' }
+        '.png'  { return 'Upload' }
+        '.stl'  { return 'Upload' }
         default { return 'Skip' }
     }
 }
@@ -170,6 +174,10 @@ function Upload-File {
         '.prt'  { 'application/octet-stream' }
         '.asm'  { 'application/octet-stream' }
         '.drw'  { 'application/octet-stream' }
+        '.jpg'  { 'image/jpeg' }
+        '.jpeg' { 'image/jpeg' }
+        '.png'  { 'image/png' }
+        '.stl'  { 'model/stl' }
         default { 'application/octet-stream' }
     }
 

@@ -17,6 +17,10 @@ const EXTENSION_BUCKET_MAP: Record<string, BucketName> = {
   '.dxf': 'pdm-exports',
   '.svg': 'pdm-exports',
   '.pdf': 'pdm-drawings',
+  '.png': 'pdm-drawings',
+  '.jpg': 'pdm-drawings',
+  '.jpeg': 'pdm-drawings',
+  '.stl': 'pdm-exports',
 }
 
 // File extension to file_type mapping
@@ -28,6 +32,10 @@ const EXTENSION_TYPE_MAP: Record<string, string> = {
   '.dxf': 'DXF',
   '.svg': 'SVG',
   '.pdf': 'PDF',
+  '.png': 'IMAGE',
+  '.jpg': 'IMAGE',
+  '.jpeg': 'IMAGE',
+  '.stl': 'STL',
 }
 
 /**

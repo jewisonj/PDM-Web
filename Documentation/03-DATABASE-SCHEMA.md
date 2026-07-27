@@ -356,6 +356,8 @@ CREATE TABLE routing (
     station_id   UUID NOT NULL REFERENCES workstations(id),
     sequence     INTEGER DEFAULT 10,
     est_time_min INTEGER DEFAULT 0,
+    time_basis   TEXT DEFAULT 'per_unit'
+                 CHECK (time_basis IN ('per_unit', 'per_line_item')),
     notes        TEXT,
     created_at   TIMESTAMPTZ DEFAULT now()
 );
@@ -365,6 +367,9 @@ CREATE TABLE routing (
 - Defines the sequence of workstations an item passes through during manufacturing.
 - `sequence` determines the processing order (10, 20, 30...).
 - `est_time_min` is the estimated time in minutes for the operation.
+- `time_basis` controls how time scales with quantity:
+  - `'per_unit'` (default) - Time multiplies by quantity (e.g., cutting 10 brackets = 10× time)
+  - `'per_line_item'` - Fixed time regardless of quantity (e.g., receiving one shipment = 5 min whether 1 or 100 pieces)
 
 ---
 
@@ -868,6 +873,64 @@ WHERE author_type = 'supplier' AND is_read = false
 
 ---
 
+### model_annotations
+
+3D model annotations for STL files. Supports click-to-annotate functionality for both internal users and external suppliers.
+
+```sql
+CREATE TABLE model_annotations (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    file_id     UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    item_id     UUID NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    position_x  NUMERIC NOT NULL,
+    position_y  NUMERIC NOT NULL,
+    position_z  NUMERIC NOT NULL,
+    normal_x    NUMERIC,
+    normal_y    NUMERIC,
+    normal_z    NUMERIC,
+    content     TEXT NOT NULL,
+    author_type TEXT NOT NULL CHECK (author_type IN ('user', 'supplier')),
+    author_id   TEXT NOT NULL,
+    author_name TEXT NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_model_annotations_file ON model_annotations(file_id);
+CREATE INDEX idx_model_annotations_item ON model_annotations(item_id);
+```
+
+**Key Points:**
+- `file_id` - Which STL file the annotation is on (cascades on file deletion).
+- `item_id` - Denormalized item reference for fast filtering (cascades on item deletion).
+- `position_x`, `position_y`, `position_z` - 3D coordinates of annotation marker in model space.
+- `normal_x`, `normal_y`, `normal_z` - Surface normal vector at click point (for future directional indicators).
+- `content` - Text content of the annotation (question, note, or comment).
+- `author_type` - Either `'user'` (internal PDM user) or `'supplier'` (external supplier portal user).
+- `author_id` - User UUID or supplier UUID (depending on `author_type`).
+- `author_name` - Denormalized display name for performance (avoids joins when rendering annotations).
+- `created_at` - Timestamp of annotation creation.
+
+**Usage:**
+1. User or supplier opens STL viewer for a file
+2. Clicks "Add Note" to enter annotation mode
+3. Clicks on 3D model surface to place marker
+4. Enters text content and saves
+5. Annotation appears as colored sphere with label (blue for users, green for suppliers)
+6. Both users and suppliers see all annotations (two-way communication)
+
+**API Endpoints:**
+- `GET /api/files/{file_id}/annotations` - Get all annotations for a file (user access)
+- `POST /api/files/{file_id}/annotations` - Create annotation (user access)
+- `DELETE /api/annotations/{annotation_id}` - Delete annotation (author only)
+- `GET /api/supplier/items/{item_number}/files/{file_id}/annotations` - Get annotations (supplier access)
+- `POST /api/supplier/items/{item_number}/files/{file_id}/annotations` - Create annotation (supplier access)
+
+**RLS:** Enabled. Users can read all annotations. Deletion restricted to annotation author.
+
+**Related Documentation:** `15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md` (Entry 39)
+
+---
+
 ## Indexes
 
 The following indexes exist for query performance:
@@ -894,6 +957,8 @@ The following indexes exist for query performance:
 | `idx_supplier_comments_supplier` | supplier_comments | supplier_id | Get all comments by a supplier |
 | `idx_supplier_comments_item` | supplier_comments | item_id | Get all comments about an item |
 | `idx_supplier_comments_unread` | supplier_comments | is_read (WHERE is_read = false) | Find unread supplier comments (partial index) |
+| `idx_model_annotations_file` | model_annotations | file_id | Get all annotations for a file |
+| `idx_model_annotations_item` | model_annotations | item_id | Get all annotations for an item |
 
 Additionally, all `UNIQUE` constraints and primary keys automatically create indexes.
 
@@ -902,7 +967,7 @@ Additionally, all `UNIQUE` constraints and primary keys automatically create ind
 ## Entity Relationship Diagram
 
 ```
-projects  1--*  items  1--*  files
+projects  1--*  items  1--*  files  1--*  model_annotations
                   |
                   |--1--*  bom (as parent_item_id)
                   |--*--1  bom (as child_item_id)
@@ -914,6 +979,7 @@ projects  1--*  items  1--*  files
                   |--1--*  mrp_project_parts
                   |--1--*  time_logs
                   |--1--*  part_completion
+                  |--1--*  model_annotations
                   |
 users  -------->  lifecycle_history.changed_by
        -------->  files.uploaded_by

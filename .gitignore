@@ -149,3 +149,4 @@ backend/.venv/
 .coverage
 htmlcov/
 nul
+STP_Export.zip

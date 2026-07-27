@@ -103,6 +103,8 @@ class SupplierItemView(BaseModel):
     revision: str
     lifecycle_state: str
     material: Optional[str] = None
+    thickness: Optional[float] = None
+    mass: Optional[float] = None
     allowed_file_types: list[str]
     files: list[SupplierFileView] = []
     unread_comments: int = 0
