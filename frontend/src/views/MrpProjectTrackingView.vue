@@ -39,6 +39,7 @@ interface Part {
 interface RoutingOp {
   id: string
   est_time_min: number | null
+  time_basis?: 'per_unit' | 'per_line_item'
 }
 
 const router = useRouter()
@@ -454,6 +455,17 @@ function formatDay(date: Date): string {
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
+/** Calculate total time respecting time_basis (per_line_item = fixed, per_unit = ×qty) */
+function getPartTotalTime(part: Part): number {
+  const fixedTime = part.routing
+    .filter(r => r.time_basis === 'per_line_item')
+    .reduce((t, r) => t + (r.est_time_min || 0), 0)
+  const variableTime = part.routing
+    .filter(r => r.time_basis !== 'per_line_item')
+    .reduce((t, r) => t + (r.est_time_min || 0), 0)
+  return fixedTime + (variableTime * part.quantity)
+}
+
 function getBarStyle(part: Part): { left: string; width: string; progress?: string } | null {
   if (!part.routing || part.routing.length === 0) return null
 
@@ -480,7 +492,14 @@ function getBarStyle(part: Part): { left: string; width: string; progress?: stri
   }
 
   // Fallback to simple calculation if no schedule
-  const totalTime = part.routing.reduce((t, r) => t + (r.est_time_min || 0), 0) * part.quantity
+  // Fixed time (per_line_item) + variable time (per_unit × quantity)
+  const fixedTime = part.routing
+    .filter(r => r.time_basis === 'per_line_item')
+    .reduce((t, r) => t + (r.est_time_min || 0), 0)
+  const variableTime = part.routing
+    .filter(r => r.time_basis !== 'per_line_item')
+    .reduce((t, r) => t + (r.est_time_min || 0), 0)
+  const totalTime = fixedTime + (variableTime * part.quantity)
   const barDays = Math.max(1, Math.ceil(totalTime / 480))
 
   const startOffset = 2
@@ -662,7 +681,7 @@ onUnmounted(() => {
               >
                 <span class="gantt-bar-text">
                   {{ item.quantity }}&times;
-                  {{ Math.round(item.routing.reduce((t, r) => t + (r.est_time_min || 0), 0) * item.quantity) }}min
+                  {{ Math.round(getPartTotalTime(item)) }}min
                 </span>
               </div>
             </div>

@@ -34,6 +34,7 @@ interface RoutingOp {
   station_name: string
   sequence: number
   est_time_min: number | null
+  time_basis?: 'per_unit' | 'per_line_item'
 }
 
 interface PartCompletion {
@@ -383,6 +384,7 @@ async function selectPart(part: Part) {
         station_id,
         sequence,
         est_time_min,
+        time_basis,
         workstations (
           id,
           station_code,
@@ -399,7 +401,8 @@ async function selectPart(part: Part) {
         station_code: (r as any).workstations?.station_code || '',
         station_name: (r as any).workstations?.station_name || '',
         sequence: r.sequence,
-        est_time_min: r.est_time_min
+        est_time_min: r.est_time_min,
+        time_basis: r.time_basis as 'per_unit' | 'per_line_item' | undefined
       }))
     }
   }
@@ -720,8 +723,13 @@ onMounted(async () => {
                       <strong>{{ r.station_code }}</strong> - {{ r.station_name }}
                     </div>
                     <div class="routing-time">
-                      Est: {{ r.est_time_min || 0 }} min/ea × {{ selectedPart.quantity }} =
-                      {{ (r.est_time_min || 0) * selectedPart.quantity }} min total
+                      <template v-if="r.time_basis === 'per_line_item'">
+                        Est: {{ r.est_time_min || 0 }} min (fixed per line item)
+                      </template>
+                      <template v-else>
+                        Est: {{ r.est_time_min || 0 }} min/ea × {{ selectedPart.quantity }} =
+                        {{ (r.est_time_min || 0) * selectedPart.quantity }} min total
+                      </template>
                     </div>
                   </div>
                   <div class="routing-status">
