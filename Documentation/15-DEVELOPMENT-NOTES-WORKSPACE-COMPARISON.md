@@ -2254,6 +2254,139 @@ ALTER TABLE routing ADD COLUMN time_basis TEXT DEFAULT 'per_unit'
 
 ---
 
+### 42. Missing Routing on New Top-Level Assemblies Causes Schedule Discrepancies
+
+**Symptom:** When comparing two similar projects (SPA0030 vs SPA0040), one project showed significantly lower total time despite having identical part counts, quantities, and kit sourcing.
+
+**Example Case:**
+- **SPA0030:** 133 parts, 299 total qty, 33 kit-sourced → ~159 hours total
+- **SPA0040:** 133 parts, 299 total qty, 33 kit-sourced → ~145 hours total
+- **Discrepancy:** 14 hours (840 minutes) difference
+
+**Root Cause:** The top-level assembly items had different routing configurations:
+- SPA0030 uses top assembly `csa00010` which had 840 minutes of routing defined:
+  - 017 Weld Cleanup: 240 min
+  - 025 Mechanical Assembly: 240 min
+  - 047 Vinyl Wrap: 240 min
+  - 050 Inspection: 120 min
+- SPA0040 uses top assembly `csa00015` which had **NO routing defined** (empty routing table)
+
+**Why This Happens:**
+When creating a new project variant with a different top-level assembly item number:
+1. The new assembly item is created in the `items` table
+2. The BOM structure is populated (all child relationships)
+3. BUT routing operations are NOT automatically copied from the original assembly
+4. The new assembly has zero operations, leading to missing time in project estimates
+
+**Diagnostic Steps:**
+
+1. **Compare project totals** in the MRP Dashboard or Build Tracker:
+   - Look for unexpectedly low total hours on a new project
+   - Compare similar projects (same BOM depth, part count, kit sourcing)
+
+2. **Check top assembly routing** in the database:
+   ```sql
+   -- Get routing for both top assemblies
+   SELECT r.station_code, w.station_name, r.est_time_min
+   FROM routing r
+   JOIN workstations w ON r.station_code = w.station_code
+   WHERE r.item_id IN (
+     SELECT id FROM items WHERE item_number IN ('csa00010', 'csa00015')
+   )
+   ORDER BY r.sequence;
+   ```
+
+3. **Verify in Routing Editor:**
+   - Open MRP Routing Editor
+   - Filter by the suspect top assembly item
+   - Check if operations are defined
+
+**How to Fix:**
+
+**Option 1: Copy routing via SQL (fastest for exact duplicates)**
+
+```sql
+-- Copy routing from csa00010 to csa00015
+INSERT INTO routing (item_id, station_code, sequence, est_time_min, notes, method)
+SELECT
+  (SELECT id FROM items WHERE item_number = 'csa00015'),
+  station_code,
+  sequence,
+  est_time_min,
+  notes,
+  method
+FROM routing
+WHERE item_id = (SELECT id FROM items WHERE item_number = 'csa00010');
+```
+
+**Option 2: Add routing manually via Routing Editor**
+
+1. Navigate to MRP Routing Editor
+2. Select the new assembly item
+3. Add each required operation with station and time estimate
+4. Save routing
+
+**Option 3: Apply routing template** (if a standard template exists)
+
+1. Open Routing Editor
+2. Select the assembly item
+3. Click the appropriate template button (e.g., "Formed SM" or "Flat SM")
+4. Adjust times as needed
+
+**Verification:**
+
+After adding routing, verify the fix:
+
+1. **Check routing in database:**
+   ```sql
+   SELECT COUNT(*) FROM routing
+   WHERE item_id = (SELECT id FROM items WHERE item_number = 'csa00015');
+   -- Should return > 0
+   ```
+
+2. **Compare project totals again:**
+   - Both projects should now show similar total hours
+   - Difference should be within expected range (minor BOM variations)
+
+3. **Check Build Tracker schedule:**
+   - Open MRP Project Tracking for the fixed project
+   - Verify the top assembly now has scheduled operations
+   - Total project duration should increase to match the baseline
+
+**Prevention:**
+
+1. **When creating a new project variant:**
+   - After creating the new top assembly item and BOM
+   - Immediately check if routing needs to be copied
+   - Use SQL copy method if the routing is identical to the original
+
+2. **Routing checklist for new projects:**
+   - [ ] Top assembly has routing operations defined
+   - [ ] Critical sub-assemblies have routing (weldments, kits)
+   - [ ] Schedule calculation shows reasonable total hours
+   - [ ] Compare against similar projects to validate
+
+3. **Add validation in project creation workflow:**
+   - (Future enhancement) Warn when a project's top assembly has no routing
+   - (Future enhancement) Offer to copy routing from a template or similar item
+
+**Related Documentation:**
+- `Documentation/20-COMMON-WORKFLOWS.md` - Section 15: Project Scheduling and Capacity Planning
+- `Documentation/32-BUILD-BOOK.md` - Build Book relies on complete routing data
+- `Documentation/31-BUILD-TRACKER-SHEET.md` - Build Tracker matrix depends on routing
+
+**Files Involved:**
+- Database: `routing` table, `items` table
+- Frontend: `frontend/src/views/MrpRoutingView.vue` (Routing Editor)
+- Frontend: `frontend/src/utils/scheduling.ts` (Schedule calculation)
+- Frontend: `frontend/src/views/MrpProjectTrackingView.vue` (Project Tracking view)
+
+**Date Discovered:** 2026-07-27
+**Affected Projects:** SPA0040 (fixed), potential issue for any new project variant
+**Severity:** High (leads to incorrect project time estimates and schedules)
+
+---
+
 ## Primary Test Projects
 
 **Note:** The primary projects used for development and testing are **SPA0030** and **SPA0040**, not TEST-PROG01.

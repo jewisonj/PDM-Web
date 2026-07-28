@@ -18,6 +18,7 @@
 6. [Database Connection Problems](#database-connection-problems)
 7. [Data Issues](#data-issues)
 8. [Upload Bridge Problems](#upload-bridge-problems)
+9. [Project Time Discrepancies](#project-time-discrepancies)
 
 ---
 
@@ -661,6 +662,91 @@ Invoke-RestMethod -Uri "http://localhost:8001/api/bom/bulk" `
     -ContentType "application/json" `
     -Body $body
 ```
+
+---
+
+## Project Time Discrepancies
+
+**Symptom:** Two similar projects show significantly different total time estimates despite having the same part counts, quantities, and sourcing.
+
+### Step 1: Compare Project Metrics
+
+Check the following in the MRP Dashboard or Build Tracker:
+- Total part count
+- Total quantity (including duplicates)
+- Kit-sourced part count
+- Total estimated hours
+
+If all metrics match except total hours, proceed to Step 2.
+
+### Step 2: Check Top Assembly Routing
+
+The most common cause is missing routing on the top-level assembly item.
+
+**Diagnostic Query:**
+
+```sql
+-- Compare routing for two top assemblies
+SELECT
+  i.item_number,
+  COUNT(r.id) as operation_count,
+  SUM(r.est_time_min) as total_minutes
+FROM items i
+LEFT JOIN routing r ON i.id = r.item_id
+WHERE i.item_number IN ('csa00010', 'csa00015')  -- Replace with your assembly items
+GROUP BY i.item_number;
+```
+
+**Expected Result:**
+- Both assemblies should have similar operation counts
+- Both should have similar total minutes
+
+**If one assembly has 0 operations:** This is the problem. See the fix below.
+
+### Step 3: Copy Missing Routing
+
+**Option 1: SQL Copy (fastest)**
+
+```sql
+-- Copy routing from working assembly to new assembly
+INSERT INTO routing (item_id, station_code, sequence, est_time_min, notes, method)
+SELECT
+  (SELECT id FROM items WHERE item_number = 'csa00015'),  -- Target assembly
+  station_code,
+  sequence,
+  est_time_min,
+  notes,
+  method
+FROM routing
+WHERE item_id = (SELECT id FROM items WHERE item_number = 'csa00010');  -- Source assembly
+```
+
+**Option 2: Routing Editor UI**
+
+1. Open MRP Routing Editor
+2. Select the assembly item with missing routing
+3. Add each operation manually or apply a routing template
+4. Save routing
+
+### Step 4: Verify Fix
+
+After adding routing:
+
+1. **Check database:**
+   ```sql
+   SELECT COUNT(*) FROM routing
+   WHERE item_id = (SELECT id FROM items WHERE item_number = 'csa00015');
+   -- Should return > 0
+   ```
+
+2. **Compare project totals:**
+   - Both projects should now show similar total hours
+   - Open MRP Project Tracking for both projects
+   - Verify the difference is now within expected range
+
+**See Also:**
+- Development Notes pitfall #42 for full details
+- `Documentation/20-COMMON-WORKFLOWS.md` Section 15 (Project Scheduling)
 
 ---
 
