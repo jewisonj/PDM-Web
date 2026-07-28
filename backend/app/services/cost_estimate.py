@@ -93,7 +93,7 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
 
     # Load routing for all items
     routing_result = supabase.table("routing").select(
-        "item_id, station_id, est_time_min, cost_override"
+        "item_id, station_id, est_time_min, cost_override, time_basis"
     ).in_("item_id", item_ids).execute()
 
     # Group routing by item_id
@@ -175,23 +175,34 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
             continue
 
         # Calculate labor and outsourced costs from routing
-        item_labor = 0.0
-        item_outsourced = 0.0
+        # Track fixed (per_line_item) vs variable (per_unit) costs separately
+        item_labor_fixed = 0.0      # per_line_item: don't multiply by qty
+        item_labor_variable = 0.0   # per_unit: multiply by qty
+        item_outsourced_fixed = 0.0
+        item_outsourced_variable = 0.0
         for step in routing_by_item.get(item_id, []):
             ws = ws_map.get(step["station_id"], {})
+            time_basis = step.get("time_basis", "per_unit")
             if ws.get("is_outsourced"):
                 cost = step.get("cost_override")
                 if cost is None:
                     cost = ws.get("outsourced_cost_default") or 0
-                item_outsourced += float(cost)
+                if time_basis == "per_line_item":
+                    item_outsourced_fixed += float(cost)
+                else:
+                    item_outsourced_variable += float(cost)
             else:
                 override = step.get("cost_override")
                 if override is not None:
-                    item_labor += float(override)
+                    op_cost = float(override)
                 else:
                     rate = float(ws.get("hourly_rate") or default_labor_rate)
                     time_min = float(step.get("est_time_min") or 0)
-                    item_labor += (time_min / 60) * rate
+                    op_cost = (time_min / 60) * rate
+                if time_basis == "per_line_item":
+                    item_labor_fixed += op_cost
+                else:
+                    item_labor_variable += op_cost
 
         # Calculate material cost
         item_material = 0.0
@@ -221,12 +232,15 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
                 else:
                     item_material += (float(rm.get("qty_required") or 0) / 12) * per_ft
 
-        unit_cost = item_labor + item_outsourced + item_material
-        extended = unit_cost * qty
+        # Variable unit cost (per piece) - for quoting
+        unit_cost = item_labor_variable + item_outsourced_variable + item_material
+        # Extended = fixed costs (once) + variable costs (per qty)
+        extended = (item_labor_fixed + item_outsourced_fixed +
+                    (item_labor_variable + item_outsourced_variable + item_material) * qty)
 
-        total_labor += item_labor * qty
+        total_labor += item_labor_fixed + item_labor_variable * qty
         total_material += item_material * qty
-        total_outsourced += item_outsourced * qty
+        total_outsourced += item_outsourced_fixed + item_outsourced_variable * qty
 
         items_output.append({
             "item_id": item_id,
@@ -235,9 +249,9 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
             "quantity": qty,
             "is_supplier_part": False,
             "in_kit": False,
-            "labor_cost": round(item_labor, 2),
-            "material_cost": round(item_material, 2),
-            "outsourced_cost": round(item_outsourced, 2),
+            "labor_cost": round(item_labor_fixed + item_labor_variable * qty, 2),
+            "material_cost": round(item_material * qty, 2),
+            "outsourced_cost": round(item_outsourced_fixed + item_outsourced_variable * qty, 2),
             "unit_cost": round(unit_cost, 2),
             "extended_cost": round(extended, 2)
         })

@@ -141,6 +141,19 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
     for rm in (rm_result.data or []):
         rm_by_item.setdefault(rm["item_id"], []).append(rm)
 
+    # Load kit sourcing - parts that come pre-made from vendor
+    kit_source_result = supabase.table("project_item_source").select(
+        "item_id, kit_id"
+    ).eq("project_id", pid).eq("source_type", "kit").execute()
+    kit_sourced_ids = {ks["item_id"] for ks in (kit_source_result.data or [])}
+
+    # Load project kits with prices (only active kits where use_kit=true)
+    kits_result = supabase.table("project_kits").select(
+        "id, kit_number, kit_name, vendor, price, use_kit"
+    ).eq("project_id", pid).eq("use_kit", True).execute()
+    kits_data = kits_result.data or []
+    total_kit_cost = sum(float(k.get("price") or 0) for k in kits_data)
+
     # --- Computation loop ---
     manufactured_items = []
     purchased_items = []
@@ -169,6 +182,25 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
                 "extended_cost": round(extended, 2),
                 "supplier_name": item.get("supplier_name") or "",
                 "supplier_pn": item.get("supplier_pn") or "",
+            })
+            continue
+
+        # Kit-sourced parts: $0 labor/material (kit price covers it)
+        # The kit price is tracked separately in project_kits table
+        is_kit_sourced = item_id in kit_sourced_ids
+        if is_kit_sourced:
+            manufactured_items.append({
+                "item_id": item_id,
+                "item_number": item.get("item_number", ""),
+                "name": item.get("name", ""),
+                "quantity": qty,
+                "material_cost": 0.0,
+                "labor_cost": 0.0,
+                "outsourced_cost": 0.0,
+                "unit_cost": 0.0,
+                "extended_cost": 0.0,
+                "is_kit_sourced": True,
+                "operations": [],  # No operations - comes pre-made from vendor
             })
             continue
 
@@ -366,6 +398,12 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
             "value": round(total_outsourced, 2),
             "category": "outsourced",
         })
+    if total_kit_cost > 0:
+        chart_data.append({
+            "label": "Vendor Kits",
+            "value": round(total_kit_cost, 2),
+            "category": "kit",
+        })
 
     # Build grouped chart data (for grouped pie view)
     chart_data_grouped = []
@@ -395,9 +433,24 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
             "value": round(total_outsourced, 2),
             "category": "outsourced",
         })
+    if total_kit_cost > 0:
+        chart_data_grouped.append({
+            "label": "Vendor Kits",
+            "value": round(total_kit_cost, 2),
+            "category": "kit",
+        })
 
-    subtotal = total_labor + total_material + total_outsourced + total_purchased
+    subtotal = total_labor + total_material + total_outsourced + total_purchased + total_kit_cost
     total = subtotal * overhead_multiplier
+
+    # Build kits summary for response
+    kits_summary = [{
+        "kit_id": k["id"],
+        "kit_number": k["kit_number"],
+        "kit_name": k["kit_name"],
+        "vendor": k.get("vendor"),
+        "price": float(k.get("price") or 0),
+    } for k in kits_data]
 
     return {
         "project_id": pid,
@@ -408,11 +461,13 @@ async def get_project_cost_report(project_id: UUID, group_by: str = None):
         "material_cost": round(total_material, 2),
         "outsourced_cost": round(total_outsourced, 2),
         "purchased_cost": round(total_purchased, 2),
+        "kit_cost": round(total_kit_cost, 2),
         "overhead_multiplier": overhead_multiplier,
         "subtotal": round(subtotal, 2),
         "total": round(total, 2),
         "manufactured_items": manufactured_items,
         "purchased_items": purchased_items,
+        "kits": kits_summary,
         "operations_summary": operations_summary,
         "operations_summary_grouped": operations_summary_grouped,
         "cost_breakdown_chart": chart_data,
