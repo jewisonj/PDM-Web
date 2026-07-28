@@ -21,6 +21,7 @@ interface ProjectPart {
   est_time_min: number
   fixed_time_min: number  // per_line_item operations (don't multiply by qty)
   routing_count: number
+  is_kit_sourced?: boolean  // Part comes pre-made from vendor kit
 }
 
 interface ProjectAssembly {
@@ -274,7 +275,20 @@ async function loadProjectParts(projectId: string) {
       assemblyIds.add(b.parent_item_id)
     }
 
-    // Batch query 3: Load completion data for this project
+    // Batch query 3: Get kit sourcing - parts that come pre-made from vendor
+    const { data: kitSourceData } = await supabase
+      .from('project_item_source')
+      .select('item_id')
+      .eq('project_id', projectId)
+      .eq('source_type', 'kit')
+
+    // Build set of kit-sourced item_ids
+    const kitSourcedIds = new Set<string>()
+    for (const ks of kitSourceData || []) {
+      kitSourcedIds.add(ks.item_id)
+    }
+
+    // Batch query 4: Load completion data for this project
     const { data: compData } = await supabase
       .from('part_completion')
       .select('item_id, station_id')
@@ -283,8 +297,16 @@ async function loadProjectParts(projectId: string) {
     completionData.value = compData || []
 
     // Process parts using batched data (no additional queries needed)
+    // Kit-sourced parts get synthetic receiving routing (9 min fixed) instead of manufacturing routing
+    const KIT_RECEIVING_TIME = 9  // 5 min receiving + 2 min inspection + 2 min staging
     const partsWithRouting = (data || []).map((pp: any) => {
+      const isKitSourced = kitSourcedIds.has(pp.item_id)
       const routing = routingByItem.get(pp.item_id) || { steps: 0, variableTime: 0, fixedTime: 0 }
+
+      // Kit-sourced parts: use synthetic receiving routing (fixed time only)
+      // Regular parts: use database routing
+      const fixedTime = isKitSourced ? KIT_RECEIVING_TIME : routing.fixedTime
+      const variableTime = isKitSourced ? 0 : routing.variableTime
 
       return {
         id: pp.id,
@@ -293,11 +315,12 @@ async function loadProjectParts(projectId: string) {
         name: pp.items?.name || '',
         quantity: pp.quantity,
         is_assembly: assemblyIds.has(pp.item_id),
-        has_routing: routing.steps > 0,
+        has_routing: isKitSourced || routing.steps > 0,
         is_manual: pp.is_manual || false,
-        est_time_min: routing.variableTime,  // Per-unit time (multiply by qty)
-        fixed_time_min: routing.fixedTime,   // Per-line-item time (fixed)
-        routing_count: routing.steps
+        est_time_min: variableTime,  // Per-unit time (multiply by qty)
+        fixed_time_min: fixedTime,   // Per-line-item time (fixed)
+        routing_count: isKitSourced ? 3 : routing.steps,  // 3 synthetic steps for kit parts
+        is_kit_sourced: isKitSourced
       }
     })
 
