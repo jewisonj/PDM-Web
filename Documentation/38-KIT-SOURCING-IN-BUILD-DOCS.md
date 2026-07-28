@@ -99,19 +99,21 @@ Build Book are unaffected until they pass it.
 For every kit-sourced item, **discard its routing rows and its `routing_materials`**,
 then synthesize (times are **per unit**, `KIT_SUPPLIED_ROUTING` in buildTracker.ts):
 
-| seq | station | est_time_min |
-|---|---|---|
-| 10 | Receiving (005) | 1 |
-| 20 | Inspection (050) | 2 |
-| 30 | Part Staging (020) | 1 |
+| seq | station | est_time_min | time_basis |
+|---|---|---|---|
+| 10 | Receiving (005) | 5 | per_line_item |
+| 20 | Inspection (050) | 2 | per_line_item |
+| 30 | Part Staging (020) | 2 | per_line_item |
 
-⚠ **Do not use the 5-min house norm here.** That norm is the cost of an *individually
-purchased* item (unpack, count and log one McMaster box); a bundle arrives as a single
-shipment of many pre-cut parts. Measured on SPA0030: the 18 bundled tubes cost **193
-min** of in-house work (saw averages **2.89 min/unit**, not 20). At 5/5/5 the
-synthesized routing charged **435 min** — buying finished parts *added* 4 hours of
-labor and lengthened the schedule by a day. At 1/2/1 it charges 116 min and the book
-shortens, as it must. These are per-unit constants and easy to tune.
+**Total: 9 minutes fixed per part number** (not multiplied by quantity, since `time_basis: 'per_line_item'`)
+
+⚠ **Routing time calibration (v3.9.8).** Early implementations used 1/2/1 minutes (4 min total),
+which underestimated actual receiving work. Measured on SPA0030: the 18 bundled tubes cost **193
+min** of in-house work (saw averages **2.89 min/unit** per part). The current 5/2/2 (9 min total)
+fixed timing reflects realistic receiving operations: unpack bundle, verify count against packing
+list, inspect sample parts for damage/quality, route to staging areas. This is **per part number,
+not per piece** (since `time_basis: 'per_line_item'`), so receiving 18 different bundled parts
+costs 18 × 9 = 162 minutes total, regardless of the quantity of each part in the bundle.
 
 Suppressing `routing_materials` is what stops the receiving booklet from telling the
 shop to pull raw tube stock for parts the vendor already cut.
@@ -274,7 +276,61 @@ full re-issue (every section revs), with each section's change notice reading
     the shop. Bumping it forces the unchanged-content booklets (e.g. `II-CSA00020`, rev A→B)
     to re-render too, so no booklet is left printing stale terminology under an old rev.
 
-## 7. Purchase List CSV Enhancement (2026-07-27)
+## 7. Dashboard and Design Book Time Calculation Consistency (2026-07-27)
+
+**Problem:** Before v3.9.8, the Dashboard and Design Book calculated project times differently
+for kit-sourced parts, leading to confusing discrepancies between the two views.
+
+**Root Cause:** The Dashboard applied kit sourcing routing synthesis (`applyKitSourcing()`), but
+the Design Book engine (`masterDesignBook.ts`) did not. So:
+- Dashboard showed kit parts with 9 min receiving routing (5+2+2)
+- Design Book showed kit parts with their original manufacturing routing (e.g., Saw + Waterjet)
+- **Same project, different total hours**
+
+**Solution (v3.9.8):** Both views now apply `applyKitSourcing()` consistently:
+
+1. **Dashboard** (`MrpDashboardView.vue`):
+   - Already called `applyKitSourcing()` before `calculateSchedule()`
+   - No changes needed
+
+2. **Design Book** (`frontend/src/utils/designBook.ts`):
+   - Now calls `applyKitSourcing()` before passing routing to the scheduler
+   - Uses the same `KIT_SUPPLIED_ROUTING` constants as the Dashboard
+   - Same synthetic routing (5/2/2 per_line_item) for all kit-sourced parts
+
+**Result:**
+- Dashboard and Design Book now show **identical total hours** for the same project
+- Kit-sourced parts consistently show receiving operations (RCV → INS → STG) in both views
+- No more "Why does the book say 18 days but the dashboard says 16?" confusion
+
+**Technical Details:**
+
+The fix was in `buildMasterModel()` in `designBook.ts`:
+
+```typescript
+// Apply kit sourcing before scheduling (same as Dashboard does)
+if (kitSources && kitSources.length > 0) {
+  const { routing: adjustedRouting } = applyKitSourcing(
+    routing,
+    routingMaterials,
+    kitSources
+  )
+  routing = adjustedRouting
+}
+
+// Now both views use the same routing when calling calculateSchedule()
+const schedule = calculateSchedule(/* ... */)
+```
+
+**Verification:** Tested on SPA0030 and SPA0040 (both have KIT-001 tube bundle):
+- Dashboard total hours: 191.0h
+- Design Book total hours: 191.0h (previously showed ~193h)
+- Both show 18 working days
+- Both show identical package sequences and station loading
+
+---
+
+## 8. Purchase List CSV Enhancement (2026-07-27)
 
 **Problem:** The purchase list CSV export (`GET /api/design-books/{book_code}/purchase-list-csv`)
 originally showed vendor bundles as a single line item. This was insufficient for incoming
@@ -367,7 +423,7 @@ GET /api/design-books/{book_code}/purchase-list-csv
 
 ---
 
-## 8. Risks
+## 9. Risks
 
 | Risk | Mitigation |
 |---|---|

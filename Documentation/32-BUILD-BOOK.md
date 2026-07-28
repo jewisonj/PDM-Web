@@ -126,7 +126,7 @@ A **package** is one card representing all the part tasks the scheduler placed o
 | Field | Meaning |
 |-------|---------|
 | `stationName` / `stationAbbrev` | The station this package runs at (abbreviated via `STATION_ABBREV`, see below) |
-| `estMin` | Sum of `duration_min` across all tasks in the package |
+| `estMin` | Sum of `duration_min` across all tasks in the package. Note: duration calculation respects `time_basis` (v3.9.8) — per-unit operations multiply by quantity, per-line-item operations use fixed time. |
 | `lines[]` | One row per part: item number, name, qty, est minutes, `next` (abbreviated next station or `null` if this is the item's last routed op), `feeds` (assembly rids this part belongs to), `done` |
 | `stockPull[]` | Materials to pull for this package -- **only** included if this package is at the item's **first** routed station (`idx === 0` in the item's route order); prevents the same stock line appearing on every downstream package for the same part |
 | `stageFor[]` | Assembly rids whose kit this package's output completes -- populated when a line has no `next` station (i.e. this package produces the part's final state) |

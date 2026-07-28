@@ -51,6 +51,10 @@ ALTER TABLE routing ADD COLUMN time_basis TEXT DEFAULT 'per_unit'
 - **Design Book schedules** show realistic times for purchased parts (5-10 min per part NUMBER, not per piece)
 - **Project cost estimates** are accurate (receiving isn't inflated by quantity)
 - **Build Tracker** work packages display correct time estimates for kit-supplied items
+- **Dashboard and Design Book consistency** - Both views now apply kit sourcing uniformly:
+  - Kit-sourced parts use synthetic receiving routing (9 min fixed: 5 receiving + 2 inspection + 2 staging)
+  - This replaces their manufacturing routing from the database
+  - Both views now show the same total hours for a project
 
 #### Use Cases
 

@@ -2254,6 +2254,41 @@ ALTER TABLE routing ADD COLUMN time_basis TEXT DEFAULT 'per_unit'
 
 ---
 
+## Primary Test Projects
+
+**Note:** The primary projects used for development and testing are **SPA0030** and **SPA0040**, not TEST-PROG01.
+
+**Background:**
+- `TEST-PROG01` was the original test project used in early development
+- As the system matured, real production projects `SPA0030` and `SPA0040` became the primary testing ground
+- These projects provide realistic data for:
+  - Kit sourcing (both have KIT-001 tube laser bundle from Precision Tube Laser)
+  - Routing complexity (mix of fabrication, welding, assembly operations)
+  - Design Book generation (Master Design Book "spa-standard" is built from SPA0030)
+  - Schedule calculation and capacity planning
+  - Build Tracker and Build Book rendering
+
+**Usage:**
+- When testing MRP features, use `SPA0030` or `SPA0040` for realistic scenarios
+- When testing kit sourcing, both projects have KIT-001 configured (SPA0030: 18 parts, SPA0040: 33 parts)
+- When testing Design Book generation, spa-standard template project is SPA0030
+- `TEST-PROG01` may have stale or incomplete data; prefer the SPA projects
+
+**Project Details:**
+
+| Project | Purpose | Kit Sourcing | Design Book |
+|---------|---------|--------------|-------------|
+| SPA0030 | Primary test project | KIT-001 (18 parts, PTL tube bundle) | Template for spa-standard book (rev 3) |
+| SPA0040 | Secondary test project | KIT-001 (33 parts, PTL tube bundle) | Not yet published |
+| TEST-PROG01 | Legacy test project | May have stale data | Not used |
+
+**Related Documentation:**
+- `Documentation/38-KIT-SOURCING-IN-BUILD-DOCS.md` - Kit sourcing details and measured impact on SPA0030
+- `Documentation/36-MASTER-DESIGN-BOOK-PLAN.md` - Design Book architecture (spa-standard from SPA0030)
+- `Documentation/32-BUILD-BOOK.md` - Build Book structure and rendering
+
+---
+
 **Last Updated:** 2026-07-27
 **Version:** 3.9.8
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)
