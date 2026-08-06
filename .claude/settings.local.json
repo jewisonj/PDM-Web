@@ -243,7 +243,9 @@
       "Bash(cmd.exe //c \"dir /s /b D:\\\\*STP_Export* 2>nul\")",
       "Bash(cmd.exe //c \"wmic logicaldisk get caption\")",
       "Bash(cmd.exe //c \"dir /s /b V:\\\\*STP* 2>nul\")",
-      "Bash(cmd.exe //c \"dir /s /b C:\\\\Users\\\\*STP_Export* 2>nul\")"
+      "Bash(cmd.exe //c \"dir /s /b C:\\\\Users\\\\*STP_Export* 2>nul\")",
+      "Bash(start cmd /k \"python -m uvicorn app.main:app --reload --port 8001\")",
+      "Bash(start cmd /k \"npm run dev\")"
     ],
     "deny": []
   },
