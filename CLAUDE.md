@@ -15,6 +15,146 @@ See `PORTS.md` for complete documentation.
 
 ---
 
+## ⚠️ CRITICAL: PDM Data Lives in Supabase, NOT Local Filesystem
+
+**All PDM data is in Supabase. Do NOT search the J: drive or local filesystem for:**
+- Part/item information → Query `items` table
+- File metadata (DXF, STEP, PDF, SVG) → Query `files` table
+- Actual file content → Supabase Storage bucket `pdm-files`
+- BOM relationships → Query `bom` table
+- Project data → Query `mrp_projects` and `mrp_project_parts` tables
+
+**Local paths that are NOT PDM data storage:**
+- `J:\PDM-Web\` → Source code for the web app (this repo)
+- `C:\PDM-Upload\` → Temporary staging folder for upload bridge (files move TO Supabase)
+- `J:\Aethon\` or other J: drive folders → CAD working directories, NOT the PDM database
+
+**Common PDM Queries:**
+
+```sql
+-- Get item with all its files
+SELECT i.*, f.file_type, f.file_name, f.file_path
+FROM items i
+LEFT JOIN files f ON f.item_id = i.id
+WHERE i.item_number = 'abc12345';
+
+-- Get project parts with file availability
+SELECT i.item_number, i.name, i.material, i.thickness,
+       EXISTS(SELECT 1 FROM files f WHERE f.item_id = i.id AND f.file_type = 'DXF') as has_dxf,
+       EXISTS(SELECT 1 FROM files f WHERE f.item_id = i.id AND f.file_type = 'STEP') as has_step
+FROM mrp_project_parts mpp
+JOIN items i ON mpp.item_id = i.id
+WHERE mpp.project_id = 'uuid-here';
+
+-- Get BOM tree for an assembly
+SELECT parent.item_number as parent, child.item_number as child, b.quantity
+FROM bom b
+JOIN items parent ON b.parent_item_id = parent.id
+JOIN items child ON b.child_item_id = child.id
+WHERE parent.item_number = 'asm00100';
+```
+
+**Key Data Conventions:**
+- `files.file_type` is UPPERCASE: `'DXF'`, `'STEP'`, `'PDF'`, `'SVG'`, `'CAD'`
+- `items.item_number` is lowercase: `'jbp00010'`, `'mmc12345'`
+- `mrp_projects.status` is Title Case: `'Setup'`, `'Active'`, `'Complete'`
+
+**Common Admin Tasks:**
+
+1. **"Check files for project X"** → Query mrp_project_parts + files, report what's present/missing
+2. **"Are STEP files up to date?"** → Compare `files.updated_at` timestamps, check `step_fingerprint` for changes
+3. **"Review BOM for project"** → Query bom table joined with items, check source_file and quantities
+4. **"What's missing before build?"** → Sheet metal parts (has thickness) need DXF+STEP; assemblies need STEP
+
+**Finding a Project:**
+```sql
+-- Projects use project_code like 'WM_0513', 'SPA0030'
+SELECT id, project_code, top_assembly_id, status
+FROM mrp_projects
+WHERE project_code = 'WM_0513';
+```
+
+---
+
+## STEP File Fingerprinting System
+
+STEP files cannot be compared byte-by-byte (timestamps and entity IDs change on re-export). We use geometric fingerprints instead.
+
+**Key Components:**
+- `scripts/pdm-upload/step_fingerprint.py` - CLI tool for PowerShell upload service
+- `backend/app/services/step_compare.py` - Python service for backend
+- `files.step_fingerprint` column - Stores JSON fingerprint in database
+
+**Fingerprint Contents:**
+- Entity counts (CARTESIAN_POINT, LINE, ADVANCED_FACE, etc.)
+- Bounding box (min/max X, Y, Z)
+- File size
+
+**Comparing STEP Files:**
+```sql
+-- Check if item has fingerprint stored
+SELECT step_fingerprint FROM files
+WHERE item_id = (SELECT id FROM items WHERE item_number = 'csp00050')
+AND file_type = 'STEP';
+```
+
+**Upload Service Behavior:**
+- Computes fingerprint of incoming file
+- Compares against stored fingerprint (fast - no download needed)
+- Skips identical files (same geometry)
+- Uploads changed files with automatic revision bump
+
+---
+
+## Upload Bridge (C:\PDM-Upload)
+
+The PowerShell upload service watches `C:\PDM-Upload` and uploads files to PDM.
+
+**Supported File Types:**
+- STEP/STP → Items table + Supabase Storage (with fingerprint)
+- DXF/SVG/PDF → Files table + Supabase Storage
+- PRT/ASM/DRW (Creo) → CAD files
+- BOM.txt/MLBOM.txt → BOM relationships
+- treetool.txt → Tree structure updates
+
+**File Flow:**
+```
+C:\PDM-Upload/             → Staging folder (local)
+  ↓ PowerShell service
+Supabase Storage           → pdm-files bucket
+Supabase PostgreSQL        → items, files, bom tables
+```
+
+**Service Location:** `scripts/pdm-upload/PDM-Upload-Service.ps1`
+
+---
+
+## ⚠️ CRITICAL: Database Query Discipline
+
+**Before reporting query results to the user, verify the query is correct.**
+
+1. **No assumptions about data format.** Before writing a query, check actual values:
+   ```sql
+   SELECT DISTINCT column_name FROM table LIMIT 10;
+   ```
+
+2. **Zero results = investigate the query first.** If a query returns nothing when data should exist, assume the query is wrong. Check for:
+   - Case sensitivity (PostgreSQL strings are case-sensitive)
+   - Wrong column names or table names
+   - Incorrect JOIN conditions
+   - Typos in filter values
+
+3. **Sanity-check before reporting.** If results seem implausible (e.g., "all 39 parts are missing files"), stop and verify before telling the user. The query is more likely wrong than the data.
+
+4. **When uncertain, show your work.** Run exploratory queries first, share what you find, then build the final query.
+
+**Documentation Reference:**
+- Detailed pitfalls and patterns: `Documentation/15-DEVELOPMENT-NOTES-WORKSPACE-COMPARISON.md`
+- Only read full documentation files when actively debugging an issue in that domain
+- For quick lookups, use Grep to search documentation rather than reading entire files
+
+---
+
 ## Project Overview
 
 Migrating a Windows/PowerShell-based PDM system to a **web-based architecture**. This is a small-team, desktop-first application for managing CAD files, BOMs, and manufacturing documents.

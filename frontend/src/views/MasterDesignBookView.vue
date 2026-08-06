@@ -167,7 +167,8 @@ async function checkAndUpdate() {
     let master = await buildMasterModel(templateProjectCode.value)
 
     // Auto-sync quantities from BOM if there are mismatches
-    if (!master.qtyCheck.ok && !allowQtyMismatch.value) {
+    // Skip sync for new books that don't exist yet - sync will happen on first update
+    if (!master.qtyCheck.ok && !allowQtyMismatch.value && book.value) {
       const syncResult = await syncQuantities(bookCode)
       if (syncResult.updated.length > 0) {
         // Show what was synced

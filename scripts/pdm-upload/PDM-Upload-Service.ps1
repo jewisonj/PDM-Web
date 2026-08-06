@@ -93,9 +93,14 @@ function Process-DroppedFile {
                     return
                 }
 
-                # Upload the file
+                # Upload the file (may be skipped if fingerprint matches)
                 $result = Upload-File -FilePath $FilePath -ItemNumber $itemNumber
-                Write-Log "SUCCESS: Uploaded $fileName for item $itemNumber"
+
+                if ($result.skipped) {
+                    Write-Log "SKIPPED: $fileName - $($result.message)"
+                } else {
+                    Write-Log "SUCCESS: Uploaded $fileName for item $itemNumber"
+                }
             }
 
             'BOM' {
@@ -116,13 +121,19 @@ function Process-DroppedFile {
                 Write-Log "SUCCESS: Updated parameters for item $($result.item_number)"
             }
 
+            'Delete' {
+                # Auto-delete Creo export log files
+                Write-Log "DELETED: Creo log file $fileName"
+                Remove-Item $FilePath -Force
+            }
+
             'Skip' {
                 Write-Log "Skipping unsupported file type: $fileName"
             }
         }
 
-        # Delete the file on success (except Skip)
-        if ($action -ne 'Skip') {
+        # Delete the file on success (except Skip and Delete which handle their own cleanup)
+        if ($action -ne 'Skip' -and $action -ne 'Delete') {
             Remove-Item $FilePath -Force
         }
     }

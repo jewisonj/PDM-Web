@@ -2387,6 +2387,53 @@ After adding routing, verify the fix:
 
 ---
 
+### 43. Database Query Case Sensitivity (file_type, status fields)
+
+**Symptom:** Queries return zero results when data clearly exists. Example: searching for DXF files returns nothing, but the UI shows DXF files are present.
+
+**Root Cause:** PostgreSQL string comparisons are case-sensitive by default. The `files.file_type` column stores uppercase values (`'DXF'`, `'STEP'`, `'PDF'`, `'SVG'`, `'CAD'`) but queries may use lowercase (`'dxf'`).
+
+**Example of the Bug:**
+
+```sql
+-- WRONG: Returns 0 rows even when DXF files exist
+SELECT * FROM files WHERE file_type = 'dxf';
+
+-- CORRECT: Matches actual data
+SELECT * FROM files WHERE file_type = 'DXF';
+
+-- ALSO CORRECT: Case-insensitive match
+SELECT * FROM files WHERE UPPER(file_type) = 'DXF';
+```
+
+**Affected Columns (known uppercase conventions):**
+- `files.file_type`: `'DXF'`, `'STEP'`, `'PDF'`, `'SVG'`, `'CAD'`, `'IMAGE'`, `'OTHER'`
+- `mrp_projects.status`: `'Setup'`, `'Active'`, `'Complete'`, `'On Hold'`
+- `items.lifecycle_state`: `'Design'`, `'Production'`, `'Obsolete'`
+
+**Prevention Rules:**
+
+1. **Always verify actual data format first:**
+   ```sql
+   SELECT DISTINCT file_type FROM files ORDER BY file_type;
+   ```
+
+2. **Use case-insensitive comparison when uncertain:**
+   ```sql
+   WHERE UPPER(file_type) = 'DXF'
+   -- or
+   WHERE file_type ILIKE 'dxf'
+   ```
+
+3. **Sanity-check results:** If a query returns zero matches for something that should exist (e.g., "no sheet metal parts have DXF files"), the query is likely wrong—investigate the query before reporting the result.
+
+**Real-World Impact:** Incorrectly reported that 39/39 sheet metal parts in project WM_0513 were missing DXF files. All 39 actually had DXF files—the query just used the wrong case.
+
+**Date Discovered:** 2026-08-06
+**Severity:** High (leads to incorrect reports and wasted investigation time)
+
+---
+
 ## Primary Test Projects
 
 **Note:** The primary projects used for development and testing are **SPA0030** and **SPA0040**, not TEST-PROG01.
@@ -2422,6 +2469,6 @@ After adding routing, verify the fix:
 
 ---
 
-**Last Updated:** 2026-07-27
-**Version:** 3.9.8
+**Last Updated:** 2026-08-06
+**Version:** 3.9.9
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

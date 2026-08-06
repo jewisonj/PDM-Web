@@ -85,12 +85,18 @@ function Get-FileAction {
         'BOM' - Parse as single-level BOM text file
         'MLBOM' - Parse as multi-level BOM text file
         'Parameters' - Parse as parameter update file
+        'Delete' - Auto-delete (Creo export logs, etc.)
         'Skip' - Ignore this file
     #>
     param([string]$FilePath)
 
     $fileName = [IO.Path]::GetFileName($FilePath).ToLower()
     $ext = [IO.Path]::GetExtension($FilePath).ToLower()
+
+    # Auto-delete Creo STEP export log files (.log.1, .log.2, etc.)
+    if ($fileName -match '\.log\.\d+$') {
+        return 'Delete'
+    }
 
     # Ignore service files and common non-upload files
     $ignoreExtensions = @('.ps1', '.bat', '.cmd', '.log', '.ini', '.config', '.json', '.md', '.txt', '.gif')
@@ -133,6 +139,92 @@ function Get-FileAction {
 }
 
 
+function Test-StepFingerprint {
+    <#
+    .SYNOPSIS
+        Check if a STEP file matches the stored version in PDM.
+
+    .DESCRIPTION
+        Compares local file fingerprint against stored fingerprint.
+        Returns $true if files are identical (skip upload), $false if different.
+
+    .RETURNS
+        Hashtable with:
+        - Skip: $true if file should be skipped (identical)
+        - Reason: Why the decision was made
+        - Revision: Current revision in PDM (if exists)
+    #>
+    param(
+        [string]$FilePath,
+        [string]$ItemNumber
+    )
+
+    # Python script is in the same folder as the watch folder (C:\PDM-Upload)
+    $pythonScript = Join-Path $Config.WatchFolder "step_fingerprint.py"
+
+    # Check if Python script exists
+    if (-not (Test-Path $pythonScript)) {
+        Write-Log "  Fingerprint script not found, uploading without comparison"
+        return @{ Skip = $false; Reason = "no_script" }
+    }
+
+    # Get stored fingerprint from API
+    $fpUri = "$($Config.ApiUrl)/files/fingerprint/$ItemNumber"
+    try {
+        $storedData = Invoke-RestMethod -Uri $fpUri -Method Get -ErrorAction Stop
+    }
+    catch {
+        Write-Log "  Could not get stored fingerprint: $($_.Exception.Message)"
+        return @{ Skip = $false; Reason = "api_error" }
+    }
+
+    # If no STEP file exists in PDM, upload is needed
+    if (-not $storedData.has_step_file) {
+        return @{ Skip = $false; Reason = "no_existing_file"; Revision = $storedData.revision }
+    }
+
+    # If no fingerprint stored, upload is needed (will be computed server-side)
+    if (-not $storedData.fingerprint) {
+        return @{ Skip = $false; Reason = "no_stored_fingerprint"; Revision = $storedData.revision }
+    }
+
+    # Compute local fingerprint using Python
+    try {
+        $storedFpJson = $storedData.fingerprint | ConvertTo-Json -Compress -Depth 10
+        # Escape for command line
+        $storedFpJson = $storedFpJson -replace '"', '\"'
+
+        $pythonOutput = & python $pythonScript $FilePath --compare $storedFpJson 2>&1
+        $result = $pythonOutput | ConvertFrom-Json
+    }
+    catch {
+        Write-Log "  Fingerprint comparison failed: $($_.Exception.Message)"
+        return @{ Skip = $false; Reason = "comparison_error" }
+    }
+
+    if ($result.error) {
+        Write-Log "  Fingerprint error: $($result.error)"
+        return @{ Skip = $false; Reason = "comparison_error" }
+    }
+
+    if ($result.match) {
+        return @{
+            Skip = $true
+            Reason = "fingerprint_match"
+            Revision = $storedData.revision
+            Message = "File identical to stored version (Rev $($storedData.revision))"
+        }
+    }
+    else {
+        return @{
+            Skip = $false
+            Reason = "fingerprint_different"
+            Revision = $storedData.revision
+        }
+    }
+}
+
+
 function Upload-File {
     <#
     .SYNOPSIS
@@ -140,14 +232,36 @@ function Upload-File {
 
     .DESCRIPTION
         Uses multipart/form-data to upload file with item_number.
+        For STEP files, compares fingerprints first and skips upload if identical.
+
+    .RETURNS
+        API response object, or hashtable with 'skipped' = $true if file was skipped.
     #>
     param(
         [string]$FilePath,
         [string]$ItemNumber
     )
 
-    $uri = "$($Config.ApiUrl)/files/upload"
     $fileName = [IO.Path]::GetFileName($FilePath)
+    $ext = [IO.Path]::GetExtension($FilePath).ToLower()
+
+    # For STEP files, check fingerprint first
+    if ($ext -eq '.step' -or $ext -eq '.stp') {
+        $fpCheck = Test-StepFingerprint -FilePath $FilePath -ItemNumber $ItemNumber
+
+        if ($fpCheck.Skip) {
+            Write-Log "  SKIPPED: $($fpCheck.Message)"
+            return @{
+                skipped = $true
+                reason = $fpCheck.Reason
+                message = $fpCheck.Message
+                item_number = $ItemNumber
+                revision = $fpCheck.Revision
+            }
+        }
+    }
+
+    $uri = "$($Config.ApiUrl)/files/upload"
 
     # Use .NET HttpClient for reliable multipart upload
     Add-Type -AssemblyName System.Net.Http

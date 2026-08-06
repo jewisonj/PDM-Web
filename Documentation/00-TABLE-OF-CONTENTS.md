@@ -1,9 +1,9 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-07-27
+**Last Updated:** 2026-08-06
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.9.8
+**Current Version:** v3.9.9
 
 ---
 
@@ -51,6 +51,7 @@ New to PDM-Web? Read these in order:
 | 37 | `37-KIT-BUNDLE-PRICING.md` | Kit/bundle pricing system: vendor bundles, per-project part sourcing (make vs kit), cost comparison, kit management slideout UI, routing page integration, cost estimate calculation. |
 | 38 | `38-KIT-SOURCING-IN-BUILD-DOCS.md` | Kit sourcing in Build Book and Design Book: STAGE SET renderer, per-project kit documentation sections, purchased parts tracking. |
 | 39 | `39-KIT-SOURCING-STEP-EXPORT.md` | Kit sourcing STEP export guide: BOM queries, part categorization, STEP file downloads, export folder structure, CSV generation, handling updated files from vendors. |
+| 40 | `40-QUOTE-BUNDLE-PREPARATION.md` | Quote bundle preparation guide: preparing STEP file packages for external fabricator quotes, revision tracking, consolidation documentation, CSV BOMs with change notes. |
 | 43 | `43-DESIGN-BOOK-IMAGE-MANAGEMENT.md` | Design Book image management system: image hash detection for auto re-rendering, FastAPI route ordering fix, upload form state preservation, image library integration with Master Design Book III-00 section. |
 | 44 | `44-SUPPLIER-PORTAL.md` | Supplier Portal: external vendor access to approved files, separate JWT auth, file type restrictions, two-way comments, admin management, item access control. |
 
@@ -146,7 +147,8 @@ New to PDM-Web? Read these in order:
 6. `37-KIT-BUNDLE-PRICING.md` -- Kit/bundle pricing and vendor cost comparison
 7. `38-KIT-SOURCING-IN-BUILD-DOCS.md` -- Kit sourcing in Build Book and Design Book
 8. `39-KIT-SOURCING-STEP-EXPORT.md` -- Exporting STEP files and BOMs for kit orders
-9. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
+9. `40-QUOTE-BUNDLE-PREPARATION.md` -- Preparing STEP file quote bundles for external fabricators
+10. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
 
 ### Troubleshooting
 1. `19-TROUBLESHOOTING-DECISION-TREE.md` -- diagnosis
@@ -180,7 +182,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 39
+**Total Documentation Files:** 40
 **Status:** Current
 
 ---

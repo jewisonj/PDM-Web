@@ -21,6 +21,18 @@ from ..models.schemas import FileInfo, FileCreate
 router = APIRouter(prefix="/files", tags=["files"])
 
 
+def get_next_rev(current_rev: str) -> str:
+    """Increment revision letter: A->B, B->C, etc."""
+    if not current_rev:
+        return 'A'
+    # Handle single letter revs
+    if len(current_rev) == 1 and current_rev.isalpha():
+        if current_rev.upper() == 'Z':
+            return 'AA'
+        return chr(ord(current_rev.upper()) + 1)
+    return current_rev + '.1'  # Fallback
+
+
 def get_file_type(filename: str) -> str:
     """Determine file type from extension."""
     ext = filename.lower().split(".")[-1] if "." in filename else ""
@@ -288,6 +300,92 @@ async def list_files(
     return result.data
 
 
+@router.get("/fingerprint/{item_number}")
+async def get_step_fingerprint(item_number: str):
+    """
+    Get the stored STEP fingerprint for an item.
+
+    Used by upload clients to check if a file has changed before uploading.
+    Returns the cached fingerprint if available, or null if no STEP file exists.
+    """
+    supabase = get_supabase_admin()
+
+    clean_item_number = item_number.strip().lower()
+
+    # Get item
+    item_result = supabase.table("items").select("id, revision").eq(
+        "item_number", clean_item_number
+    ).limit(1).execute()
+
+    if not item_result.data:
+        return {
+            "item_number": clean_item_number,
+            "exists": False,
+            "fingerprint": None,
+            "message": "Item not found"
+        }
+
+    item_id = item_result.data[0]["id"]
+    item_revision = item_result.data[0].get("revision", "A")
+
+    # Get STEP file with fingerprint
+    file_result = supabase.table("files").select(
+        "id, file_name, step_fingerprint, revision, file_path"
+    ).eq("item_id", item_id).or_(
+        "file_type.eq.STP,file_type.eq.STEP"
+    ).limit(1).execute()
+
+    if not file_result.data:
+        return {
+            "item_number": clean_item_number,
+            "exists": True,
+            "has_step_file": False,
+            "fingerprint": None,
+            "revision": item_revision,
+            "message": "No STEP file for this item"
+        }
+
+    file_record = file_result.data[0]
+    stored_fp = file_record.get("step_fingerprint")
+
+    # If no cached fingerprint, try to compute it
+    if not stored_fp and file_record.get("file_path"):
+        from ..services.step_compare import parse_step_fingerprint
+
+        file_path = file_record["file_path"]
+        parts = file_path.split("/", 1)
+        bucket = parts[0] if len(parts) == 2 else "pdm-files"
+        storage_path = parts[1] if len(parts) == 2 else file_path
+
+        try:
+            content = supabase.storage.from_(bucket).download(storage_path)
+            fp = parse_step_fingerprint(content)
+            stored_fp = fp.to_dict()
+
+            # Cache it for future
+            supabase.table("files").update({
+                "step_fingerprint": stored_fp
+            }).eq("id", file_record["id"]).execute()
+        except Exception as e:
+            return {
+                "item_number": clean_item_number,
+                "exists": True,
+                "has_step_file": True,
+                "fingerprint": None,
+                "revision": file_record.get("revision", item_revision),
+                "error": f"Could not compute fingerprint: {str(e)}"
+            }
+
+    return {
+        "item_number": clean_item_number,
+        "exists": True,
+        "has_step_file": True,
+        "fingerprint": stored_fp,
+        "revision": file_record.get("revision", item_revision),
+        "file_name": file_record.get("file_name")
+    }
+
+
 @router.get("/{file_id}", response_model=FileInfo)
 async def get_file(file_id: UUID):
     """Get file metadata by ID."""
@@ -304,15 +402,20 @@ async def get_file(file_id: UUID):
     return result.data
 
 
-@router.post("/upload", response_model=FileInfo)
+@router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
     item_number: str = Form(...),
     revision: Optional[str] = Form(None),
+    skip_comparison: bool = Form(False),
 ):
     """Upload a file and associate it with an item.
 
     Uses admin client to bypass RLS for internal upload service.
+
+    For STEP files, automatically compares fingerprints and skips upload
+    if file is geometrically identical to existing version.
+    Set skip_comparison=true to force upload without comparison.
     """
     supabase = get_supabase_admin()
 
@@ -348,7 +451,87 @@ async def upload_file(
         print(f"Normalized filename: {file.filename} -> {normalized_filename}")
 
     # Check if file record exists to determine iteration BEFORE stamping
-    existing = supabase.table("files").select("id, iteration").eq("item_id", item_id).eq("file_name", normalized_filename).execute()
+    existing = supabase.table("files").select("id, iteration, step_fingerprint, file_path").eq("item_id", item_id).eq("file_name", normalized_filename).execute()
+
+    # STEP file fingerprint comparison - skip upload if identical
+    if file_type == "STEP" and not skip_comparison and existing.data:
+        from ..services.step_compare import parse_step_fingerprint, StepFingerprint
+
+        new_fp = parse_step_fingerprint(content, len(content))
+        stored_fp_dict = existing.data[0].get("step_fingerprint")
+
+        if stored_fp_dict:
+            # Use cached fingerprint (fast path)
+            entity_counts = stored_fp_dict.get("entity_counts", {})
+            stored_fp = StepFingerprint()
+            stored_fp.cartesian_points = entity_counts.get("cartesian_points", 0)
+            stored_fp.directions = entity_counts.get("directions", 0)
+            stored_fp.vectors = entity_counts.get("vectors", 0)
+            stored_fp.lines = entity_counts.get("lines", 0)
+            stored_fp.circles = entity_counts.get("circles", 0)
+            stored_fp.planes = entity_counts.get("planes", 0)
+            stored_fp.advanced_faces = entity_counts.get("advanced_faces", 0)
+            stored_fp.closed_shells = entity_counts.get("closed_shells", 0)
+            stored_fp.manifold_solids = entity_counts.get("manifold_solids", 0)
+            stored_fp.total_entities = entity_counts.get("total", 0)
+
+            bbox = stored_fp_dict.get("bounding_box", {})
+            mins = bbox.get("min", [0, 0, 0])
+            maxs = bbox.get("max", [0, 0, 0])
+            stored_fp.min_x, stored_fp.min_y, stored_fp.min_z = mins
+            stored_fp.max_x, stored_fp.max_y, stored_fp.max_z = maxs
+
+            if stored_fp.matches(new_fp):
+                print(f"STEP fingerprint match - skipping upload for {clean_item_number}")
+                return {
+                    "skipped": True,
+                    "reason": "fingerprint_match",
+                    "message": f"File identical to stored version (Rev {file_revision})",
+                    "item_number": clean_item_number,
+                    "id": existing.data[0]["id"]
+                }
+        else:
+            # No cached fingerprint - download existing and compare
+            file_path = existing.data[0].get("file_path")
+            if file_path:
+                parts = file_path.split("/", 1)
+                bucket_name = parts[0] if len(parts) == 2 else "pdm-files"
+                storage_path_existing = parts[1] if len(parts) == 2 else file_path
+
+                try:
+                    existing_content = supabase.storage.from_(bucket_name).download(storage_path_existing)
+                    existing_fp = parse_step_fingerprint(existing_content)
+
+                    # Cache the fingerprint for future comparisons
+                    supabase.table("files").update({
+                        "step_fingerprint": existing_fp.to_dict()
+                    }).eq("id", existing.data[0]["id"]).execute()
+
+                    if existing_fp.matches(new_fp):
+                        print(f"STEP fingerprint match (after download) - skipping upload for {clean_item_number}")
+                        return {
+                            "skipped": True,
+                            "reason": "fingerprint_match",
+                            "message": f"File identical to stored version (Rev {file_revision})",
+                            "item_number": clean_item_number,
+                            "id": existing.data[0]["id"]
+                        }
+                except Exception as e:
+                    print(f"Warning: Could not compare existing STEP file: {e}")
+
+        # If we get here for a STEP file with existing data, the file is DIFFERENT
+        # Bump the item's revision
+        current_rev = item_data.get("revision", "A")
+        new_rev = get_next_rev(current_rev)
+        print(f"STEP file changed for {clean_item_number}: bumping revision {current_rev} -> {new_rev}")
+
+        # Update item revision
+        supabase.table("items").update({
+            "revision": new_rev
+        }).eq("id", item_id).execute()
+
+        # Use new revision for the file
+        file_revision = new_rev
 
     if existing.data:
         new_iteration = existing.data[0]["iteration"] + 1
@@ -387,15 +570,25 @@ async def upload_file(
         else:
             raise HTTPException(status_code=500, detail=f"Storage error: {str(e)}")
 
+    # Compute fingerprint for STEP files
+    step_fingerprint = None
+    if file_type == "STEP":
+        from ..services.step_compare import parse_step_fingerprint
+        fp = parse_step_fingerprint(content, len(content))
+        step_fingerprint = fp.to_dict()
+
     # Update or create file record
     if existing_file_id:
         # Update existing file record
-        result = supabase.table("files").update({
+        update_data = {
             "file_path": storage_path,
             "file_size": file_size,
             "revision": file_revision,
             "iteration": new_iteration,
-        }).eq("id", existing_file_id).execute()
+        }
+        if step_fingerprint:
+            update_data["step_fingerprint"] = step_fingerprint
+        result = supabase.table("files").update(update_data).eq("id", existing_file_id).execute()
     else:
         # Create new file record
         file_data = {
@@ -407,6 +600,8 @@ async def upload_file(
             "revision": file_revision,
             "iteration": 1,
         }
+        if step_fingerprint:
+            file_data["step_fingerprint"] = step_fingerprint
         result = supabase.table("files").insert(file_data).execute()
 
     file_record = result.data[0]
@@ -681,3 +876,202 @@ Generated by assembly package download feature
             "Content-Disposition": f"attachment; filename={clean_item_number}_assembly.zip"
         }
     )
+
+
+@router.post("/compare-step/{item_number}")
+async def compare_step_file(
+    item_number: str,
+    file: UploadFile = File(...)
+):
+    """
+    Compare an uploaded STEP file against the existing one in PDM.
+
+    Returns fingerprint comparison showing if files are geometrically equivalent.
+    Use this before uploading to check if a file actually changed.
+
+    Returns:
+        - match: bool - True if files are geometrically equivalent
+        - differences: dict - What changed (entity counts, bounding box)
+        - fingerprints: dict - Full fingerprint data for both files
+    """
+    from ..services.step_compare import parse_step_fingerprint, StepFingerprint
+
+    supabase = get_supabase_admin()
+
+    # Normalize item number
+    clean_item_number = item_number.lower().strip()
+
+    # Get existing STEP file for this item
+    item_result = supabase.table("items").select("id").eq(
+        "item_number", clean_item_number
+    ).execute()
+
+    if not item_result.data:
+        raise HTTPException(status_code=404, detail=f"Item {clean_item_number} not found")
+
+    item_id = item_result.data[0]["id"]
+
+    # Find existing STEP file
+    file_result = supabase.table("files").select("id, file_path, file_name").eq(
+        "item_id", item_id
+    ).or_("file_type.eq.STP,file_type.eq.STEP").execute()
+
+    if not file_result.data:
+        # No existing STEP file - return fingerprint of uploaded file only
+        content = await file.read()
+        new_fp = parse_step_fingerprint(content, len(content))
+        return {
+            "match": False,
+            "reason": "no_existing_file",
+            "message": f"No existing STEP file for {clean_item_number}",
+            "new_fingerprint": new_fp.to_dict(),
+            "existing_fingerprint": None,
+            "differences": {}
+        }
+
+    existing_file = file_result.data[0]
+    file_path = existing_file["file_path"]
+
+    # Download existing file from storage
+    parts = file_path.split("/", 1)
+    if len(parts) == 2:
+        bucket = parts[0]
+        storage_path = parts[1]
+    else:
+        bucket = "pdm-files"
+        storage_path = file_path
+
+    try:
+        existing_content = supabase.storage.from_(bucket).download(storage_path)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not download existing file: {str(e)}"
+        )
+
+    # Parse both fingerprints
+    new_content = await file.read()
+    existing_fp = parse_step_fingerprint(existing_content, len(existing_content))
+    new_fp = parse_step_fingerprint(new_content, len(new_content))
+
+    # Compare
+    is_match = existing_fp.matches(new_fp)
+    differences = existing_fp.diff(new_fp)
+
+    return {
+        "match": is_match,
+        "item_number": clean_item_number,
+        "existing_file": existing_file["file_name"],
+        "uploaded_file": file.filename,
+        "existing_fingerprint": existing_fp.to_dict(),
+        "new_fingerprint": new_fp.to_dict(),
+        "differences": differences,
+        "summary": "Files are geometrically equivalent" if is_match else f"Files differ: {list(differences.keys())}"
+    }
+
+
+@router.post("/compare-step-batch")
+async def compare_step_files_batch(
+    files: list[UploadFile] = File(...)
+):
+    """
+    Compare multiple STEP files against existing ones in PDM.
+
+    Expects files named like: csp00110.step, csp00120.step, etc.
+    Returns comparison results for each file.
+    """
+    from ..services.step_compare import parse_step_fingerprint
+
+    supabase = get_supabase_admin()
+    results = []
+
+    for upload_file in files:
+        # Extract item number from filename
+        filename = upload_file.filename or ""
+        match = re.match(r'^([a-z]{3}\d+)', filename.lower())
+        if not match:
+            results.append({
+                "filename": filename,
+                "error": "Could not extract item number from filename"
+            })
+            continue
+
+        item_number = match.group(1)
+
+        # Get existing file
+        item_result = supabase.table("items").select("id").eq(
+            "item_number", item_number
+        ).execute()
+
+        if not item_result.data:
+            results.append({
+                "filename": filename,
+                "item_number": item_number,
+                "match": False,
+                "reason": "item_not_found"
+            })
+            continue
+
+        item_id = item_result.data[0]["id"]
+
+        file_result = supabase.table("files").select("file_path").eq(
+            "item_id", item_id
+        ).or_("file_type.eq.STP,file_type.eq.STEP").execute()
+
+        if not file_result.data:
+            new_content = await upload_file.read()
+            await upload_file.seek(0)
+            new_fp = parse_step_fingerprint(new_content)
+            results.append({
+                "filename": filename,
+                "item_number": item_number,
+                "match": False,
+                "reason": "no_existing_file",
+                "new_fingerprint": new_fp.to_dict()
+            })
+            continue
+
+        # Download and compare
+        file_path = file_result.data[0]["file_path"]
+        parts = file_path.split("/", 1)
+        bucket = parts[0] if len(parts) == 2 else "pdm-files"
+        storage_path = parts[1] if len(parts) == 2 else file_path
+
+        try:
+            existing_content = supabase.storage.from_(bucket).download(storage_path)
+            new_content = await upload_file.read()
+            await upload_file.seek(0)
+
+            existing_fp = parse_step_fingerprint(existing_content)
+            new_fp = parse_step_fingerprint(new_content)
+
+            is_match = existing_fp.matches(new_fp)
+            differences = existing_fp.diff(new_fp)
+
+            results.append({
+                "filename": filename,
+                "item_number": item_number,
+                "match": is_match,
+                "differences": differences if not is_match else {}
+            })
+        except Exception as e:
+            results.append({
+                "filename": filename,
+                "item_number": item_number,
+                "error": str(e)
+            })
+
+    # Summary
+    matched = sum(1 for r in results if r.get("match"))
+    changed = sum(1 for r in results if not r.get("match") and "error" not in r)
+    errors = sum(1 for r in results if "error" in r)
+
+    return {
+        "summary": {
+            "total": len(results),
+            "matched": matched,
+            "changed": changed,
+            "errors": errors
+        },
+        "results": results
+    }

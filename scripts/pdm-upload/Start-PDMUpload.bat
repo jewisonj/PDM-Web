@@ -13,6 +13,7 @@ if exist "%SOURCE%\PDM-Upload-Service.ps1" (
     copy /Y "%SOURCE%\PDM-Upload-Functions.ps1"  "C:\PDM-Upload\" >nul
     copy /Y "%SOURCE%\PDM-Upload-Service.ps1"    "C:\PDM-Upload\" >nul
     copy /Y "%SOURCE%\PDM-BOM-Parser.ps1"        "C:\PDM-Upload\" >nul
+    copy /Y "%SOURCE%\step_fingerprint.py"       "C:\PDM-Upload\" >nul
     echo Scripts synced.
 ) else (
     echo WARNING: Project source not found at %SOURCE%, using local copies.
