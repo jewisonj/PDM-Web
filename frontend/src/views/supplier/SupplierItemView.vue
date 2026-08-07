@@ -54,7 +54,7 @@ function logout() {
   router.push('/supplier-login')
 }
 
-async function downloadFile(fileId: string, fileName: string) {
+async function downloadFile(fileId: string, _fileName: string) {
   downloadingFile.value = fileId
   try {
     const result = await supplierAuth.getDownloadUrl(itemNumber.value, fileId)

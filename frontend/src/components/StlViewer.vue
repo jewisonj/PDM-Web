@@ -282,9 +282,10 @@ function onModelClick(event: MouseEvent) {
   raycaster.setFromCamera(mouse, camera)
   const intersects = raycaster.intersectObject(model)
 
-  if (intersects.length > 0) {
-    const point = intersects[0].point
-    const normal = intersects[0].face?.normal || new THREE.Vector3(0, 1, 0)
+  const hit = intersects[0]
+  if (hit) {
+    const point = hit.point
+    const normal = hit.face?.normal || new THREE.Vector3(0, 1, 0)
 
     pendingAnnotation.value = { position: point.clone(), normal: normal.clone() }
     newAnnotationText.value = ''
