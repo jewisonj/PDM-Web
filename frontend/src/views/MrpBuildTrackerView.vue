@@ -216,6 +216,13 @@ onUnmounted(() => {
         <button class="btn btn-primary" @click="printSheet">
           Print ({{ format === 'letter' ? '8.5×11' : '11×17' }} landscape)
         </button>
+        <button
+          class="btn btn-secondary"
+          title="Print to PDF first, then drop the file on the Shares page for a permanent public link"
+          @click="router.push({ path: '/mrp/shares', query: { project: projectCode } })"
+        >
+          🔗 Share
+        </button>
       </div>
     </div>
 

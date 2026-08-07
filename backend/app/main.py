@@ -27,6 +27,7 @@ from .routes import (
     supplier_router,
     admin_suppliers_router,
     annotations_router,
+    share_router,
 )
 
 settings = get_settings()
@@ -68,6 +69,7 @@ app.include_router(design_book_images_router, prefix="/api")
 app.include_router(supplier_router, prefix="/api")
 app.include_router(admin_suppliers_router, prefix="/api")
 app.include_router(annotations_router, prefix="/api")
+app.include_router(share_router, prefix="/api")
 
 # Reload trigger v11 - image hash logging
 

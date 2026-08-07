@@ -214,10 +214,7 @@ function formatDate(dateStr: string): string {
 const commentsByItem = computed(() => {
   const grouped: Record<string, SupplierComment[]> = {}
   for (const comment of comments.value) {
-    if (!grouped[comment.item_id]) {
-      grouped[comment.item_id] = []
-    }
-    grouped[comment.item_id].push(comment)
+    ;(grouped[comment.item_id] ??= []).push(comment)
   }
   return grouped
 })

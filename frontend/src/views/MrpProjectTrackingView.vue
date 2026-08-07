@@ -574,6 +574,13 @@ onUnmounted(() => {
         >
           ✨ Ask PDM
         </button>
+        <button
+          v-if="selectedProjectCode"
+          class="btn btn-secondary"
+          @click="router.push({ path: '/mrp/shares', query: { project: selectedProjectCode } })"
+        >
+          🔗 Share
+        </button>
         <button class="btn btn-secondary" @click="goToDashboard">
           &larr; Dashboard
         </button>

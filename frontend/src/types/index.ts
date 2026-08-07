@@ -45,7 +45,7 @@ export interface Item {
 export interface FileInfo {
   id: string
   item_id: string
-  file_type: 'CAD' | 'STEP' | 'DXF' | 'SVG' | 'PDF' | 'IMAGE' | 'OTHER'
+  file_type: 'CAD' | 'STEP' | 'STL' | 'DXF' | 'SVG' | 'PDF' | 'IMAGE' | 'OTHER'
   file_name: string
   file_path?: string
   file_size?: number
