@@ -143,6 +143,12 @@ const router = createRouter({
       component: () => import('../views/MrpAssistantView.vue'),
       meta: { requiresAuth: true }
     },
+    {
+      path: '/mrp/shares',
+      name: 'mrp-shares',
+      component: () => import('../views/SharedLinksView.vue'),
+      meta: { requiresAuth: true }
+    },
     // Print Lookup removed - using Part Lookup instead
     // {
     //   path: '/mrp/print-lookup',

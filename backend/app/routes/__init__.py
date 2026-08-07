@@ -15,6 +15,7 @@ from .design_book_images import router as design_book_images_router
 from .supplier import router as supplier_router
 from .admin_suppliers import router as admin_suppliers_router
 from .annotations import router as annotations_router
+from .share import router as share_router
 
 __all__ = [
     "items_router",
@@ -33,4 +34,5 @@ __all__ = [
     "supplier_router",
     "admin_suppliers_router",
     "annotations_router",
+    "share_router",
 ]
