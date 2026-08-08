@@ -5,6 +5,7 @@ import { supabase } from '../services/supabase'
 import {
   uploadSharedPdf,
   sharePrintPacket,
+  shareDesignBook,
   listSharedLinks,
   revokeSharedLink,
   type SharedLink,
@@ -17,9 +18,11 @@ interface MrpProject {
   id: string
   project_code: string
   description: string | null
+  design_book_code: string | null
 }
 
 const projects = ref<MrpProject[]>([])
+const selectedDesignBook = ref<string | null>(null)
 const selectedProjectCode = ref<string>((route.query.project as string) || '')
 const links = ref<SharedLink[]>([])
 const loading = ref(false)
@@ -43,11 +46,36 @@ const KIND_LABELS: Record<string, string> = {
 }
 
 async function loadProjects() {
-  const { data } = await supabase
+  // Load projects with their linked design books
+  const { data: projectData } = await supabase
     .from('mrp_projects')
     .select('id, project_code, description')
     .order('project_code')
-  projects.value = data || []
+
+  // Load design books and map by template_project_id
+  const { data: bookData } = await supabase
+    .from('design_books')
+    .select('book_code, template_project_id')
+
+  const bookByProject = new Map<string, string>()
+  if (bookData) {
+    for (const b of bookData) {
+      if (b.template_project_id) bookByProject.set(b.template_project_id, b.book_code)
+    }
+  }
+
+  projects.value = (projectData || []).map(p => ({
+    ...p,
+    design_book_code: bookByProject.get(p.id) || null,
+  }))
+
+  // Update selectedDesignBook if a project is selected
+  updateSelectedDesignBook()
+}
+
+function updateSelectedDesignBook() {
+  const project = projects.value.find(p => p.project_code === selectedProjectCode.value)
+  selectedDesignBook.value = project?.design_book_code || null
 }
 
 async function loadLinks() {
@@ -115,6 +143,23 @@ async function sharePacket() {
   }
 }
 
+async function shareBook() {
+  if (!selectedDesignBook.value || busy.value) return
+  busy.value = true
+  error.value = null
+  notice.value = null
+  try {
+    const link = await shareDesignBook(selectedDesignBook.value)
+    notice.value = `Link created for ${link.title}`
+    await loadLinks()
+    await copyLink(link)
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to share design book'
+  } finally {
+    busy.value = false
+  }
+}
+
 async function copyLink(link: SharedLink) {
   try {
     await navigator.clipboard.writeText(link.public_url)
@@ -159,7 +204,7 @@ onMounted(async () => {
     <div class="header">
       <h1>Shared Links</h1>
       <div class="header-actions">
-        <select v-model="selectedProjectCode" @change="loadLinks">
+        <select v-model="selectedProjectCode" @change="loadLinks(); updateSelectedDesignBook()">
           <option value="">All projects</option>
           <option v-for="p in projects" :key="p.id" :value="p.project_code">
             {{ p.project_code }} - {{ p.description || '' }}
@@ -213,15 +258,26 @@ onMounted(async () => {
           Title (optional)
           <input v-model="uploadTitle" type="text" placeholder="e.g. WM2121 tracker 11x17" />
         </label>
-        <button
-          class="btn btn-secondary"
-          :disabled="!selectedProjectCode || busy"
-          title="Copies the project's generated print packet to a public link"
-          @click="sharePacket"
-        >
-          <i class="pi pi-file-pdf"></i>
-          Share print packet
-        </button>
+        <div class="quick-share-buttons">
+          <button
+            class="btn btn-secondary"
+            :disabled="!selectedProjectCode || busy"
+            title="Copies the project's generated print packet to a public link"
+            @click="sharePacket"
+          >
+            <i class="pi pi-file-pdf"></i>
+            Share print packet
+          </button>
+          <button
+            class="btn btn-secondary"
+            :disabled="!selectedDesignBook || busy"
+            title="Copies the project's design book to a public link"
+            @click="shareBook"
+          >
+            <i class="pi pi-book"></i>
+            Share design book
+          </button>
+        </div>
       </div>
     </div>
 
@@ -398,6 +454,13 @@ onMounted(async () => {
   gap: 0.25rem;
   font-size: 0.75rem;
   color: #94a3b8;
+}
+
+.quick-share-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
 }
 
 .banner {

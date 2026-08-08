@@ -32,14 +32,13 @@ settings = get_settings()
 SHARED_BUCKET = "shared"
 VALID_KINDS = {"build_book", "tracker", "print_packet", "design_book", "other"}
 
-# Stay under the ~50MB project-wide upload limit with margin (matches the
-# build book's own storage guard).
-MAX_SHARE_BYTES = 45 * 1024 * 1024
+# Match the project-wide upload limit (150MB as configured in Supabase Dashboard)
+MAX_SHARE_BYTES = 150 * 1024 * 1024
 
 SIZE_LIMIT_MESSAGE = (
-    "This PDF is larger than the Supabase project upload limit (~50MB). "
-    "Options: raise the limit in Supabase Dashboard -> Project Settings -> "
-    "Storage (paid plans), or share the smaller section print sets instead."
+    "This PDF is larger than the Supabase project upload limit (150MB). "
+    "If the spend cap is enabled, the effective limit may be lower. "
+    "Options: disable spend cap in Supabase Dashboard, or share smaller files."
 )
 
 
@@ -212,6 +211,66 @@ async def share_print_packet(project_id: UUID):
         title=f"{project.data['project_code']} print packet",
     )
     return await share_from_storage(request)
+
+
+@router.post("/design-book/{book_code}")
+async def share_design_book(book_code: str):
+    """Share a design book's full PDF with a permanent public link.
+
+    Generates a fresh PDF by merging all current sections (not cached).
+    """
+    from ..services.master_design_book import build_full_book, BookNotFound
+
+    supabase = get_supabase_admin()
+
+    # Look up the design book to get its title
+    try:
+        book = supabase.table("design_books").select(
+            "title, template_project_id"
+        ).eq("book_code", book_code).single().execute()
+    except Exception:
+        raise HTTPException(status_code=404, detail="Design book not found")
+
+    if not book.data:
+        raise HTTPException(status_code=404, detail="Design book not found")
+
+    # Get project_code if linked to a project
+    project_code = None
+    if book.data.get("template_project_id"):
+        try:
+            project = supabase.table("mrp_projects").select("project_code").eq(
+                "id", str(book.data["template_project_id"])
+            ).single().execute()
+            if project.data:
+                project_code = project.data["project_code"]
+        except Exception:
+            pass  # Not critical if project lookup fails
+
+    # Generate fresh PDF by merging all current sections
+    try:
+        result = build_full_book(book_code)
+        pdf_bytes = result["pdf"]
+    except BookNotFound:
+        raise HTTPException(status_code=404, detail="Design book not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to build design book: {e}")
+
+    # Upload fresh PDF to shared bucket
+    file_name = f"{book_code}-master-design-book.pdf"
+    folder = _safe_name(project_code) if project_code else "general"
+    storage_path = f"design_book/{folder}/{file_name}"
+
+    _upload_to_shared(storage_path, pdf_bytes)
+
+    link = _register_link(
+        kind="design_book",
+        project_code=project_code,
+        title=book.data.get("title") or f"{book_code} design book",
+        file_name=file_name,
+        storage_path=storage_path,
+        size_bytes=len(pdf_bytes),
+    )
+    return link
 
 
 @router.get("")

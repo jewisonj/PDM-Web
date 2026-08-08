@@ -41,18 +41,20 @@ awkward. Two separate problems were conflated as "too large":
 | Tracker sheet (11x17 or letter) | Print -> Save as PDF in the browser, then drop the file on the Shares page (project preselected via the 🔗 Share button) |
 | Build book (browser-printed) | Same print-to-PDF -> drop flow |
 | Print packet | One click - "Share print packet" on the Shares page copies the stored packet server-side |
-| Design book / stored build book | `POST /api/share/from-storage` copies any existing storage object (e.g. `design-books/{slug}/full/...`) |
+| Design book | One click - "Share design book" on the Shares page copies the full PDF from storage |
 
 ## API
 
 - `POST /api/share` - multipart PDF upload (`file`, `kind`, `project_code?`, `title?`) -> link row
 - `POST /api/share/from-storage` - `{bucket, path, kind, project_code?, title?}` -> link row
 - `POST /api/share/print-packet/{project_id}` - share the project's generated packet
+- `POST /api/share/design-book/{book_code}` - share the design book's full PDF
 - `GET /api/share?project_code=` - list links
 - `DELETE /api/share/{id}` - revoke (deletes object + row)
 
-Uploads over ~45MB return a clear 413 explaining the project upload limit and
-the Dashboard setting that raises it. Migration:
+Uploads over 150MB return a 413 explaining the limit. Note: the Supabase spend
+cap can reduce the effective limit to ~50MB; disable spend cap for full 150MB.
+Migration:
 `backend/migrations/2026-08-07_shared_links.sql`.
 
 ## Why not Google Drive / SharePoint?
@@ -64,3 +66,23 @@ already hosting these files - the actual gaps were link expiry and the upload
 cap, both addressed above. If books routinely exceed the raised limit someday,
 a Drive uploader can slot behind the same `shared_links` registry
 (`public_url` just points at Drive instead).
+
+## Future: On-Demand Streaming (No Storage Limits)
+
+For very large files that exceed Supabase upload limits (especially with spend
+cap enabled), consider adding **on-demand streaming endpoints**:
+
+- `/api/public/design-book/{token}/{book_code}.pdf` - generates fresh PDF and
+  streams directly, no storage needed
+- `/api/public/tracker/{token}/{project_code}.pdf?size=letter|tabloid` - would
+  need server-side HTML→PDF rendering (Playwright or WeasyPrint)
+
+**Trade-offs:**
+- Pro: No size limits (nothing uploaded to storage)
+- Pro: Always serves current/fresh content
+- Con: Slower (generates on each request)
+- Con: More server load
+- Con: Link fails if server is down
+
+The shared link would be the API URL itself. Not yet implemented but noted for
+future if storage limits become a recurring issue.

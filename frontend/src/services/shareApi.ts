@@ -46,6 +46,12 @@ export async function sharePrintPacket(projectId: string): Promise<SharedLink> {
   return handleResponse<SharedLink>(response)
 }
 
+/** Share a design book's full PDF. */
+export async function shareDesignBook(bookCode: string): Promise<SharedLink> {
+  const response = await fetch(`/api/share/design-book/${bookCode}`, { method: 'POST' })
+  return handleResponse<SharedLink>(response)
+}
+
 /** Share a file already in Supabase Storage (e.g. a stored build book or design book). */
 export async function shareFromStorage(
   bucket: string,
