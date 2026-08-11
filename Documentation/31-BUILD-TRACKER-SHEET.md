@@ -212,6 +212,147 @@ These choices were explicitly confirmed with the user before implementation and 
 
 ---
 
+## One-Click Sharing (v3.9.10+)
+
+**Feature:** Generate a PDF snapshot of the tracker and create a permanent public link in one click.
+
+**Use Case:** Share project status with external stakeholders (customers, vendors, subcontractors) without requiring them to have login access to the PDM system.
+
+### How It Works
+
+**Workflow:**
+1. User clicks the **Share** button in the tracker toolbar
+2. System captures each `.paper` element as a high-resolution canvas (html2canvas at 2x scale)
+3. Generates a multi-page PDF with correct paper dimensions (jsPDF):
+   - Letter: 11in × 8.5in landscape
+   - Tabloid: 17in × 11in landscape
+4. Uploads PDF to Supabase Storage `shared` bucket with public read access
+5. Creates metadata record in `shared_links` table (kind='tracker')
+6. Returns permanent public URL: `https://{domain}/shared/tracker/{uuid}`
+7. Automatically copies URL to clipboard
+8. Displays success banner with shareable link
+
+**Button States:**
+- **Normal:** "Share" button with share icon
+- **Processing:** "Sharing..." with disabled state (3-5 seconds typical)
+- **Success:** Green banner with link (auto-clears after 8 seconds)
+- **Error:** Red banner with error message (persists until dismissed)
+
+### Technical Implementation
+
+**Client-Side PDF Generation:**
+- **html2canvas:** Captures DOM elements as canvas (each `.paper` page)
+- **jsPDF:** Assembles multi-page PDF document
+- **Transform handling:** Temporarily removes CSS `transform` during capture for pixel-accurate rendering, then restores after capture
+- **Resolution:** 2x scale for print quality (1056px or 1632px width at 2x = 2112px or 3264px)
+- **Compression:** JPEG at 0.95 quality for reasonable file size (typically 200-500KB per page)
+
+**Upload API:**
+- **Endpoint:** `POST /api/share` (multipart form data)
+- **Payload:**
+  - `file`: PDF blob as File object
+  - `kind`: 'tracker'
+  - `project_code`: Project code for linking
+  - `title`: Descriptive title (e.g., "WM_0513 Build Tracker 2026-08-11")
+- **Response:** `{ id, public_url, file_name, size_bytes, ... }`
+
+**Storage:**
+- **Bucket:** `shared` (Supabase Storage, public read access)
+- **Path:** `tracker/{uuid}.pdf` (UUID assigned by backend)
+- **Database:** `shared_links` table tracks metadata
+- **Public URL:** `https://{supabase-project}.supabase.co/storage/v1/object/public/shared/tracker/{uuid}.pdf`
+
+**Filename Convention:**
+- Pattern: `TRK_{projectCode}_{date}_{LTR?}.pdf`
+- Examples:
+  - Tabloid: `TRK_WM_0513_2026-08-11.pdf`
+  - Letter: `TRK_SPA0030_2026-08-11_LTR.pdf`
+
+### Benefits
+
+**External Stakeholder Access:**
+- No login credentials required
+- Link can be shared via email, Slack, etc.
+- PDF opens directly in browser or PDF viewer
+- Works on any device (desktop, tablet, mobile)
+
+**Snapshot Preservation:**
+- Captured state reflects completion status at time of sharing
+- Pre-fill toggle honored (on = shows completed work, off = blank sheet)
+- Permanent record of project status at specific milestone
+- Multiple snapshots can be shared over project lifecycle
+
+**Workflow Efficiency:**
+- **Before (v3.9.9):** 9 steps (print to PDF, upload, copy link)
+- **After (v3.9.10):** 4 steps (click Share, wait, paste link)
+- Eliminates manual file management
+- No local file storage needed
+- Clipboard integration for immediate paste
+
+### Managing Shared Links
+
+**Viewing Links:**
+- Navigate to Shares management page (`/shares`)
+- Filter by project code to see all shared documents
+- View file size, creation date, and document type
+
+**Revoking Links:**
+- Click "Revoke" button next to a link
+- Deletes PDF from storage bucket
+- Removes record from `shared_links` table
+- Public URL becomes inaccessible
+
+**Re-Sharing:**
+- Generate fresh snapshot by clicking Share again
+- New link created with updated completion status
+- Old link remains valid unless manually revoked
+
+### Dependencies
+
+**NPM Packages:**
+```json
+{
+  "html2canvas": "^1.4.1",  // DOM-to-canvas rendering
+  "jspdf": "^4.2.1"         // PDF document generation
+}
+```
+
+**Import Statement (MrpBuildTrackerView.vue):**
+```typescript
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
+import { uploadSharedPdf } from '../services/shareApi'
+```
+
+### Code Location
+
+**Primary Implementation:**
+- **File:** `frontend/src/views/MrpBuildTrackerView.vue`
+- **Function:** `shareTracker()` (lines 174-249)
+- **Template:** Share button and success/error banners
+
+**API Client:**
+- **File:** `frontend/src/services/shareApi.ts`
+- **Function:** `uploadSharedPdf()` - Handles multipart form upload to `/api/share`
+
+**Backend Endpoint:**
+- **File:** `backend/app/routes/share.py`
+- **Endpoint:** `POST /api/share`
+- **Function:** Uploads to storage, creates database record, returns public URL
+
+### Related Features
+
+This sharing implementation is identical to the Design Book sharing feature (v3.9.7) and uses the same:
+- Backend `/api/share` endpoint
+- `shared` bucket in Supabase Storage
+- `shared_links` database table
+- `uploadSharedPdf()` API client function
+- Public URL pattern and access control
+
+See `43-DESIGN-BOOK-IMAGE-MANAGEMENT.md` and `45-SHARED-LINKS.md` for the broader shared links architecture.
+
+---
+
 ## Photo-Capture Readiness (Future Phase)
 
 The sheet is deliberately over-engineered for a feature that doesn't exist yet, so the current print layout doubles as the input format for a later photo-based progress sync:

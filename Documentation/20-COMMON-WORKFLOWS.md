@@ -1154,6 +1154,53 @@ The Build Tracker Sheet is a printable, whole-project progress sheet for the sho
 - For a partial completion, write the completed quantity next to/inside the box instead of an X.
 - The shaded ▸STG (Part Staging) column is a gate marking "ready to move to fab/weld" -- it always shows a box even if Part Staging isn't explicitly in the item's routing.
 
+### Sharing the Tracker Sheet (v3.9.10+)
+
+**Use Case:** Create a permanent public link to share tracker status with external stakeholders (customers, vendors, subcontractors) without requiring login access.
+
+**Steps:**
+
+1. Open the Build Tracker Sheet (`/mrp/tracker/{projectCode}`)
+2. Select desired format (tabloid or letter)
+3. Toggle "Pre-fill recorded progress" as desired (on to show current status, off for blank sheet)
+4. Click the **Share** button in the toolbar
+5. Wait 3-5 seconds while the system:
+   - Captures each tracker page as a high-resolution canvas
+   - Generates a multi-page PDF with correct paper size
+   - Uploads PDF to the public `shared` bucket
+   - Creates a permanent public link
+6. Success banner appears with the shareable URL (automatically copied to clipboard)
+7. Paste link to recipient (email, Slack, etc.)
+
+**Link Format:** `https://{your-domain}/shared/tracker/{uuid}`
+
+**Benefits:**
+- **No login required** - Anyone with the link can view the PDF
+- **Snapshot in time** - Captured state shows completed work as of sharing date
+- **One-click process** - No manual printing to PDF or file upload needed
+- **Automatic clipboard** - Link is ready to paste immediately
+- **Permanent link** - URL remains valid indefinitely (until manually revoked)
+
+**Filename Convention:**
+- Tabloid: `TRK_{PROJECT_CODE}_{date}.pdf` (e.g., `TRK_WM_0513_2026-08-11.pdf`)
+- Letter: `TRK_{PROJECT_CODE}_{date}_LTR.pdf` (e.g., `TRK_SPA0030_2026-08-11_LTR.pdf`)
+
+**Technical Notes:**
+- PDF is generated client-side using html2canvas + jsPDF
+- Each page captured at 2x resolution for print clarity
+- JPEG compression at 0.95 quality for reasonable file size
+- Multi-page letter format supported (each page captured independently)
+- Uploaded to Supabase Storage `shared` bucket with public read access
+- Link metadata stored in `shared_links` table with kind='tracker'
+
+**Managing Shared Links:**
+
+To view or revoke shared links, navigate to the Shares management page (link in MRP Dashboard or `/shares`). You can:
+- View all shared links for a project
+- See file size and creation date
+- Revoke links (deletes from storage and database)
+- Re-share to generate fresh snapshot
+
 ### Notes
 
 - The sheet regenerates from live data every time it's printed -- there is no saved/stale version to worry about.

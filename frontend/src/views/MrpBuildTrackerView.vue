@@ -2,6 +2,8 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import QRCode from 'qrcode'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import { supabase } from '../services/supabase'
 import { calculateSchedule, type PartData, type BomData, type RoutingData } from '../utils/scheduling'
 import {
@@ -15,6 +17,7 @@ import {
   type TrackerPage,
 } from '../utils/buildTracker'
 import { fetchProjectKitSources } from '../services/designBook'
+import { uploadSharedPdf } from '../services/shareApi'
 
 const route = useRoute()
 const router = useRouter()
@@ -31,6 +34,11 @@ const format = ref<TrackerFormat>(route.query.size === 'letter' ? 'letter' : 'ta
 const projectCode = String(route.params.projectCode || '')
 const prevTitle = document.title
 let rawInputs: Omit<TrackerInputs, 'format'> | null = null
+
+// Share state
+const sharing = ref(false)
+const shareError = ref<string | null>(null)
+const shareSuccess = ref<string | null>(null)
 
 const paperW = computed(() => (format.value === 'letter' ? 1056 : 1632))
 const paperH = computed(() => (format.value === 'letter' ? 816 : 1056))
@@ -162,6 +170,96 @@ function fit() {
 function printSheet() {
   window.print()
 }
+
+async function shareTracker() {
+  if (!sheet.value || sharing.value) return
+
+  sharing.value = true
+  shareError.value = null
+  shareSuccess.value = null
+
+  try {
+    // Get all paper elements (could be multiple pages for letter format)
+    const paperEls = document.querySelectorAll('.paper') as NodeListOf<HTMLElement>
+    if (!paperEls.length) throw new Error('No tracker content to capture')
+
+    // Determine page size for PDF
+    const isLetter = format.value === 'letter'
+    const pageWidth = isLetter ? 11 : 17  // inches
+    const pageHeight = isLetter ? 8.5 : 11 // inches (landscape)
+
+    // Create PDF in landscape orientation
+    const pdf = new jsPDF({
+      orientation: 'landscape',
+      unit: 'in',
+      format: isLetter ? 'letter' : [17, 11] // tabloid
+    })
+
+    // Capture each page
+    for (let i = 0; i < paperEls.length; i++) {
+      const paperEl = paperEls[i]!
+
+      // Temporarily reset transform for accurate capture
+      const origTransform = paperEl.style.transform
+      paperEl.style.transform = 'none'
+
+      // Capture the paper element at high resolution
+      const canvas = await html2canvas(paperEl, {
+        scale: 2, // 2x resolution for better quality
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
+
+      // Restore transform
+      paperEl.style.transform = origTransform
+
+      // Add page (except first)
+      if (i > 0) {
+        pdf.addPage(isLetter ? 'letter' : [17, 11], 'landscape')
+      }
+
+      // Add image to PDF (fill entire page)
+      const imgData = canvas.toDataURL('image/jpeg', 0.95)
+      pdf.addImage(imgData, 'JPEG', 0, 0, pageWidth, pageHeight)
+    }
+
+    // Generate filename
+    const dateStr = fmtIso(sheet.value.generatedAt)
+    const fileName = `TRK_${projectCode}_${dateStr}${isLetter ? '_LTR' : ''}.pdf`
+
+    // Convert to blob and upload
+    const pdfBlob = pdf.output('blob')
+    const pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' })
+
+    const link = await uploadSharedPdf(
+      pdfFile,
+      'tracker',
+      projectCode,
+      `${projectCode} Build Tracker ${dateStr}`
+    )
+
+    // Copy link to clipboard
+    try {
+      await navigator.clipboard.writeText(link.public_url)
+      shareSuccess.value = `Link copied: ${link.public_url}`
+    } catch {
+      shareSuccess.value = `Shared! Link: ${link.public_url}`
+    }
+
+    // Clear success message after a few seconds
+    setTimeout(() => {
+      if (shareSuccess.value) shareSuccess.value = null
+    }, 8000)
+
+  } catch (e) {
+    console.error('Share tracker failed:', e)
+    shareError.value = e instanceof Error ? e.message : 'Failed to share tracker'
+  } finally {
+    sharing.value = false
+  }
+}
+
 function goBack() {
   router.push('/mrp/tracking')
 }
@@ -218,13 +316,19 @@ onUnmounted(() => {
         </button>
         <button
           class="btn btn-secondary"
-          title="Print to PDF first, then drop the file on the Shares page for a permanent public link"
-          @click="router.push({ path: '/mrp/shares', query: { project: projectCode } })"
+          :disabled="sharing || !sheet"
+          title="Capture tracker as PDF and create a public share link"
+          @click="shareTracker"
         >
-          🔗 Share
+          <span v-if="sharing">Sharing...</span>
+          <span v-else>🔗 Share</span>
         </button>
       </div>
     </div>
+
+    <!-- Share status banners (always show when present) -->
+    <div v-if="shareError" class="share-banner error">{{ shareError }}</div>
+    <div v-if="shareSuccess" class="share-banner success">{{ shareSuccess }}</div>
 
     <div v-if="loading" class="msg">Generating tracker sheet…</div>
     <div v-else-if="errorMsg" class="msg error">{{ errorMsg }}</div>
@@ -519,6 +623,22 @@ onUnmounted(() => {
 .chk { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #9ca3af; cursor: pointer; }
 .msg { text-align: center; padding: 60px; color: #6b7280; }
 .msg.error { color: #f87171; }
+.share-banner {
+  margin: 0 16px 8px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.share-banner.error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid #7f1d1d;
+  color: #fca5a5;
+}
+.share-banner.success {
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid #14532d;
+  color: #86efac;
+}
 .fitwrap { padding: 16px; }
 .page-slot { position: relative; }
 
@@ -535,6 +655,9 @@ onUnmounted(() => {
   box-shadow: 0 3px 26px rgba(0, 0, 0, 0.55);
   font-variant-numeric: tabular-nums;
   transform-origin: 0 0;
+  overflow: hidden; /* Prevent content overflow causing extra pages */
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 .paper.letter { width: 1056px; height: 816px; padding: 20px 24px 16px; }
 .anch { position: absolute; width: 15px; height: 15px; background: #16181a; }
@@ -706,15 +829,44 @@ th.gate { border-left: 2px solid #16181a !important; }
 <style>
 /* print rules must be unscoped; @page size is injected dynamically per format */
 @media print {
-  body { background: #fff !important; }
+  html, body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
   .tracker-page .toolbar { display: none !important; }
-  .tracker-page { background: #fff !important; }
-  .tracker-page .fitwrap { padding: 0 !important; }
-  .tracker-page .page-slot { height: auto !important; }
+  .tracker-page {
+    background: #fff !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+  }
+  .tracker-page .fitwrap { padding: 0 !important; margin: 0 !important; }
+  .tracker-page .page-slot {
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
   .tracker-page .paper {
     transform: none !important;
     box-shadow: none !important;
     page-break-after: always;
+    page-break-inside: avoid;
+    margin: 0 !important;
+    /* Ensure exact page fit - browsers scale to page size */
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+  }
+  /* Tabloid: 17×11 inches at 96 DPI = 1632×1056 px */
+  .tracker-page .paper:not(.letter) {
+    width: 17in !important;
+    height: 11in !important;
+  }
+  /* Letter: 11×8.5 inches at 96 DPI = 1056×816 px */
+  .tracker-page .paper.letter {
+    width: 11in !important;
+    height: 8.5in !important;
   }
 }
 </style>

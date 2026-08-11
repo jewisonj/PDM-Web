@@ -7,9 +7,157 @@
 
 ## Current Version
 
-### v3.9.9 (2026-08-11) -- Interactive DXF Viewer with Measurement Tools
+### v3.9.10 (2026-08-11) -- One-Click Build Tracker Sharing
 
 **Status:** Current Production Release
+
+**Summary:** Added one-click PDF generation and public sharing for Build Tracker sheets. Users can now directly share tracker snapshots with external stakeholders without manually printing to PDF first.
+
+#### Features Added
+
+**1. Direct PDF Capture and Upload**
+- **File:** `frontend/src/views/MrpBuildTrackerView.vue`
+- **Integration:** Share button in Build Tracker toolbar
+- **Process:**
+  1. Captures each tracker page as high-resolution canvas (html2canvas at 2x scale)
+  2. Generates multi-page PDF with correct paper size (letter 11×8.5 or tabloid 17×11)
+  3. Uploads PDF to public `shared` bucket via `/api/share` endpoint
+  4. Creates permanent public link in `shared_links` table
+  5. Automatically copies link to clipboard
+  6. Shows success banner with shareable URL
+
+**2. UI Changes**
+- **Share Button Behavior:**
+  - Previous: Redirected to Shares page with instruction to "Print to PDF first"
+  - New: Directly generates PDF and creates public link
+  - Shows "Sharing..." state during generation (typically 3-5 seconds)
+- **Success Banner:**
+  - Displays shareable URL: `https://.../shared/tracker/...`
+  - Auto-clears after 8 seconds
+  - Link is automatically copied to clipboard
+- **Error Banner:**
+  - Shows failure message if capture or upload fails
+  - Persists until user dismisses
+
+**3. Print Improvements**
+- **Enhanced @media print CSS:**
+  - Exact page sizing: letter (11in × 8.5in) or tabloid (17in × 11in)
+  - Overflow hidden to prevent content bleeding across pages
+  - Print color adjustment for accurate colors on paper
+  - Margin reset for precise page boundaries
+- **Multi-page support:**
+  - Letter format automatically splits into multiple pages
+  - Each page captured independently for accurate pagination
+  - PDF page count matches visual page count on screen
+
+**4. Technical Details**
+- **PDF Generation:**
+  - Uses jsPDF in landscape orientation
+  - Page format: letter or tabloid based on selected format
+  - JPEG compression at 0.95 quality for reasonable file size
+  - Each page captured at 2x resolution for print clarity
+- **Canvas Capture:**
+  - Temporarily removes CSS transforms during capture for accurate rendering
+  - Restores transforms after capture to preserve visual state
+  - White background (#ffffff) for consistent PDF appearance
+  - CORS enabled for external resources
+- **Filename Convention:**
+  - Pattern: `TRK_{projectCode}_{date}_{LTR?}.pdf`
+  - Example: `TRK_WM_0513_2026-08-11.pdf` (tabloid)
+  - Example: `TRK_SPA0030_2026-08-11_LTR.pdf` (letter)
+
+#### Dependencies Added
+
+```json
+{
+  "html2canvas": "^1.4.1",  // DOM-to-canvas rendering
+  "jspdf": "^4.2.1"         // PDF document generation
+}
+```
+
+#### Code Changes
+
+**Frontend:**
+- **Modified View:** `frontend/src/views/MrpBuildTrackerView.vue`
+  - Added state: `sharing`, `shareError`, `shareSuccess`
+  - Added function: `shareTracker()` - Handles entire capture/upload/share workflow
+  - Modified template: Share button now calls `shareTracker()` instead of router.push
+  - Added banners: Success and error message display
+- **API Integration:** `frontend/src/services/shareApi.ts`
+  - Uses `uploadSharedPdf()` function (already existed for Design Book sharing)
+  - Passes kind: 'tracker', project code, and title
+- **Updated Dependencies:** `frontend/package.json`, `frontend/package-lock.json`
+
+#### Use Cases
+
+**External Stakeholder Sharing:**
+- Project manager shares tracker with customer for progress visibility
+- No customer login required - public URL accessible to anyone
+- Snapshot preserves state at time of sharing (completed work shows)
+
+**Shop Floor Access:**
+- Send tracker link to shop tablets/phones for reference
+- QR code on printed tracker allows shop workers to access live version
+- Share link provides static snapshot for offline viewing
+
+**Documentation Archive:**
+- Create permanent record of project status at milestones
+- Attach tracker PDF to customer communication emails
+- Archive tracker state at project completion
+
+**Coordination:**
+- Share with vendors to coordinate delivery schedules
+- Send to subcontractors showing parts ready for pickup
+- Provide to assembly teams showing component availability
+
+#### Workflow Comparison
+
+**Before (v3.9.9 and earlier):**
+1. Click Share button → redirected to Shares page
+2. Read instruction: "Print tracker to PDF first"
+3. Return to tracker view
+4. Use browser Print → Save as PDF
+5. Return to Shares page
+6. Upload PDF manually
+7. Wait for upload to complete
+8. Copy generated link
+9. Share link with recipient
+**Total steps:** 9, requires manual file management
+
+**After (v3.9.10):**
+1. Click Share button
+2. Wait 3-5 seconds for generation
+3. Link automatically copied to clipboard
+4. Paste link to recipient
+**Total steps:** 4, fully automated
+
+#### Related Changes
+
+**Print Stylesheet Improvements:**
+- Added exact page dimensions in inches for letter and tabloid
+- Set `overflow: hidden` on `.paper` to clip overflowing content
+- Added `print-color-adjust: exact` for accurate color reproduction
+- Reset margins to ensure content aligns with physical page edges
+
+**HTML/CSS Structure:**
+- No structural changes to tracker layout
+- PDF capture uses existing `.paper` elements
+- Transform reset ensures accurate pixel-to-PDF conversion
+- Multi-page capture iterates over `document.querySelectorAll('.paper')`
+
+#### Documentation
+
+- `Documentation/20-COMMON-WORKFLOWS.md` — Section 16: "Printing a Shop-Floor Build Tracker Sheet" (updated with sharing workflow)
+- `Documentation/31-BUILD-TRACKER-SHEET.md` — "Sharing Build Tracker" section (new)
+- `Documentation/24-VERSION-HISTORY.md` — This entry
+
+---
+
+## Previous Versions
+
+### v3.9.9 (2026-08-11) -- Interactive DXF Viewer with Measurement Tools
+
+**Status:** Released
 
 **Summary:** Added browser-based DXF file viewer with interactive measurement tools for verifying sheet metal flat pattern dimensions. The viewer supports rotation, zoom, pan, and precision measurement with geometry vertex snapping.
 
