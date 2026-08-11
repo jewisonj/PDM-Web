@@ -245,6 +245,11 @@ def process_task(supabase, task: dict):
         # 3. Run FreeCAD
         result = run_freecad_job(mapping["job_type"], input_path, output_path)
 
+        # Always log stdout for debugging (FreeCAD output)
+        if result.stdout.strip():
+            for line in result.stdout.strip().split('\n'):
+                log(f"  [FreeCAD] {line}")
+
         if result.returncode != 0:
             error = result.stderr.strip() or result.stdout.strip() or f"Exit code {result.returncode}"
             log(f"  FAILED: {error}")

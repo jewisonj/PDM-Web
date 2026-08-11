@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { supabase } from '../services/supabase'
 
 interface Project {
@@ -11,16 +11,15 @@ interface Project {
 
 interface Kit {
   id: string
-  project_id: string
   kit_number: string
   kit_name: string
   vendor: string | null
   price: number
-  use_kit: boolean
   notes: string | null
   created_at: string
   part_count?: number
   total_pieces?: number
+  items_total?: number
 }
 
 interface KitItem {
@@ -36,6 +35,14 @@ interface KitItem {
   thickness?: string
 }
 
+interface KitUsage {
+  id: string
+  project_id: string
+  kit_id: string
+  is_active: boolean
+  project_code?: string
+}
+
 interface AvailableItem {
   id: string
   item_number: string
@@ -45,28 +52,35 @@ interface AvailableItem {
 }
 
 const router = useRouter()
+const route = useRoute()
 
 // State
 const loading = ref(true)
-const projects = ref<Project[]>([])
-const selectedProjectId = ref('')
 const kits = ref<Kit[]>([])
 const selectedKit = ref<Kit | null>(null)
 const kitItems = ref<KitItem[]>([])
-const availableItems = ref<AvailableItem[]>([])
+const kitUsages = ref<KitUsage[]>([])
+const projects = ref<Project[]>([])
+const allItems = ref<AvailableItem[]>([])
 
 // Modal state
 const showKitModal = ref(false)
 const showAddPartsModal = ref(false)
+const showLinkProjectModal = ref(false)
 const editingKit = ref<Partial<Kit>>({})
 const selectedItemsToAdd = ref<Set<string>>(new Set())
 const newItemQty = ref<Record<string, number>>({})
 const newItemPrice = ref<Record<string, string>>({})
+const selectedProjectToLink = ref('')
 
 // Computed
 const itemsNotInKit = computed(() => {
   const inKitIds = new Set(kitItems.value.map(ki => ki.item_id))
-  return availableItems.value.filter(item => !inKitIds.has(item.id))
+  let items = allItems.value.filter(item => !inKitIds.has(item.id))
+
+  // If filtering by project, only show items from that project
+  // For now, show all items
+  return items
 })
 
 const kitTotalFromItems = computed(() => {
@@ -74,6 +88,11 @@ const kitTotalFromItems = computed(() => {
     const price = ki.unit_price || 0
     return sum + (price * ki.quantity)
   }, 0)
+})
+
+const projectsNotLinked = computed(() => {
+  const linkedProjectIds = new Set(kitUsages.value.map(ku => ku.project_id))
+  return projects.value.filter(p => !linkedProjectIds.has(p.id))
 })
 
 // Methods
@@ -90,24 +109,34 @@ async function loadProjects() {
   projects.value = data || []
 }
 
-async function loadKits() {
-  if (!selectedProjectId.value) {
-    kits.value = []
+async function loadAllItems() {
+  // Load all items for adding to kits
+  const { data, error } = await supabase
+    .from('items')
+    .select('id, item_number, name, material, thickness')
+    .order('item_number')
+    .limit(1000)
+
+  if (error) {
+    console.error('Failed to load items:', error)
     return
   }
+  allItems.value = data || []
+}
 
+async function loadKits() {
   loading.value = true
 
-  // Load kits with part counts
+  // Load all kits (global, not project-specific)
   const { data, error } = await supabase
     .from('project_kits')
     .select(`
       *,
       kit_items (
-        quantity
+        quantity,
+        unit_price
       )
     `)
-    .eq('project_id', selectedProjectId.value)
     .order('kit_number')
 
   if (error) {
@@ -116,11 +145,19 @@ async function loadKits() {
     return
   }
 
-  kits.value = (data || []).map(k => ({
-    ...k,
-    part_count: k.kit_items?.length || 0,
-    total_pieces: k.kit_items?.reduce((sum: number, ki: any) => sum + (ki.quantity || 0), 0) || 0
-  }))
+  kits.value = (data || []).map(k => {
+    const items = k.kit_items || []
+    return {
+      ...k,
+      part_count: items.length,
+      total_pieces: items.reduce((sum: number, ki: any) => sum + (ki.quantity || 0), 0),
+      items_total: items.reduce((sum: number, ki: any) => {
+        const price = ki.unit_price || 0
+        const qty = ki.quantity || 1
+        return sum + (price * qty)
+      }, 0)
+    }
+  })
 
   loading.value = false
 }
@@ -154,48 +191,34 @@ async function loadKitItems(kitId: string) {
   }))
 }
 
-async function loadAvailableItems() {
-  if (!selectedProjectId.value) return
-
-  // Get items from mrp_project_parts for this project
+async function loadKitUsages(kitId: string) {
   const { data, error } = await supabase
-    .from('mrp_project_parts')
+    .from('project_kit_usage')
     .select(`
-      items (
-        id,
-        item_number,
-        name,
-        material,
-        thickness
+      *,
+      mrp_projects (
+        project_code
       )
     `)
-    .eq('project_id', selectedProjectId.value)
+    .eq('kit_id', kitId)
 
   if (error) {
-    console.error('Failed to load available items:', error)
+    console.error('Failed to load kit usages:', error)
     return
   }
 
-  const items: AvailableItem[] = []
-  for (const p of data || []) {
-    const item = p.items as any
-    if (item && item.id) {
-      items.push({
-        id: item.id,
-        item_number: item.item_number,
-        name: item.name,
-        material: item.material,
-        thickness: item.thickness
-      })
-    }
-  }
-  items.sort((a, b) => a.item_number.localeCompare(b.item_number))
-  availableItems.value = items
+  kitUsages.value = (data || []).map(ku => ({
+    ...ku,
+    project_code: ku.mrp_projects?.project_code
+  }))
 }
 
 async function selectKit(kit: Kit) {
   selectedKit.value = kit
-  await loadKitItems(kit.id)
+  await Promise.all([
+    loadKitItems(kit.id),
+    loadKitUsages(kit.id)
+  ])
 }
 
 function openNewKitModal() {
@@ -204,7 +227,6 @@ function openNewKitModal() {
     kit_name: '',
     vendor: '',
     price: 0,
-    use_kit: false,
     notes: ''
   }
   showKitModal.value = true
@@ -216,16 +238,14 @@ function openEditKitModal(kit: Kit) {
 }
 
 async function saveKit() {
-  if (!selectedProjectId.value) return
-
   const kitData = {
-    project_id: selectedProjectId.value,
     kit_number: editingKit.value.kit_number,
     kit_name: editingKit.value.kit_name,
     vendor: editingKit.value.vendor || null,
     price: editingKit.value.price || 0,
-    use_kit: editingKit.value.use_kit || false,
-    notes: editingKit.value.notes || null
+    notes: editingKit.value.notes || null,
+    project_id: null,  // Global kit
+    use_kit: false     // Deprecated field, use project_kit_usage instead
   }
 
   if (editingKit.value.id) {
@@ -255,10 +275,16 @@ async function saveKit() {
 
   showKitModal.value = false
   await loadKits()
+
+  // Refresh selected kit if it was edited
+  if (selectedKit.value && editingKit.value.id === selectedKit.value.id) {
+    const updated = kits.value.find(k => k.id === selectedKit.value!.id)
+    if (updated) selectedKit.value = updated
+  }
 }
 
 async function deleteKit(kit: Kit) {
-  if (!confirm(`Delete kit "${kit.kit_number}"? This will remove all part assignments.`)) return
+  if (!confirm(`Delete kit "${kit.kit_number}"? This will remove all part assignments and project links.`)) return
 
   const { error } = await supabase
     .from('project_kits')
@@ -274,23 +300,8 @@ async function deleteKit(kit: Kit) {
   if (selectedKit.value?.id === kit.id) {
     selectedKit.value = null
     kitItems.value = []
+    kitUsages.value = []
   }
-  await loadKits()
-}
-
-async function setActiveKit(kit: Kit) {
-  // First, set all other kits to use_kit = false
-  await supabase
-    .from('project_kits')
-    .update({ use_kit: false })
-    .eq('project_id', selectedProjectId.value)
-
-  // Then set this kit to use_kit = true
-  await supabase
-    .from('project_kits')
-    .update({ use_kit: true })
-    .eq('id', kit.id)
-
   await loadKits()
 }
 
@@ -309,7 +320,6 @@ function toggleItemSelection(itemId: string) {
     newItemQty.value[itemId] = 1
     newItemPrice.value[itemId] = ''
   }
-  // Trigger reactivity
   selectedItemsToAdd.value = new Set(selectedItemsToAdd.value)
 }
 
@@ -385,9 +395,70 @@ async function updateKitItemPrice(kitItem: KitItem, newPrice: string) {
   }
 
   kitItem.unit_price = price
+  await loadKits()
 }
 
-function formatPrice(price: number | null): string {
+function openLinkProjectModal() {
+  selectedProjectToLink.value = ''
+  showLinkProjectModal.value = true
+}
+
+async function linkProject() {
+  if (!selectedKit.value || !selectedProjectToLink.value) return
+
+  const { error } = await supabase
+    .from('project_kit_usage')
+    .insert({
+      project_id: selectedProjectToLink.value,
+      kit_id: selectedKit.value.id,
+      is_active: false
+    })
+
+  if (error) {
+    console.error('Failed to link project:', error)
+    alert('Failed to link project: ' + error.message)
+    return
+  }
+
+  showLinkProjectModal.value = false
+  await loadKitUsages(selectedKit.value.id)
+}
+
+async function unlinkProject(usage: KitUsage) {
+  if (!confirm(`Unlink this kit from project ${usage.project_code}?`)) return
+
+  const { error } = await supabase
+    .from('project_kit_usage')
+    .delete()
+    .eq('id', usage.id)
+
+  if (error) {
+    console.error('Failed to unlink project:', error)
+    return
+  }
+
+  if (selectedKit.value) {
+    await loadKitUsages(selectedKit.value.id)
+  }
+}
+
+async function toggleKitActive(usage: KitUsage) {
+  const newActive = !usage.is_active
+
+  const { error } = await supabase
+    .from('project_kit_usage')
+    .update({ is_active: newActive })
+    .eq('id', usage.id)
+
+  if (error) {
+    console.error('Failed to toggle active:', error)
+    return
+  }
+
+  usage.is_active = newActive
+}
+
+function formatPrice(price: number | null | undefined): string {
   if (price === null || price === undefined) return '-'
   return '$' + price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
@@ -396,17 +467,20 @@ function goToDashboard() {
   router.push('/mrp/dashboard')
 }
 
-// Watchers
-watch(selectedProjectId, async () => {
-  selectedKit.value = null
-  kitItems.value = []
-  await loadKits()
-  await loadAvailableItems()
-})
-
 onMounted(async () => {
-  await loadProjects()
+  await Promise.all([
+    loadProjects(),
+    loadKits(),
+    loadAllItems()
+  ])
   loading.value = false
+
+  // If kit ID in URL, select it
+  const kitId = route.query.kit as string
+  if (kitId) {
+    const kit = kits.value.find(k => k.id === kitId)
+    if (kit) selectKit(kit)
+  }
 })
 </script>
 
@@ -414,15 +488,9 @@ onMounted(async () => {
   <div class="kits-page">
     <!-- Header -->
     <div class="header">
-      <h1>Kit Management</h1>
+      <h1>Vendor Kit Management</h1>
       <div class="header-actions">
-        <select v-model="selectedProjectId">
-          <option value="">-- Select Project --</option>
-          <option v-for="p in projects" :key="p.id" :value="p.id">
-            {{ p.project_code }} - {{ p.description || '' }}
-          </option>
-        </select>
-        <button v-if="selectedProjectId" class="btn btn-primary" @click="openNewKitModal">
+        <button class="btn btn-primary" @click="openNewKitModal">
           + New Kit
         </button>
         <button class="btn btn-secondary" @click="goToDashboard">
@@ -433,49 +501,45 @@ onMounted(async () => {
 
     <!-- Content -->
     <div class="content">
-      <div v-if="!selectedProjectId" class="no-selection">
-        Select a project to manage kits
-      </div>
-
-      <div v-else-if="loading" class="loading">
+      <div v-if="loading" class="loading">
         Loading...
       </div>
 
       <div v-else class="main-layout">
         <!-- Kits List -->
         <div class="kits-panel">
-          <h2>Vendor Kits</h2>
+          <h2>Vendor Kits (Global)</h2>
           <div v-if="kits.length === 0" class="empty-state">
             No kits defined. Create one to get started.
           </div>
           <div
             v-for="kit in kits"
             :key="kit.id"
-            :class="['kit-card', { selected: selectedKit?.id === kit.id, active: kit.use_kit }]"
+            :class="['kit-card', { selected: selectedKit?.id === kit.id }]"
             @click="selectKit(kit)"
           >
             <div class="kit-header">
               <div class="kit-number">{{ kit.kit_number }}</div>
-              <div v-if="kit.use_kit" class="active-badge">ACTIVE</div>
             </div>
             <div class="kit-name">{{ kit.kit_name }}</div>
             <div class="kit-vendor">{{ kit.vendor || 'No vendor' }}</div>
             <div class="kit-stats">
               <span>{{ kit.part_count }} parts</span>
               <span>{{ kit.total_pieces }} pcs</span>
-              <span class="kit-price">{{ formatPrice(kit.price) }}</span>
+            </div>
+            <div class="kit-pricing">
+              <div v-if="kit.price > 0" class="bundle-price">
+                <span class="label">Bundle:</span>
+                <span class="price">{{ formatPrice(kit.price) }}</span>
+              </div>
+              <div v-if="kit.items_total && kit.items_total > 0" class="items-price">
+                <span class="label">Items:</span>
+                <span class="price">{{ formatPrice(kit.items_total) }}</span>
+              </div>
             </div>
             <div class="kit-actions">
               <button class="btn-icon" @click.stop="openEditKitModal(kit)" title="Edit">
                 &#9998;
-              </button>
-              <button
-                v-if="!kit.use_kit"
-                class="btn-icon"
-                @click.stop="setActiveKit(kit)"
-                title="Set as Active"
-              >
-                &#10003;
               </button>
               <button class="btn-icon danger" @click.stop="deleteKit(kit)" title="Delete">
                 &#10005;
@@ -487,7 +551,7 @@ onMounted(async () => {
         <!-- Kit Details -->
         <div class="details-panel">
           <div v-if="!selectedKit" class="no-selection">
-            Select a kit to view parts
+            Select a kit to view details
           </div>
           <template v-else>
             <div class="details-header">
@@ -495,13 +559,66 @@ onMounted(async () => {
                 <h2>{{ selectedKit.kit_number }} - {{ selectedKit.kit_name }}</h2>
                 <div class="details-meta">
                   <span>Vendor: {{ selectedKit.vendor || 'N/A' }}</span>
-                  <span>Kit Price: {{ formatPrice(selectedKit.price) }}</span>
-                  <span>Calculated Total: {{ formatPrice(kitTotalFromItems) }}</span>
                 </div>
               </div>
-              <button class="btn btn-primary" @click="openAddPartsModal">
-                + Add Parts
-              </button>
+              <div class="header-buttons">
+                <button class="btn btn-secondary" @click="openEditKitModal(selectedKit)">
+                  Edit Kit
+                </button>
+                <button class="btn btn-primary" @click="openAddPartsModal">
+                  + Add Parts
+                </button>
+              </div>
+            </div>
+
+            <!-- Prominent Price Section -->
+            <div class="price-section">
+              <div class="price-box bundle">
+                <div class="price-label">Kit Bundle Price</div>
+                <div class="price-value">{{ formatPrice(selectedKit.price) }}</div>
+                <div class="price-note">Use this for vendor quotes with fixed total</div>
+              </div>
+              <div class="price-box calculated">
+                <div class="price-label">Calculated from Items</div>
+                <div class="price-value">{{ formatPrice(kitTotalFromItems) }}</div>
+                <div class="price-note">Sum of (unit price x qty) for all parts</div>
+              </div>
+              <div class="price-box effective">
+                <div class="price-label">Effective Price</div>
+                <div class="price-value highlight">
+                  {{ formatPrice(selectedKit.price > 0 ? selectedKit.price : kitTotalFromItems) }}
+                </div>
+                <div class="price-note">Bundle price used if set, otherwise items total</div>
+              </div>
+            </div>
+
+            <!-- Project Usage Section -->
+            <div class="usage-section">
+              <div class="section-header">
+                <h3>Project Usage</h3>
+                <button class="btn btn-sm" @click="openLinkProjectModal">
+                  + Link to Project
+                </button>
+              </div>
+              <div v-if="kitUsages.length === 0" class="empty-state small">
+                Not linked to any projects
+              </div>
+              <div v-else class="usage-list">
+                <div v-for="usage in kitUsages" :key="usage.id" class="usage-item">
+                  <span class="project-code">{{ usage.project_code }}</span>
+                  <label class="active-toggle">
+                    <input
+                      type="checkbox"
+                      :checked="usage.is_active"
+                      @change="toggleKitActive(usage)"
+                    />
+                    <span>Active</span>
+                  </label>
+                  <button class="btn-icon danger" @click="unlinkProject(usage)" title="Unlink">
+                    &#10005;
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div v-if="selectedKit.notes" class="kit-notes">
@@ -509,6 +626,8 @@ onMounted(async () => {
               <pre>{{ selectedKit.notes }}</pre>
             </div>
 
+            <!-- Parts Table -->
+            <h3 class="section-title">Parts in Kit</h3>
             <table class="parts-table">
               <thead>
                 <tr>
@@ -540,7 +659,7 @@ onMounted(async () => {
                   <td>
                     <input
                       type="number"
-                      :value="item.unit_price || ''"
+                      :value="item.unit_price ?? ''"
                       step="0.01"
                       class="price-input"
                       placeholder="-"
@@ -578,23 +697,27 @@ onMounted(async () => {
         <h3>{{ editingKit.id ? 'Edit Kit' : 'New Kit' }}</h3>
         <div class="form-group">
           <label>Kit Number</label>
-          <input v-model="editingKit.kit_number" type="text" placeholder="e.g., KIT-001" />
+          <input v-model="editingKit.kit_number" type="text" placeholder="e.g., KIT-001_PTL" />
         </div>
         <div class="form-group">
           <label>Kit Name</label>
-          <input v-model="editingKit.kit_name" type="text" placeholder="e.g., PTL Tube Kit" />
+          <input v-model="editingKit.kit_name" type="text" placeholder="e.g., PTL Tube & Sheet Kit" />
         </div>
         <div class="form-group">
           <label>Vendor</label>
           <input v-model="editingKit.vendor" type="text" placeholder="e.g., Precision Tube Laser" />
         </div>
-        <div class="form-group">
-          <label>Kit Price (per unit)</label>
-          <input v-model.number="editingKit.price" type="number" step="0.01" />
+        <div class="form-group highlight">
+          <label>Bundle Price (Total for all parts)</label>
+          <input v-model.number="editingKit.price" type="number" step="0.01" placeholder="0.00" />
+          <div class="form-hint">
+            Enter the vendor's total quoted price for all parts in this kit.
+            If individual part prices are entered, leave this at 0 to use calculated total.
+          </div>
         </div>
         <div class="form-group">
           <label>Notes</label>
-          <textarea v-model="editingKit.notes" rows="4" placeholder="Quote number, lead time, etc."></textarea>
+          <textarea v-model="editingKit.notes" rows="4" placeholder="Quote number, lead time, special terms..."></textarea>
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" @click="showKitModal = false">Cancel</button>
@@ -609,10 +732,10 @@ onMounted(async () => {
         <h3>Add Parts to {{ selectedKit?.kit_number }}</h3>
         <div class="parts-list">
           <div v-if="itemsNotInKit.length === 0" class="empty-state">
-            All project parts are already in this kit
+            All parts are already in this kit
           </div>
           <div
-            v-for="item in itemsNotInKit"
+            v-for="item in itemsNotInKit.slice(0, 100)"
             :key="item.id"
             :class="['part-row', { selected: selectedItemsToAdd.has(item.id) }]"
             @click="toggleItemSelection(item.id)"
@@ -645,6 +768,9 @@ onMounted(async () => {
               />
             </template>
           </div>
+          <div v-if="itemsNotInKit.length > 100" class="more-items">
+            Showing first 100 items. {{ itemsNotInKit.length - 100 }} more available.
+          </div>
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" @click="showAddPartsModal = false">Cancel</button>
@@ -654,6 +780,32 @@ onMounted(async () => {
             @click="addSelectedParts"
           >
             Add {{ selectedItemsToAdd.size }} Part(s)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Link Project Modal -->
+    <div v-if="showLinkProjectModal" class="modal-overlay" @click.self="showLinkProjectModal = false">
+      <div class="modal">
+        <h3>Link Kit to Project</h3>
+        <div class="form-group">
+          <label>Select Project</label>
+          <select v-model="selectedProjectToLink">
+            <option value="">-- Select --</option>
+            <option v-for="p in projectsNotLinked" :key="p.id" :value="p.id">
+              {{ p.project_code }} - {{ p.description || '' }}
+            </option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="showLinkProjectModal = false">Cancel</button>
+          <button
+            class="btn btn-primary"
+            :disabled="!selectedProjectToLink"
+            @click="linkProject"
+          >
+            Link
           </button>
         </div>
       </div>
@@ -695,6 +847,11 @@ onMounted(async () => {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 .btn-primary {
@@ -759,6 +916,11 @@ select {
   color: #6b7280;
 }
 
+.empty-state.small {
+  padding: 16px;
+  font-size: 13px;
+}
+
 .main-layout {
   display: grid;
   grid-template-columns: 320px 1fr;
@@ -769,6 +931,8 @@ select {
   background: #0f172a;
   border-radius: 8px;
   padding: 16px;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
 }
 
 .kits-panel h2 {
@@ -796,10 +960,6 @@ select {
   border-color: #2563eb;
 }
 
-.kit-card.active {
-  background: #1e3a5f;
-}
-
 .kit-header {
   display: flex;
   justify-content: space-between;
@@ -810,15 +970,6 @@ select {
 .kit-number {
   font-weight: 600;
   font-size: 15px;
-}
-
-.active-badge {
-  background: #059669;
-  color: white;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 600;
 }
 
 .kit-name {
@@ -837,9 +988,21 @@ select {
   gap: 12px;
   font-size: 12px;
   color: #9ca3af;
+  margin-bottom: 6px;
 }
 
-.kit-price {
+.kit-pricing {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.kit-pricing .label {
+  color: #6b7280;
+}
+
+.kit-pricing .price {
   color: #34d399;
   font-weight: 500;
 }
@@ -847,7 +1010,6 @@ select {
 .kit-actions {
   display: flex;
   gap: 4px;
-  margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid #334155;
 }
@@ -856,6 +1018,8 @@ select {
   background: #0f172a;
   border-radius: 8px;
   padding: 16px;
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
 }
 
 .details-header {
@@ -871,10 +1035,116 @@ select {
 }
 
 .details-meta {
-  display: flex;
-  gap: 16px;
   font-size: 13px;
   color: #9ca3af;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+/* Price Section */
+.price-section {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.price-box {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.price-box.bundle {
+  border-left: 4px solid #f97316;
+}
+
+.price-box.calculated {
+  border-left: 4px solid #3b82f6;
+}
+
+.price-box.effective {
+  border-left: 4px solid #22c55e;
+}
+
+.price-label {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-bottom: 8px;
+}
+
+.price-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.price-value.highlight {
+  color: #34d399;
+}
+
+.price-note {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 8px;
+}
+
+/* Usage Section */
+.usage-section {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 20px;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.section-header h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #e5e7eb;
+}
+
+.usage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.usage-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #0f172a;
+  border-radius: 6px;
+}
+
+.project-code {
+  font-weight: 500;
+  flex: 1;
+}
+
+.active-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9ca3af;
+  cursor: pointer;
+}
+
+.active-toggle input:checked + span {
+  color: #34d399;
 }
 
 .kit-notes {
@@ -890,6 +1160,12 @@ select {
   white-space: pre-wrap;
   font-family: inherit;
   color: #9ca3af;
+}
+
+.section-title {
+  font-size: 14px;
+  color: #e5e7eb;
+  margin: 0 0 12px 0;
 }
 
 .parts-table {
@@ -962,7 +1238,7 @@ select {
   background: #1e293b;
   border-radius: 12px;
   padding: 24px;
-  width: 400px;
+  width: 450px;
   max-height: 80vh;
   overflow-y: auto;
 }
@@ -980,6 +1256,13 @@ select {
   margin-bottom: 16px;
 }
 
+.form-group.highlight {
+  background: #0f172a;
+  padding: 16px;
+  border-radius: 8px;
+  border-left: 4px solid #f97316;
+}
+
 .form-group label {
   display: block;
   margin-bottom: 6px;
@@ -988,7 +1271,8 @@ select {
 }
 
 .form-group input,
-.form-group textarea {
+.form-group textarea,
+.form-group select {
   width: 100%;
   padding: 10px 12px;
   border-radius: 6px;
@@ -1002,6 +1286,12 @@ select {
 .form-group textarea {
   resize: vertical;
   font-family: inherit;
+}
+
+.form-hint {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 6px;
 }
 
 .modal-actions {
@@ -1057,5 +1347,12 @@ select {
 .part-row input[type="checkbox"] {
   width: 18px;
   height: 18px;
+}
+
+.more-items {
+  text-align: center;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 12px;
 }
 </style>
