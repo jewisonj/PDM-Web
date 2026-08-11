@@ -2691,6 +2691,248 @@ const { data } = await supabase
 
 ---
 
+---
+
+### 44. FreeCAD Flatten Sheetmetal Fallback for Flat Parts
+
+**Date:** 2026-08-11
+**Version:** v3.9.10
+
+**Symptom:** DXF generation for flat sheet metal parts (no bends) produced collapsed or invalid DXF files with one dimension near zero. The unfolded geometry had dimensions like 0.02" × 24" instead of the expected 12" × 24" flat pattern.
+
+**Root Cause:** The FreeCAD SheetMetal workbench `getUnfold()` function expects parts with bends to unfold. When applied to already-flat geometry (simple laser-cut plates with no bending), the unfold operation produces degenerate output:
+- The unfolded shape collapses to near-zero thickness in one dimension
+- The face orientation detection fails
+- The resulting DXF has invalid geometry
+
+**Diagnosis:**
+1. Tested DXF generation for a simple flat plate part with no bends
+2. Checked generated DXF - one dimension was < 0.1" while other was > 1"
+3. Reviewed FreeCAD script output - unfold operation succeeded but produced collapsed geometry
+4. Realized flat parts don't need unfolding - they should export directly from imported STEP
+5. Added detection logic to fall back to direct face export when unfold produces degenerate output
+
+**The Fix:**
+
+Added fallback logic in `worker/scripts/flatten_sheetmetal.py` (lines ~276-320):
+
+```python
+# Check for collapsed/degenerate geometry after unfold
+# (one dimension < 0.1" while another > 1" indicates unfold failure)
+if ((x_size < 0.1 and (y_size > 1 or z_size > 1)) or
+    (y_size < 0.1 and (x_size > 1 or z_size > 1)) or
+    (z_size < 0.1 and (x_size > 1 or y_size > 1))):
+
+    print(f"WARNING: Detected collapsed geometry after unfold")
+    print(f"  Dimensions: X={x_size:.2f}\", Y={y_size:.2f}\", Z={z_size:.2f}\"")
+    print(f"  This suggests a flat part with no bends - falling back to direct face export")
+
+    # Use largest face from original imported shape (not unfold result)
+    original_obj = doc.Objects[0]
+    faces = original_obj.Shape.Faces
+    largest_face = max(faces, key=lambda f: f.Area)
+
+    # Recalculate orientation and dimensions from original face
+    face_normal = largest_face.normalAt(0, 0)
+    # ... determine orientation (XY, XZ, or YZ) ...
+
+    # Export 2D projection of original face directly
+    outer_wire = largest_face.OuterWire
+    # ... (rest of export logic using original geometry) ...
+```
+
+**Detection Criteria:**
+- One dimension < 0.1" (essentially zero - collapsed)
+- Another dimension > 1" (valid part size)
+- Indicates unfold operation failed to produce valid flat geometry
+
+**Fallback Process:**
+1. Detect collapsed geometry from unfold result
+2. Use largest face from **original imported STEP** shape (not unfold result)
+3. Recalculate face orientation (XY, XZ, or YZ plane)
+4. Export 2D projection of original face directly
+5. Apply same scaling and edge processing as normal unfold path
+
+**Why This Works:**
+- Flat parts are already in their "unfolded" state
+- Original STEP geometry is correct - no processing needed
+- Direct face export preserves exact dimensions
+- Avoids SheetMetal workbench operations that assume bendable geometry
+
+**Files Changed:**
+- `worker/scripts/flatten_sheetmetal.py` (lines ~276-320)
+
+**Prevention:**
+- **Detect flat vs formed parts upfront** - check for bend features before attempting unfold
+- **Test edge cases** - simple flat plates are common but often overlooked in testing
+- **Add geometry validation** - check output dimensions for sanity before export
+- **Provide fallback paths** - when primary algorithm fails, use simpler approach for simpler inputs
+
+**Related Patterns:**
+- Similar to geometric validation in other CAD processing (degenerate edge detection in pitfall #41)
+- Fallback logic is common in CAD/CAM systems when sophisticated algorithms fail on simple inputs
+- "Use the simplest tool for the job" - flat parts don't need unfolding
+
+**What Changed:**
+- Before: All parts went through SheetMetal unfold, flat parts produced invalid DXF
+- After: Flat parts detected and exported directly, producing correct DXF
+
+**Commit:** (Current session - v3.9.10)
+
+**Related Docs:**
+- `Documentation/12-FREECAD-AUTOMATION.md` - Updated with fallback logic details
+- `Documentation/29-NESTING-AUTOMATION.md` - DXF nesting relies on valid DXF files
+
+---
+
+### 45. Cost Estimate Kit Model Refactor
+
+**Date:** 2026-08-11
+**Version:** v3.9.10
+
+**What Changed:** Refactored the cost estimation service (`backend/app/services/cost_estimate.py`) to use a new kit data model with per-item pricing and activation control.
+
+**Old Model (Deprecated):**
+```python
+# project_kits: kit definitions with use_kit flag
+# project_item_source: links items to kits with source_type='kit'
+
+# Cost calculation:
+if item has project_item_source with source_type='kit':
+    exclude from in-house cost calculation
+```
+
+**New Model:**
+```python
+# project_kits: kit definitions with optional total price
+# kit_items: parts in each kit with quantities and unit prices
+# project_kit_usage: links projects to kits with is_active flag
+
+# Cost calculation:
+active_kits = query project_kit_usage where is_active=true
+kit_item_ids = query kit_items where kit_id in active_kits
+for item in project parts:
+    if item.id in kit_item_ids:
+        skip in-house cost calculation (part is kit-supplied)
+    else:
+        calculate in-house cost (BOM tree rollup)
+
+kit_price = project_kits.price OR sum(kit_items.unit_price * kit_items.quantity)
+total_cost = in_house_parts_cost + active_kit_prices
+```
+
+**Key Differences:**
+
+| Aspect | Old Model | New Model |
+|--------|-----------|-----------|
+| Kit activation | `use_kit` flag on kit | `is_active` flag on `project_kit_usage` |
+| Part sourcing | `project_item_source` with `source_type` | `kit_items` with `kit_id` reference |
+| Pricing granularity | Kit total only | Per-item unit prices + kit total |
+| Multi-project support | Kit shared across projects | Kit usage per-project with activation |
+
+**Why This Matters:**
+
+**Per-Item Pricing:**
+- Vendors provide line-item quotes (part numbers with unit prices)
+- System can track individual part costs even when purchased as bundle
+- Cost comparison: sum of unit prices vs vendor's bundle discount price
+
+**Activation Control:**
+- Projects can reference the same kit definition
+- Only one kit can be active per project (enforced at usage level)
+- Deactivating a kit returns parts to in-house costing without deleting kit data
+
+**Data Preservation:**
+- Kit definitions persist even when not active
+- Easy to switch between vendors or re-activate old kits
+- Historical pricing data retained for cost trend analysis
+
+**Code Changes:**
+
+**backend/app/services/cost_estimate.py (lines ~180-250):**
+
+```python
+# Query active kits for this project
+active_kit_usage = supabase.table("project_kit_usage")\
+    .select("kit_id, project_kits(*)")\
+    .eq("project_id", project_id)\
+    .eq("is_active", True)\
+    .execute()
+
+# Build set of item IDs that are in active kits
+kit_item_ids = set()
+for usage in active_kit_usage.data:
+    kit_id = usage["kit_id"]
+    kit_items_result = supabase.table("kit_items")\
+        .select("item_id")\
+        .eq("kit_id", kit_id)\
+        .execute()
+    for ki in kit_items_result.data:
+        kit_item_ids.add(ki["item_id"])
+
+# Exclude kit items from in-house cost calculation
+for part in project_parts:
+    if part["item_id"] not in kit_item_ids:
+        # Calculate in-house cost (routing + material)
+        total_in_house_cost += calculate_part_cost(part)
+
+# Add kit pricing
+for usage in active_kit_usage.data:
+    kit = usage["project_kits"]
+    if kit.get("price"):
+        total_kit_cost += kit["price"]  # Use kit total if provided
+    else:
+        # Calculate from individual item prices
+        kit_items = query_kit_items(kit["id"])
+        total_kit_cost += sum(item["unit_price"] * item["quantity"] for item in kit_items)
+
+total_project_cost = total_in_house_cost + total_kit_cost
+```
+
+**Files Changed:**
+- `backend/app/services/cost_estimate.py` (lines ~180-250)
+
+**Database Tables (Expected):**
+- `project_kits` (exists) - Kit definitions
+- `kit_items` (NEW - does not exist yet!) - Parts in each kit
+- `project_kit_usage` (NEW - does not exist yet!) - Project-kit activation
+
+**IMPORTANT:** The new UI (`MrpKitsView.vue`) expects the `kit_items` and `project_kit_usage` tables. These tables **do not exist** in the database yet. See pitfall #16 in this document for migration strategy.
+
+**Migration Path:**
+
+1. Create `kit_items` table migration
+2. Create `project_kit_usage` table migration
+3. Migrate existing `project_item_source` data to `kit_items`:
+   ```sql
+   INSERT INTO kit_items (kit_id, item_id, quantity, unit_price)
+   SELECT kit_id, item_id, 1, NULL
+   FROM project_item_source
+   WHERE source_type = 'kit' AND kit_id IS NOT NULL;
+   ```
+4. Update cost estimate service to query new tables
+5. Test with sample project
+6. Deprecate `project_item_source` table
+
+**Prevention:**
+- **Document data model changes** when refactoring cost calculations
+- **Preserve backward compatibility** during migration (both models can coexist temporarily)
+- **Query optimization** - batch fetch kit items to avoid N+1 queries
+- **Test cost comparison** - verify in-house vs kit costs match expected values
+
+**Related Patterns:**
+- Similar to BOM rollup calculation (recursive tree traversal with exclusions)
+- Kit pricing mirrors assembly cost calculation (sum of parts vs total price)
+
+**Commit:** (Current session - v3.9.10)
+
+**Related Docs:**
+- `Documentation/06-BOM-COST-ROLLUP-GUIDE.md` - Updated with kit-based costing section
+- `Documentation/37-KIT-BUNDLE-PRICING.md` - Original system using `project_item_source`
+- `Documentation/46-MRP-VENDOR-KITS.md` - New system using `kit_items` (requires migration)
+
+---
+
 **Last Updated:** 2026-08-11
 **Version:** 3.9.11
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

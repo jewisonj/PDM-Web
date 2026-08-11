@@ -202,33 +202,6 @@ function getScreenPosition(clientX: number, clientY: number): { x: number; y: nu
   }
 }
 
-// Convert screen coordinates to DXF world coordinates
-function screenToWorld(clientX: number, clientY: number): { x: number; y: number } {
-  if (!viewer) return { x: 0, y: 0 }
-
-  const canvas = viewer.GetCanvas()
-  const camera = viewer.GetCamera()
-  const rect = canvas.getBoundingClientRect()
-
-  const ndcX = ((clientX - rect.left) / rect.width) * 2 - 1
-  const ndcY = -((clientY - rect.top) / rect.height) * 2 + 1
-
-  const worldPos = new Vector3(ndcX, ndcY, 0).unproject(camera)
-  const origin = viewer.GetOrigin()
-
-  // Account for scene rotation
-  const angle = rotation.value * Math.PI / 180
-  const cos = Math.cos(angle)
-  const sin = Math.sin(angle)
-  const rotatedX = worldPos.x * cos + worldPos.y * sin
-  const rotatedY = -worldPos.x * sin + worldPos.y * cos
-
-  return {
-    x: rotatedX + origin.x,
-    y: rotatedY + origin.y
-  }
-}
-
 interface SnapResult {
   // World coordinates (for screen projection - these move with zoom/pan)
   worldX: number

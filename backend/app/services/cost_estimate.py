@@ -17,10 +17,13 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
     and raw_materials to calculate labor, material, outsourced, and
     purchased costs.
 
-    Now also factors in kit pricing:
-    - Items with source_type='kit' and kit.use_kit=true skip in-house costing
-    - Kit prices are added as a separate category
-    - Items in disabled kits (use_kit=false) fall back to in-house routing
+    Kit pricing model:
+    - Kits are global (vendor_kits/project_kits table)
+    - kit_items tracks parts in each kit with quantities and unit prices
+    - project_kit_usage links projects to kits with is_active flag
+    - Active kit parts skip in-house costing; kit price is added separately
+    - If kit has total price (project_kits.price), use that
+    - Otherwise sum kit_items prices
 
     Returns None if the project has no parts (or doesn't exist).
     """
@@ -57,32 +60,40 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
         return None
 
     # --- Kit Pricing Support ---
-    # Load active kits for this project (use_kit=true)
-    kits_result = supabase.table("project_kits").select(
-        "id, kit_number, kit_name, vendor, price, use_kit"
+    # Load kit usage for this project (which kits are linked and active)
+    kit_usage_result = supabase.table("project_kit_usage").select(
+        "kit_id, is_active"
     ).eq("project_id", pid).execute()
 
-    kits_map = {k["id"]: k for k in (kits_result.data or [])}
-    active_kit_ids = {k["id"] for k in (kits_result.data or []) if k.get("use_kit", True)}
+    active_kit_ids = {ku["kit_id"] for ku in (kit_usage_result.data or []) if ku.get("is_active")}
+    linked_kit_ids = {ku["kit_id"] for ku in (kit_usage_result.data or [])}
 
-    # Load item sources to determine which items are in active kits
-    sources_result = supabase.table("project_item_source").select(
-        "item_id, source_type, kit_id"
-    ).eq("project_id", pid).execute()
+    # Load kit details for linked kits
+    kits_map = {}
+    if linked_kit_ids:
+        kits_result = supabase.table("project_kits").select(
+            "id, kit_number, kit_name, vendor, price"
+        ).in_("id", list(linked_kit_ids)).execute()
+        kits_map = {k["id"]: k for k in (kits_result.data or [])}
 
-    # Build map of item_id -> source info
-    item_sources = {}
-    for src in (sources_result.data or []):
-        item_sources[src["item_id"]] = {
-            "source_type": src["source_type"],
-            "kit_id": src["kit_id"],
-        }
-
-    # Determine which items are covered by active kits (skip their in-house cost)
+    # Load kit_items for active kits to know which parts are covered
     items_in_active_kits = set()
-    for item_id, src in item_sources.items():
-        if src["source_type"] == "kit" and src["kit_id"] in active_kit_ids:
-            items_in_active_kits.add(item_id)
+    kit_item_prices = {}  # kit_id -> {item_id: unit_price * qty}
+
+    if active_kit_ids:
+        kit_items_result = supabase.table("kit_items").select(
+            "kit_id, item_id, quantity, unit_price"
+        ).in_("kit_id", list(active_kit_ids)).execute()
+
+        for ki in (kit_items_result.data or []):
+            items_in_active_kits.add(ki["item_id"])
+            # Track per-kit costs for kits without a bundle price
+            kit_id = ki["kit_id"]
+            if kit_id not in kit_item_prices:
+                kit_item_prices[kit_id] = {}
+            unit_price = ki.get("unit_price") or 0
+            quantity = ki.get("quantity") or 1
+            kit_item_prices[kit_id][ki["item_id"]] = float(unit_price) * quantity
 
     # Load all workstations
     ws_result = supabase.table("workstations").select("id, station_code, station_name, hourly_rate, is_outsourced, outsourced_cost_default").execute()
@@ -124,20 +135,24 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
         qty = part.get("quantity", 1) or 1
         is_supplier = item.get("is_supplier_part", False)
 
-        # Check if this item is in an active kit
-        item_source = item_sources.get(item_id, {})
+        # Check if this item is covered by an active kit
         in_active_kit = item_id in items_in_active_kits
         kit_info = None
-        if in_active_kit and item_source.get("kit_id"):
-            kit = kits_map.get(item_source["kit_id"])
-            if kit:
-                kit_info = {
-                    "kit_id": kit["id"],
-                    "kit_number": kit["kit_number"],
-                    "kit_name": kit["kit_name"],
-                }
 
-        # If item is in an active kit, skip individual costing (kit price covers it)
+        # Find which kit covers this item
+        if in_active_kit:
+            for kit_id in active_kit_ids:
+                if kit_id in kit_item_prices and item_id in kit_item_prices[kit_id]:
+                    kit = kits_map.get(kit_id)
+                    if kit:
+                        kit_info = {
+                            "kit_id": kit["id"],
+                            "kit_number": kit["kit_number"],
+                            "kit_name": kit["kit_name"],
+                        }
+                        break
+
+        # If item is covered by an active kit, skip individual costing
         if in_active_kit:
             items_output.append({
                 "item_id": item_id,
@@ -256,23 +271,35 @@ def compute_project_cost_estimate(project_id: str) -> Optional[dict[str, Any]]:
             "extended_cost": round(extended, 2)
         })
 
-    # Calculate total kit costs (sum of active kit prices)
+    # Calculate total kit costs from active kits
     total_kit_cost = 0.0
     kits_output = []
     for kit_id in active_kit_ids:
         kit = kits_map.get(kit_id)
         if kit:
-            kit_price = float(kit.get("price") or 0)
+            # Use kit's bundle price if set, otherwise sum item prices
+            kit_bundle_price = float(kit.get("price") or 0)
+            kit_items_total = sum(kit_item_prices.get(kit_id, {}).values())
+
+            # Prefer bundle price, fall back to items total
+            if kit_bundle_price > 0:
+                kit_price = kit_bundle_price
+            else:
+                kit_price = kit_items_total
+
             total_kit_cost += kit_price
+
             # Count parts in this kit
-            parts_in_kit = sum(1 for iid in items_in_active_kits
-                               if item_sources.get(iid, {}).get("kit_id") == kit_id)
+            parts_in_kit = len(kit_item_prices.get(kit_id, {}))
+
             kits_output.append({
                 "kit_id": kit_id,
                 "kit_number": kit["kit_number"],
                 "kit_name": kit["kit_name"],
                 "vendor": kit.get("vendor"),
-                "price": kit_price,
+                "price": round(kit_price, 2),
+                "bundle_price": kit_bundle_price if kit_bundle_price > 0 else None,
+                "items_total": round(kit_items_total, 2),
                 "part_count": parts_in_kit,
             })
 

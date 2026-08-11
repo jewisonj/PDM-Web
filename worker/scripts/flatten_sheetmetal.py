@@ -140,6 +140,42 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     print(f"  {part_width * 25.4:.3f} mm x {part_height * 25.4:.3f} mm")
     print(f"  ({part_width:.3f}\" x {part_height:.3f}\")")
 
+    # Detect collapsed geometry (one dimension near zero = unfold failed)
+    min_dim = min(part_width, part_height)
+    max_dim = max(part_width, part_height)
+    if min_dim < 0.1 and max_dim > 1.0:  # Less than 0.1" in one direction = likely a line
+        print(f"\nWARNING: Unfold result is collapsed (aspect ratio {max_dim/max(min_dim, 0.001):.0f}:1)")
+        print("Falling back to direct face export (part may have no bends)...")
+
+        # Fall back to original imported object's largest face
+        original_faces = sorted(imported_obj.Shape.Faces, key=lambda f: f.Area, reverse=True)
+        flat_face = original_faces[0]
+
+        # Recalculate face orientation for the fallback face
+        face_normal = flat_face.normalAt(0, 0)
+        print(f"Fallback face normal: ({face_normal.x:.3f}, {face_normal.y:.3f}, {face_normal.z:.3f})")
+        if abs(face_normal.z) > 0.9:
+            use_axes = ('x', 'y')
+        elif abs(face_normal.y) > 0.9:
+            use_axes = ('x', 'z')
+        else:
+            use_axes = ('y', 'z')
+
+        # Recalculate coordinates from original face with corrected axes
+        all_points = []
+        for edge in flat_face.OuterWire.Edges:
+            for vertex in edge.Vertexes:
+                all_points.append(get_2d_coords(vertex.Point))
+
+        min_x = min(p.x for p in all_points)
+        max_x = max(p.x for p in all_points)
+        min_y = min(p.y for p in all_points)
+        max_y = max(p.y for p in all_points)
+        part_width = max_x - min_x
+        part_height = max_y - min_y
+
+        print(f"Direct face dimensions: {part_width:.3f}\" x {part_height:.3f}\"")
+
     # Create 2D edges from the flat face outline
     print("\nCreating 2D geometry for DXF export...")
 

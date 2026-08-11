@@ -351,6 +351,21 @@ The flattening script detects the face orientation and projects 3D coordinates t
 
 DXF files are scaled by `1/25.4` before export to compensate for DXF importers that assume inch units. When opened in CAD or cutting software that reads in inches, the geometry will display at the correct millimeter dimensions.
 
+### Flat Part Fallback (v3.9.10+)
+
+For parts with no bends (already-flat geometry), the SheetMetal unfold operation may produce collapsed or invalid output. The `flatten_sheetmetal.py` script detects this condition and automatically falls back to direct face export:
+
+**Detection criteria:**
+- Unfolded geometry has one dimension < 0.1" while another dimension > 1"
+- Indicates collapsed/degenerate output from unfold operation
+
+**Fallback process:**
+1. Uses the largest face from the original imported STEP shape (not the unfold result)
+2. Recalculates face orientation and dimensions
+3. Exports 2D projection of the original face directly
+
+This ensures flat sheet metal parts (e.g., simple laser-cut plates) produce valid DXF files without requiring bend detection.
+
 ### Geometry Types Handled
 
 - **Lines** -- Straight edges between vertices
@@ -395,6 +410,7 @@ freecadcmd
 | Large memory usage | Complex STEP assembly | Process individual parts rather than full assemblies |
 | Script timeout | Very complex geometry | Increase timeout; consider simpler geometry |
 | `Part.OCCError: Line through identical points` | Degenerate geometry (zero-length edges) | Fixed in v3.7.6 - script now skips coincident points automatically. Re-export STEP from CAD if issue persists. |
+| Collapsed/invalid DXF for flat parts (no bends) | SheetMetal unfold fails on already-flat geometry | Fixed in v3.9.10 - script detects collapsed geometry and falls back to direct face export from original imported shape. |
 
 ## Performance Considerations
 

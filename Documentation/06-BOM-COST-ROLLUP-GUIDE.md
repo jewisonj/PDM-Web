@@ -535,6 +535,63 @@ BOM data feeds into the MRP (Manufacturing Resource Planning) system:
 3. The `mrp_project_parts` table stores the exploded BOM with required quantities per project.
 4. Cost data from `price_est` supports project costing and quoting.
 
+### Kit-Based Costing (v3.9.10+)
+
+The cost estimation system supports vendor kit/bundle pricing as an alternative to per-part sourcing. This allows comparing in-house manufacturing costs against purchasing complete kits from vendors.
+
+**Kit Data Model:**
+
+| Table | Purpose |
+|---|---|
+| `project_kits` | Kit definitions with optional total price |
+| `kit_items` | Parts in each kit with quantities and unit prices |
+| `project_kit_usage` | Links projects to kits with `is_active` flag |
+
+**Cost Calculation Behavior:**
+
+When a kit is active for a project (`project_kit_usage.is_active = true`):
+- Parts that are members of the kit skip in-house cost calculation
+- Kit price is used from `project_kits.price` (if set) or sum of `kit_items` unit prices × quantities
+- Parts not in any active kit use standard BOM cost rollup
+
+**Example Kit Structure:**
+
+```json
+{
+  "kit_id": "uuid-here",
+  "kit_name": "Welding Bundle A",
+  "vendor": "Metal Supply Co",
+  "price": 450.00,
+  "items": [
+    {
+      "item_number": "wmp20080",
+      "quantity": 4,
+      "unit_price": 25.00
+    },
+    {
+      "item_number": "wmp20090",
+      "quantity": 2,
+      "unit_price": 50.00
+    }
+  ]
+}
+```
+
+**API Endpoint:**
+
+```
+GET /api/cost-estimate/{project_id}
+```
+
+Returns total project cost including:
+- In-house manufactured parts (BOM tree cost rollup)
+- Active kit costs (from `project_kits.price` or sum of kit items)
+- Mixed sourcing comparison (make vs buy)
+
+**Related Documentation:**
+- `37-KIT-BUNDLE-PRICING.md` -- Original system using `project_item_source`
+- `46-MRP-VENDOR-KITS.md` -- New MRP UI for kit management
+
 ---
 
 ## Troubleshooting
