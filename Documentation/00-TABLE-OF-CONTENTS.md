@@ -1,6 +1,6 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-08-06
+**Last Updated:** 2026-08-11
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
 **Current Version:** v3.9.9
@@ -61,7 +61,7 @@ New to PDM-Web? Read these in order:
 |---|------|-------------|
 | 08 | `08-PDM-WEBSERVER-README.md` | Vue 3 frontend setup, configuration, and build process. |
 | 09 | `09-PDM-WEBSERVER-DEPLOYMENT.md` | Production deployment guide for FastAPI + Vue SPA. |
-| 10 | `10-PDM-WEBSERVER-OVERVIEW.md` | Frontend UI design, views, components, and user experience. |
+| 10 | `10-PDM-WEBSERVER-OVERVIEW.md` | Frontend UI design, views, components, and user experience. Includes DXF Viewer component with measurement tools. |
 | 11 | `11-PDM-WEBSERVER-QUICK-REFERENCE.md` | Daily operations and common tasks reference. |
 | 35 | `35-UI-DESIGN-STANDARDS.md` | UI/UX design standards: part number display formatting (prefix stripping for MMC/SPN), code patterns, implementation locations. |
 | 36 | `36-MASTER-DESIGN-BOOK-PLAN.md` | Master Design Book (Spa): product-level, date-free (D1..Dn), rev-controlled section booklets with auto change notices. Architecture + phased plan. |

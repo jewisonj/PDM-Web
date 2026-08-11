@@ -3,6 +3,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase, API_BASE_URL } from '../services/supabase'
 import { getSignedUrlFromPath } from '../services/storage'
+import DxfViewerModal from '../components/DxfViewerModal.vue'
 
 interface FileInfo {
   id: string
@@ -117,6 +118,10 @@ const pdfUrl = ref<string | null>(null)
 const showPdfPreview = ref(false)
 const pdfPreviewWidth = ref(700)
 const loadingPdf = ref(false)
+
+// DXF Viewer state
+const showDxfViewer = ref(false)
+const selectedDxfFile = ref<FileInfo | null>(null)
 
 // Files state
 const itemFiles = ref<FileInfo[]>([])
@@ -1425,12 +1430,24 @@ async function openFile(file: FileInfo) {
     return
   }
 
+  // Open DXF files in the viewer modal
+  if (file.file_type === 'DXF') {
+    selectedDxfFile.value = file
+    showDxfViewer.value = true
+    return
+  }
+
   const url = await getSignedUrlFromPath(file.file_path)
   if (url) {
     window.open(url, '_blank')
   } else {
     error.value = 'Failed to generate file URL'
   }
+}
+
+function closeDxfViewer() {
+  showDxfViewer.value = false
+  selectedDxfFile.value = null
 }
 
 async function generateDxf() {
@@ -1953,6 +1970,13 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- DXF Viewer Modal -->
+    <DxfViewerModal
+      v-if="showDxfViewer && selectedDxfFile"
+      :file="selectedDxfFile"
+      @close="closeDxfViewer"
+    />
   </div>
 </template>
 

@@ -433,6 +433,226 @@ app.mount('#app')
 
 ---
 
+## DXF Viewer Component
+
+**Component:** `frontend/src/components/DxfViewerModal.vue`
+
+**Integration:** MRP Routing View (`MrpRoutingView.vue`) - Triggered when clicking DXF file buttons in part routing tables
+
+### Purpose
+
+Provides interactive DXF file viewing with geometry-aware measurement tools for verifying flat patterns and sheet metal part dimensions. The viewer opens in a modal overlay and supports zoom, pan, rotation, and precision measurement with vertex snapping.
+
+### Features
+
+**1. DXF Rendering**
+- Uses `dxf-viewer` library (Three.js/WebGL-based) for 2D geometry display
+- Dark theme background (`#1e293b`) for clear geometry visibility
+- Color correction and black/white inversion for legibility
+- Antialiasing for smooth lines
+- Auto-resize to fit modal dimensions
+
+**2. Rotation Controls**
+- **90° CW** - Rotate clockwise (pi/refresh icon)
+- **90° CCW** - Rotate counter-clockwise (pi/replay icon)
+- **Reset** - Return to 0° (shows current rotation angle badge when active)
+- Scene rotation is applied to Three.js scene root (preserves geometry)
+
+**3. Measurement Tool**
+- **Toggle Measure Mode** - Activates measurement (pi/arrows-h icon, blue highlight when active)
+- **Two-click workflow:**
+  1. First click sets Point 1
+  2. Second click sets Point 2, calculates distance
+  3. Third click starts new measurement (resets to Point 1)
+- **Clear button** - Resets measurement without exiting measure mode
+
+**4. Vertex Snapping System**
+- **15-pixel snap threshold** - Cursor snaps to geometry vertices within 15px screen distance
+- **Vertex cache** - All geometry vertices extracted from Three.js scene on load (no repeated traversal)
+- **Visual indicators:**
+  - **Yellow pulsing ring** when snapped to vertex (animated scale/opacity)
+  - **Gray dot** when not snapped (freehand cursor position)
+- **World coordinate storage** - Snap points stored in world coordinates, not screen pixels
+  - Measurement geometry tracks with zoom/pan automatically
+  - No recalculation needed during viewport changes
+
+**5. Distance Calculation**
+- **DXF coordinates** - Distance calculated in DXF space (rotation compensated)
+- **Displayed in inches** - Shows "Dist: X.XXin" label above measurement line
+- **Precision** - 2 decimal places (e.g., "12.75in")
+- **Midpoint label** - Positioned at center of measurement line
+- **Red measurement line** with red point markers at each endpoint
+
+**6. Download**
+- **Download DXF** button - Opens signed URL in new tab for direct download
+- Reuses cached signed URL from initial load (no redundant fetch)
+
+**7. Keyboard Shortcuts**
+- **Escape** - Exit measure mode (if active), or close modal
+
+### Technical Architecture
+
+**Coordinate Systems:**
+- **Screen coordinates** - Pixel positions on canvas (for click detection, UI rendering)
+- **World coordinates** - Three.js scene coordinates (before rotation, for vertex snapping)
+- **DXF coordinates** - Rotation-compensated coordinates (for distance calculation)
+
+**Why three coordinate systems?**
+- Rotation is applied to the scene, not individual geometry
+- Snap detection happens in world space (where vertices live)
+- Distance measurement needs rotation-compensated values (DXF space)
+- UI rendering needs screen pixels (for SVG overlay)
+
+**Snap Detection Algorithm:**
+```typescript
+1. Extract all vertices from scene geometry on load (cached)
+2. On mouse move:
+   a. Project each vertex to screen coordinates
+   b. Calculate screen distance to cursor
+   c. Find nearest vertex within 15px threshold
+   d. If found, use vertex position; otherwise use cursor position
+3. Store both world coords (for screen projection) and DXF coords (for distance)
+```
+
+**Measurement Geometry Tracking:**
+- Points stored as `{ worldX, worldY, dxfX, dxfY, snapped }`
+- **World coords** converted to screen pixels on every mouse move (reactive computed)
+- Measurement line/labels automatically track with zoom/pan
+- No manual SVG coordinate recalculation needed
+
+**HTML/CSS Overlay Approach:**
+- **Passive event listeners** on canvas - Don't interfere with viewer's zoom/pan
+- **SVG overlay** for measurement line and point circles (pointer-events: none)
+- **CSS positioned divs** for cursor indicator and distance label
+- **Reactive computed properties** recalculate screen positions on mouse move
+
+### User Workflow
+
+**Opening DXF:**
+1. Navigate to MRP Routing View
+2. Expand part to show files list
+3. Click DXF button
+4. Modal opens with file loaded
+
+**Measuring a dimension:**
+1. Click "Measure" button in toolbar
+2. Cursor changes to crosshair with snap indicator
+3. Move cursor near a corner/vertex (yellow ring appears when snapped)
+4. Click to set Point 1
+5. Move to second point (snaps to vertices automatically)
+6. Click to set Point 2
+7. Red line appears with distance label "Dist: 12.34in"
+8. Click anywhere to start new measurement
+
+**Rotating view:**
+- Click rotation buttons to align geometry
+- Rotation angle badge appears (e.g., "90°", "180°", "270°")
+- Click badge to reset to 0°
+
+**Downloading:**
+- Click "Download DXF" button
+- File opens in new tab (browser download prompt)
+
+### Dependencies
+
+**NPM Packages:**
+```json
+{
+  "dxf-viewer": "^4.0.0",  // DXF rendering engine
+  "three": "^0.170.0"       // 3D graphics library (required by dxf-viewer)
+}
+```
+
+**Import Statement:**
+```typescript
+import { DxfViewer } from 'dxf-viewer'
+import { Color, Scene, OrthographicCamera, Vector3 } from 'three'
+```
+
+### Integration Points
+
+**MrpRoutingView.vue:**
+```vue
+<script setup>
+import DxfViewerModal from '../components/DxfViewerModal.vue'
+
+const showDxfViewer = ref(false)
+const selectedDxfFile = ref<FileInfo | null>(null)
+
+function openFile(file: FileInfo) {
+  if (file.file_type === 'DXF') {
+    selectedDxfFile.value = file
+    showDxfViewer.value = true
+    return
+  }
+  // ... handle other file types
+}
+
+function closeDxfViewer() {
+  showDxfViewer.value = false
+  selectedDxfFile.value = null
+}
+</script>
+
+<template>
+  <!-- DXF Viewer Modal -->
+  <DxfViewerModal
+    v-if="showDxfViewer && selectedDxfFile"
+    :file="selectedDxfFile"
+    @close="closeDxfViewer"
+  />
+</template>
+```
+
+**File Type Detection:**
+- DXF files trigger modal open
+- Other file types (STEP, PDF, etc.) open in new tab with signed URL
+
+### WATCH OUT
+
+**1. Viewer cleanup required**
+- Always call `viewer.Destroy()` in `onUnmounted` or before re-initializing
+- Remove event listeners to prevent memory leaks
+- Reset cached vertices when switching files
+
+**2. Passive event listeners**
+- Measurement event handlers use `{ passive: true }` option
+- This prevents blocking the viewer's built-in zoom/pan controls
+- Canvas click/mousemove handlers don't interfere with dxf-viewer
+
+**3. World coordinate storage**
+- Store measurement points in world coordinates, not screen pixels
+- Screen positions are computed reactively from world coords
+- This makes geometry track automatically with zoom/pan
+
+**4. Rotation compensation**
+- Scene rotation affects world coordinates but not DXF coordinates
+- Distance calculation must use rotation-compensated (DXF) coordinates
+- Screen projection uses world coordinates (pre-rotation)
+
+**5. Vertex extraction timing**
+- Extract vertices AFTER `viewer.Load()` completes
+- Vertices are in world space (scene.traverse required)
+- Cache vertices to avoid repeated scene traversal
+
+**6. Signed URL reuse**
+- Initial load fetches signed URL for DXF rendering
+- Download button reuses same URL (no redundant fetch)
+- Signed URLs expire after 1 hour (default Supabase setting)
+
+### Future Enhancements
+
+Potential improvements not yet implemented:
+- **Multi-segment measurement** - Chain multiple measurements
+- **Area calculation** - Polygon area from clicked points
+- **Angle measurement** - Three-point angle tool
+- **Dimension annotations** - Persistent labels saved to DXF
+- **Comparison mode** - Side-by-side view of multiple revisions
+- **Export measurement report** - CSV/PDF of all measurements
+- **Snap to midpoints** - Snap to line segment centers (not just vertices)
+
+---
+
 ## Key Design Decisions
 
 1. **Composition API exclusively** -- No Options API usage. All components use `<script setup>` for minimal boilerplate and better TypeScript inference.

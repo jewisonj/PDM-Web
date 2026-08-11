@@ -7,9 +7,110 @@
 
 ## Current Version
 
-### v3.9.8 (2026-07-27) -- Routing Time Basis (Per-Unit vs Per-Line-Item)
+### v3.9.9 (2026-08-11) -- Interactive DXF Viewer with Measurement Tools
 
 **Status:** Current Production Release
+
+**Summary:** Added browser-based DXF file viewer with interactive measurement tools for verifying sheet metal flat pattern dimensions. The viewer supports rotation, zoom, pan, and precision measurement with geometry vertex snapping.
+
+#### Features Added
+
+**1. DxfViewerModal Component**
+- **File:** `frontend/src/components/DxfViewerModal.vue`
+- **Library:** `dxf-viewer` (Three.js/WebGL-based rendering)
+- **Integration:** MRP Routing View - Opens when clicking DXF file buttons
+- **UI:** Modal overlay with dark theme, full-screen viewer
+
+**2. Measurement Tools**
+- **Distance measurement** with two-click workflow
+  - Click to set Point 1, click again for Point 2, displays distance in inches
+  - Red measurement line with labeled distance at midpoint
+  - Third click starts new measurement
+- **Vertex snapping** (15-pixel threshold)
+  - Cursor automatically snaps to geometry vertices
+  - Yellow pulsing ring indicator when snapped
+  - Gray dot indicator for freehand cursor position
+- **World coordinate storage** - Measurement geometry tracks with zoom/pan automatically
+- **Rotation compensation** - Distance calculation uses DXF space (rotation-independent)
+
+**3. Rotation Controls**
+- 90° CW and 90° CCW buttons
+- Rotation angle badge (shows current angle: 90°, 180°, 270°)
+- Reset button to return to 0°
+- Scene rotation preserves geometry integrity
+
+**4. Technical Architecture**
+- **Three coordinate systems:**
+  - Screen coordinates (pixels) for UI rendering
+  - World coordinates (Three.js) for vertex snapping
+  - DXF coordinates (rotation-compensated) for distance calculation
+- **Vertex cache** - All geometry vertices extracted on load, no repeated traversal
+- **Passive event listeners** - Don't interfere with viewer's built-in zoom/pan
+- **HTML/CSS overlay** - SVG for measurement lines, CSS for labels and cursor
+- **Reactive computed properties** - Screen positions recalculated on mouse move
+
+**5. User Experience**
+- **Keyboard shortcut:** Escape to exit measure mode or close modal
+- **Download button:** Opens signed URL in new tab
+- **Fit to view button:** Auto-zoom to show entire drawing
+- **Clear button:** Reset measurement without exiting measure mode
+
+#### Dependencies Added
+
+```json
+{
+  "dxf-viewer": "^4.0.0",  // DXF rendering engine
+  "three": "^0.170.0"      // 3D graphics library
+}
+```
+
+#### Code Changes
+
+**Frontend:**
+- **New Component:** `frontend/src/components/DxfViewerModal.vue` (872 lines)
+- **Modified View:** `frontend/src/views/MrpRoutingView.vue`
+  - Added state: `showDxfViewer`, `selectedDxfFile`
+  - Added functions: `closeDxfViewer()`
+  - Modified `openFile()` to detect DXF file type and open modal
+  - Template integration: `<DxfViewerModal>` component mount
+- **Updated Dependencies:** `frontend/package.json`, `frontend/package-lock.json`
+
+#### Use Cases
+
+**Shop Floor Verification:**
+- Verify flat pattern dimensions before cutting
+- Measure features to confirm DXF matches design intent
+- Check bend relief sizes and hole placement
+- Rotate view to align with waterjet cutting orientation
+
+**Engineering Review:**
+- Quick visual inspection of DXF exports
+- Confirm sheet metal flattening accuracy
+- Measure critical dimensions without downloading file
+- Compare expected vs actual geometry
+
+#### Future Enhancements
+
+Potential improvements not yet implemented:
+- Multi-segment chained measurements
+- Area calculation from polygon points
+- Angle measurement (three-point tool)
+- Persistent dimension annotations
+- Side-by-side revision comparison
+- Export measurement report (CSV/PDF)
+- Snap to line midpoints (currently only vertices)
+
+#### Documentation
+
+- `Documentation/10-PDM-WEBSERVER-OVERVIEW.md` — DXF Viewer Component section
+- `Documentation/00-TABLE-OF-CONTENTS.md` — Updated entry for Doc 10
+- `Documentation/24-VERSION-HISTORY.md` — This entry
+
+---
+
+### v3.9.8 (2026-07-27) -- Routing Time Basis (Per-Unit vs Per-Line-Item)
+
+**Status:** Released
 
 **Summary:** Added `time_basis` field to the routing table to distinguish between per-unit times (multiply by quantity) and per-line-item times (fixed regardless of quantity). This fixes purchased parts routing time inflation where receiving operations were incorrectly multiplying by piece count.
 
