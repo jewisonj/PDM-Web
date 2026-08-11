@@ -44,36 +44,52 @@ class ItemSourceUpdate(BaseModel):
 @router.get("/{project_id}/kits")
 async def list_project_kits(project_id: UUID):
     """
-    List all kits for a project with part counts and comparison data.
+    List all kits linked to a project with part counts and comparison data.
+
+    Uses the new global kit model:
+    - Kits are global (project_kits table, project_id is nullable)
+    - Projects link to kits via project_kit_usage (many-to-many)
+    - Parts in kits tracked via kit_items table
 
     Returns each kit with:
-    - Kit details (name, vendor, price, use_kit toggle)
-    - Count of parts assigned to the kit
+    - Kit details (name, vendor, price)
+    - is_active flag from project_kit_usage (replaces use_kit)
+    - Count of parts in the kit
     - Sum of in-house costs for comparison
     """
     supabase = get_supabase_admin()
     pid = str(project_id)
 
-    # Get all kits for this project
-    kits_result = supabase.table("project_kits").select("*").eq("project_id", pid).order("kit_number").execute()
+    # Get all kits linked to this project via project_kit_usage
+    usage_result = supabase.table("project_kit_usage").select(
+        "kit_id, is_active"
+    ).eq("project_id", pid).execute()
+
+    if not usage_result.data:
+        return []
+
+    kit_ids = [u["kit_id"] for u in usage_result.data]
+    usage_map = {u["kit_id"]: u["is_active"] for u in usage_result.data}
+
+    # Get kit details
+    kits_result = supabase.table("project_kits").select("*").in_("id", kit_ids).order("kit_number").execute()
     kits = kits_result.data or []
 
     if not kits:
         return []
 
-    # Get all item sources for this project that reference these kits
-    kit_ids = [k["id"] for k in kits]
-    sources_result = supabase.table("project_item_source").select(
-        "kit_id, item_id"
-    ).eq("project_id", pid).eq("source_type", "kit").in_("kit_id", kit_ids).execute()
+    # Get kit_items for these kits to count parts and get item IDs
+    kit_items_result = supabase.table("kit_items").select(
+        "kit_id, item_id, quantity, unit_price"
+    ).in_("kit_id", kit_ids).execute()
 
-    # Count parts per kit
+    # Count parts per kit and collect item IDs
     kit_part_counts = {}
     kit_item_ids = {}  # kit_id -> list of item_ids
-    for src in (sources_result.data or []):
-        kid = src["kit_id"]
+    for ki in (kit_items_result.data or []):
+        kid = ki["kit_id"]
         kit_part_counts[kid] = kit_part_counts.get(kid, 0) + 1
-        kit_item_ids.setdefault(kid, []).append(src["item_id"])
+        kit_item_ids.setdefault(kid, []).append(ki["item_id"])
 
     # Calculate in-house cost comparison for each kit
     # We need to sum the routing costs for all items in each kit
@@ -192,8 +208,12 @@ async def list_project_kits(project_id: UUID):
         savings = inhouse_cost - kit_price
         savings_pct = (savings / inhouse_cost * 100) if inhouse_cost > 0 else 0
 
+        # Get is_active from project_kit_usage (replaces use_kit)
+        is_active = usage_map.get(kid, False)
+
         result.append({
             **kit,
+            "use_kit": is_active,  # Frontend expects use_kit, but we get it from project_kit_usage.is_active
             "part_count": part_count,
             "inhouse_cost": round(inhouse_cost, 2),
             "inhouse_labor": round(cost_data.get("labor", 0) if isinstance(cost_data, dict) else 0, 2),
@@ -235,42 +255,64 @@ async def get_kit(project_id: UUID, kit_id: UUID):
     pid = str(project_id)
     kid = str(kit_id)
 
-    # Get kit
-    kit_result = supabase.table("project_kits").select("*").eq("id", kid).eq("project_id", pid).execute()
+    # Verify kit is linked to this project
+    usage_result = supabase.table("project_kit_usage").select(
+        "is_active"
+    ).eq("project_id", pid).eq("kit_id", kid).execute()
+
+    if not usage_result.data:
+        raise HTTPException(status_code=404, detail="Kit not linked to this project")
+
+    is_active = usage_result.data[0]["is_active"]
+
+    # Get kit details
+    kit_result = supabase.table("project_kits").select("*").eq("id", kid).execute()
 
     if not kit_result.data:
         raise HTTPException(status_code=404, detail="Kit not found")
 
     kit = kit_result.data[0]
 
-    # Get parts assigned to this kit
-    sources_result = supabase.table("project_item_source").select(
-        "item_id, items(item_number, name)"
-    ).eq("kit_id", kid).eq("source_type", "kit").execute()
+    # Get parts from kit_items table
+    kit_items_result = supabase.table("kit_items").select(
+        "item_id, quantity, unit_price, items(item_number, name)"
+    ).eq("kit_id", kid).execute()
 
     parts = []
-    for src in (sources_result.data or []):
-        item = src.get("items") or {}
+    for ki in (kit_items_result.data or []):
+        item = ki.get("items") or {}
         parts.append({
-            "item_id": src["item_id"],
+            "item_id": ki["item_id"],
             "item_number": item.get("item_number", ""),
             "name": item.get("name", ""),
+            "quantity": ki.get("quantity", 1),
+            "unit_price": ki.get("unit_price"),
         })
 
     return {
         **kit,
+        "use_kit": is_active,
         "parts": parts,
     }
 
 
 @router.patch("/{project_id}/kits/{kit_id}")
 async def update_kit(project_id: UUID, kit_id: UUID, body: KitUpdate):
-    """Update a kit's details."""
+    """Update a kit's details or toggle its active status for this project."""
     supabase = get_supabase_admin()
     pid = str(project_id)
     kid = str(kit_id)
 
-    # Build update data (only include non-None fields)
+    # If use_kit is being toggled, update project_kit_usage.is_active
+    if body.use_kit is not None:
+        usage_result = supabase.table("project_kit_usage").update({
+            "is_active": body.use_kit
+        }).eq("project_id", pid).eq("kit_id", kid).execute()
+
+        if not usage_result.data:
+            raise HTTPException(status_code=404, detail="Kit not linked to this project")
+
+    # Build update data for kit details (only include non-None fields)
     data = {}
     if body.kit_number is not None:
         data["kit_number"] = body.kit_number
@@ -280,20 +322,27 @@ async def update_kit(project_id: UUID, kit_id: UUID, body: KitUpdate):
         data["vendor"] = body.vendor
     if body.price is not None:
         data["price"] = body.price
-    if body.use_kit is not None:
-        data["use_kit"] = body.use_kit
     if body.notes is not None:
         data["notes"] = body.notes
 
-    if not data:
-        raise HTTPException(status_code=400, detail="No fields to update")
+    # Update kit details if any were provided
+    if data:
+        result = supabase.table("project_kits").update(data).eq("id", kid).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Kit not found")
+        kit = result.data[0]
+    else:
+        # Just fetch the current kit
+        result = supabase.table("project_kits").select("*").eq("id", kid).execute()
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Kit not found")
+        kit = result.data[0]
 
-    result = supabase.table("project_kits").update(data).eq("id", kid).eq("project_id", pid).execute()
+    # Get current is_active status
+    usage = supabase.table("project_kit_usage").select("is_active").eq("project_id", pid).eq("kit_id", kid).execute()
+    is_active = usage.data[0]["is_active"] if usage.data else False
 
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Kit not found")
-
-    return result.data[0]
+    return {**kit, "use_kit": is_active}
 
 
 @router.delete("/{project_id}/kits/{kit_id}")
