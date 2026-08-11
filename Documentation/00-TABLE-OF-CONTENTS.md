@@ -54,6 +54,7 @@ New to PDM-Web? Read these in order:
 | 40 | `40-QUOTE-BUNDLE-PREPARATION.md` | Quote bundle preparation guide: preparing STEP file packages for external fabricator quotes, revision tracking, consolidation documentation, CSV BOMs with change notes. |
 | 43 | `43-DESIGN-BOOK-IMAGE-MANAGEMENT.md` | Design Book image management system: image hash detection for auto re-rendering, FastAPI route ordering fix, upload form state preservation, image library integration with Master Design Book III-00 section. |
 | 44 | `44-SUPPLIER-PORTAL.md` | Supplier Portal: external vendor access to approved files, separate JWT auth, file type restrictions, two-way comments, admin management, item access control. |
+| 46 | `46-MRP-VENDOR-KITS.md` | MRP Vendor Kits Management: dedicated full-page UI for managing vendor kits/bundles, kit item tracking with quantities and unit prices, kit activation toggle, cost comparison, requires `kit_items` table migration. |
 
 ### Section 5: Frontend Application
 
@@ -145,11 +146,12 @@ New to PDM-Web? Read these in order:
 3. `31-BUILD-TRACKER-SHEET.md` -- printable shop-floor Build Tracker sheet
 4. `32-BUILD-BOOK.md` -- day-by-day manufacturing Build Book (work packages + kit/weld sheets + section print sets)
 5. `06-BOM-COST-ROLLUP-GUIDE.md` -- BOM cost rollup
-6. `37-KIT-BUNDLE-PRICING.md` -- Kit/bundle pricing and vendor cost comparison
-7. `38-KIT-SOURCING-IN-BUILD-DOCS.md` -- Kit sourcing in Build Book and Design Book
-8. `39-KIT-SOURCING-STEP-EXPORT.md` -- Exporting STEP files and BOMs for kit orders
-9. `40-QUOTE-BUNDLE-PREPARATION.md` -- Preparing STEP file quote bundles for external fabricators
-10. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
+6. `37-KIT-BUNDLE-PRICING.md` -- Kit/bundle pricing and vendor cost comparison (original system using `project_item_source`)
+7. `46-MRP-VENDOR-KITS.md` -- MRP Vendor Kits Management UI (new system using `kit_items`, requires migration)
+8. `38-KIT-SOURCING-IN-BUILD-DOCS.md` -- Kit sourcing in Build Book and Design Book
+9. `39-KIT-SOURCING-STEP-EXPORT.md` -- Exporting STEP files and BOMs for kit orders
+10. `40-QUOTE-BUNDLE-PREPARATION.md` -- Preparing STEP file quote bundles for external fabricators
+11. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
 
 ### Troubleshooting
 1. `19-TROUBLESHOOTING-DECISION-TREE.md` -- diagnosis
@@ -183,7 +185,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 40
+**Total Documentation Files:** 41
 **Status:** Current
 
 ---

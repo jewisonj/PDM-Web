@@ -138,6 +138,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/mrp/kits',
+      name: 'mrp-kits',
+      component: () => import('../views/MrpKitsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/mrp/assistant',
       name: 'mrp-assistant',
       component: () => import('../views/MrpAssistantView.vue'),

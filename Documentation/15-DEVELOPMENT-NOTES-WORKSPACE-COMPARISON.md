@@ -2469,6 +2469,228 @@ SELECT * FROM files WHERE UPPER(file_type) = 'DXF';
 
 ---
 
-**Last Updated:** 2026-08-06
-**Version:** 3.9.9
+## 16. MRP Vendor Kits View - Dual Kit Systems
+
+**Date:** 2026-08-11
+**Version:** v3.9.11
+
+### What Was Built
+
+A new full-page Vendor Kits management UI (`MrpKitsView.vue`, 1055 lines) for managing vendor kits/bundles at the project level. This extends the existing kit pricing system with a more sophisticated interface.
+
+**Key Features:**
+- Project-scoped kit management (kit number, name, vendor, price, notes)
+- Detailed kit item tracking with quantities and unit prices
+- Inline editing of quantities and prices
+- Kit activation toggle (only one active kit per project)
+- Cost comparison: vendor quote vs calculated item total
+- Add/remove parts from kits via modal
+- Navigate from MRP Dashboard via "Vendor Kits" button
+
+**Route:** `/mrp/kits`
+**Component:** `frontend/src/views/MrpKitsView.vue`
+
+---
+
+### Architecture Issue: Dual Kit Systems
+
+**IMPORTANT:** The new UI expects a `kit_items` table that **does not exist** in the database yet. This creates a **parallel system** to the existing kit pricing feature.
+
+**Existing System (Doc 37):**
+- Table: `project_item_source` (created 2026-07-09)
+- Purpose: Mark parts as "make" or "kit" for cost calculation
+- UI: Kit Management Slideout on MRP Dashboard
+- Backend: `backend/app/routes/kits.py` (uses `project_item_source`)
+
+**New System (Doc 46):**
+- Table: `kit_items` (NOT CREATED YET)
+- Purpose: Track kit contents with quantities and unit prices
+- UI: Dedicated `/mrp/kits` view
+- Backend: Expects new endpoints for `kit_items` CRUD
+
+**Tables Expected by New UI:**
+
+```sql
+-- Already exists (shared between both systems)
+CREATE TABLE project_kits (
+    id UUID PRIMARY KEY,
+    project_id UUID REFERENCES mrp_projects(id),
+    kit_number VARCHAR(50),
+    kit_name VARCHAR(255),
+    vendor VARCHAR(255),
+    price DECIMAL(12, 2),
+    use_kit BOOLEAN,
+    notes TEXT,
+    ...
+);
+
+-- NEW - Does not exist yet!
+CREATE TABLE kit_items (
+    id UUID PRIMARY KEY,
+    kit_id UUID REFERENCES project_kits(id) ON DELETE CASCADE,
+    item_id UUID REFERENCES items(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_price DECIMAL(12, 2),  -- Optional unit price
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+
+    CONSTRAINT unique_item_per_kit UNIQUE (kit_id, item_id)
+);
+```
+
+**Vue Component Queries:**
+
+```javascript
+// Load kits with part counts
+const { data } = await supabase
+  .from('project_kits')
+  .select(`
+    *,
+    kit_items (
+      quantity
+    )
+  `)
+  .eq('project_id', selectedProjectId.value)
+
+// Load kit items with item details
+const { data } = await supabase
+  .from('kit_items')
+  .select(`
+    *,
+    items (
+      item_number,
+      description,
+      material,
+      thickness
+    )
+  `)
+  .eq('kit_id', kitId)
+```
+
+**These queries will FAIL** until the `kit_items` table is created.
+
+---
+
+### What's Missing
+
+1. **Database Migration**
+   - File: `backend/migrations/2026-08-11_kit_items.sql`
+   - Action: Create `kit_items` table with foreign keys, indexes, RLS policies
+
+2. **Backend API Endpoints**
+   - `GET /api/mrp/projects/{project_id}/kits` - Update to return `part_count` and `total_pieces` from `kit_items`
+   - `GET /api/mrp/projects/{project_id}/kits/{kit_id}/items` - List kit items
+   - `POST /api/mrp/projects/{project_id}/kits/{kit_id}/items` - Bulk add items to kit
+   - `PATCH /api/kit-items/{item_id}` - Update quantity/unit_price
+   - `DELETE /api/kit-items/{item_id}` - Remove item from kit
+   - `GET /api/mrp/projects/{project_id}/available-items?exclude_kit={kit_id}` - Items not in kit
+
+3. **Cost Calculation Updates**
+   - File: `backend/app/services/cost_estimate.py`
+   - Query `kit_items` instead of (or in addition to) `project_item_source`
+   - Exclude parts found in active kits from individual cost calculations
+
+4. **Schema Documentation**
+   - File: `Documentation/03-DATABASE-SCHEMA.md`
+   - Add `kit_items` table definition
+
+---
+
+### Decision Required
+
+**Keep Both Systems or Migrate to One?**
+
+**Option A: Keep Both (Parallel Systems)**
+- `project_item_source` → Simple "make vs kit" toggle (Routing page)
+- `kit_items` → Detailed kit composition (/mrp/kits view)
+- **Pros:** Non-breaking change, existing features continue to work
+- **Cons:** Dual data models increase complexity, potential for inconsistency
+
+**Option B: Migrate to `kit_items` Only**
+- Deprecate `project_item_source`
+- Migrate existing data to `kit_items` format
+- Update all cost calculations to use `kit_items`
+- Remove Kit Management Slideout from MRP Dashboard
+- **Pros:** Single source of truth, simpler long-term
+- **Cons:** Migration effort, breaking change
+
+**Recommendation:** **Option B** - Migrate to `kit_items` only.
+
+**Reasons:**
+- `kit_items` provides richer data model (qty + unit_price)
+- Dedicated UI is more usable than modal slideout
+- Single data model simplifies future enhancements (kit templates, price history, etc.)
+- Migration can be done with data preservation (convert existing `project_item_source` to `kit_items` with qty=1)
+
+---
+
+### Migration Strategy
+
+**Phase 1: Database Setup**
+1. Create `kit_items` table migration
+2. Migrate existing `project_item_source` data:
+   ```sql
+   INSERT INTO kit_items (kit_id, item_id, quantity, unit_price, created_at)
+   SELECT kit_id, item_id, 1 AS quantity, NULL AS unit_price, created_at
+   FROM project_item_source
+   WHERE source_type = 'kit' AND kit_id IS NOT NULL;
+   ```
+3. Test migration on dev environment
+
+**Phase 2: Backend Updates**
+1. Add `kit_items` CRUD endpoints to `backend/app/routes/kits.py`
+2. Update `GET /api/mrp/projects/{project_id}/kits` to use `kit_items`
+3. Update `cost_estimate.py` to query `kit_items` instead of `project_item_source`
+4. Add unit tests
+
+**Phase 3: Frontend Updates**
+1. Test `/mrp/kits` view with real data
+2. Remove Kit Management Slideout from MRP Dashboard (optional)
+3. Remove `project_item_source` UI from Routing page (optional)
+
+**Phase 4: Deprecation**
+1. Mark `project_item_source` as deprecated in schema comments
+2. Optionally drop table after confirming all features work with `kit_items`
+3. Update documentation to reflect new system
+
+---
+
+### Files Changed
+
+**Frontend:**
+- `frontend/src/views/MrpKitsView.vue` - New 1055-line view
+- `frontend/src/views/MrpDashboardView.vue` - Added "Vendor Kits" nav button
+- `frontend/src/router/index.ts` - Added `/mrp/kits` route
+
+**Backend:**
+- No changes yet (requires migration and API updates)
+
+**Documentation:**
+- `Documentation/46-MRP-VENDOR-KITS.md` - Complete feature documentation
+- `Documentation/00-TABLE-OF-CONTENTS.md` - Added doc 46 to index
+
+---
+
+### Next Steps
+
+1. **Create `kit_items` migration** (highest priority - UI is non-functional without this)
+2. **Update backend API routes** to support `kit_items` CRUD
+3. **Update cost calculation** to use new data model
+4. **Test with sample project** to verify full workflow
+5. **Migrate existing data** from `project_item_source` to `kit_items`
+6. **Deprecate old system** (optional, but recommended)
+
+---
+
+### Related Documentation
+
+- **46-MRP-VENDOR-KITS.md** - Full feature documentation (new)
+- **37-KIT-BUNDLE-PRICING.md** - Original kit pricing system (uses `project_item_source`)
+- **03-DATABASE-SCHEMA.md** - Needs update with `kit_items` table
+- **04-SERVICES-REFERENCE.md** - Needs update with new API endpoints
+
+---
+
+**Last Updated:** 2026-08-11
+**Version:** 3.9.11
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

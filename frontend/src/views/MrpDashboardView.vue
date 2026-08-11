@@ -1004,6 +1004,10 @@ function goToCostSettings() {
   router.push('/mrp/settings')
 }
 
+function goToKits() {
+  router.push('/mrp/kits')
+}
+
 function goToCostReport() {
   const projectQuery = selectedProject.value ? `?project=${selectedProject.value.id}` : ''
   router.push(`/mrp/cost-report${projectQuery}`)
@@ -1230,6 +1234,10 @@ defineExpose({ openNestModal })
         <button class="nav-btn settings" @click="goToCostSettings">
           <span class="nav-dot settings"></span>
           Cost Settings
+        </button>
+        <button class="nav-btn kits" @click="goToKits">
+          <span class="nav-dot kits"></span>
+          Vendor Kits
         </button>
         <button class="nav-btn design-book" @click="goToDesignBook">
           <span class="nav-dot design-book"></span>
@@ -1971,6 +1979,7 @@ defineExpose({ openNestModal })
 .nav-dot.lookup { background: #22d3ee; }
 .nav-dot.tracking { background: #a855f7; }
 .nav-dot.settings { background: #10b981; }
+.nav-dot.kits { background: #8b5cf6; }
 .nav-dot.cost-report { background: #f472b6; }
 .nav-dot.assistant { background: #38bdf8; }
 .nav-dot.design-book { background: #14b8a6; }
