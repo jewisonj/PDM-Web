@@ -55,7 +55,8 @@ class Project(ProjectBase):
 
 # === Item Schemas ===
 class ItemBase(BaseModel):
-    item_number: str = Field(..., pattern=r"^[a-zA-Z]{3}\d{4,6}$")  # Accepts both cases, route normalizes to lowercase
+    """Base fields for items - no pattern validation (used for responses)."""
+    item_number: str
     name: Optional[str] = None
     revision: str = "A"
     iteration: int = 1
@@ -74,8 +75,29 @@ class ItemBase(BaseModel):
     unit_price: Optional[float] = None
 
 
-class ItemCreate(ItemBase):
-    pass
+class ItemCreate(BaseModel):
+    """Item creation with pattern validation.
+
+    Standard format: 3 letters + 4-6 digits (e.g., csp0030, wma20000)
+    Also accepts: mmc/spn/zzz prefixes with alphanumeric suffixes for supplier parts
+    """
+    item_number: str = Field(..., pattern=r"^[a-zA-Z]{3}[a-zA-Z0-9_-]+$")
+    name: Optional[str] = None
+    revision: str = "A"
+    iteration: int = 1
+    lifecycle_state: str = "Design"
+    description: Optional[str] = None
+    project_id: Optional[UUID] = None
+    material: Optional[str] = None
+    mass: Optional[float] = None
+    thickness: Optional[float] = None
+    cut_length: Optional[float] = None
+    cut_time: Optional[float] = None
+    price_est: Optional[float] = None
+    is_supplier_part: bool = False
+    supplier_name: Optional[str] = None
+    supplier_pn: Optional[str] = None
+    unit_price: Optional[float] = None
 
 
 class ItemUpdate(BaseModel):
