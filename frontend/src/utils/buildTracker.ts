@@ -40,8 +40,8 @@ export const PART_COLUMNS: TrackerColumn[] = [
 
 export const ASM_COLUMNS: TrackerColumn[] = [
   { key: 'JIG', label: 'JIG', stations: ['Weld Jigging'] },
-  { key: 'TIG', label: 'TIG', stations: ['Tig Welding'] },
-  { key: 'DS', label: 'DS', stations: ['Dual Shield Weld'] },
+  { key: 'LW', label: 'LW', stations: ['Light Weld'] },
+  { key: 'HW', label: 'HW', stations: ['Heavy Weld'] },
   { key: 'WCU', label: 'WCU', stations: ['Weld Cleanup'] },
   { key: 'ASM', label: 'ASM', stations: ['Mechanical Assembly', 'Plumbing', 'Wiring', 'Vinyl Wrap'] },
   { key: 'INS', label: 'INS', stations: ['Inspection'] },

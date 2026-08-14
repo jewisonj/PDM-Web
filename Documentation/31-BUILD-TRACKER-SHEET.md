@@ -6,7 +6,7 @@ The Build Tracker Sheet is a printable, per-project progress sheet for the shop 
 
 **Key Features:**
 - Fab parts grouped under their parent weldment/assembly, one row per part with a checkbox per station
-- Weldments/assemblies matrix (JIG/TIG/DS/WCU/ASM/INS columns) as a second table
+- Weldments/assemblies matrix (JIG/LW/HW/WCU/ASM/INS columns) as a second table
 - Derived build milestones (op 10-70) with plan dates computed from the scheduling engine
 - Purchased-parts receive checklist (ORD/RCV columns, long-lead flag)
 - Daily log block and shortages block for handwritten shop notes
@@ -120,8 +120,8 @@ Two fixed column sets map `workstations.station_name` values to printed columns.
 | Column | Station(s) folded in |
 |--------|----------------------|
 | JIG | Weld Jigging |
-| TIG | Tig Welding |
-| DS | Dual Shield Weld |
+| LW | Light Weld |
+| HW | Heavy Weld |
 | WCU | Weld Cleanup |
 | ASM | Mechanical Assembly, Plumbing, Wiring |
 | INS | Inspection |
@@ -130,7 +130,7 @@ Two fixed column sets map `workstations.station_name` values to printed columns.
 - `gate: true` -- rendered shaded with a heavy left border to mark a shop handoff point (e.g. ▸STG marks "ready to move to fab/weld")
 - `alwaysApplicable: true` -- the box is drawn open even when the station isn't in the item's routing (currently only ▸STG, so every made-part row always shows a staging box)
 
-**KNOWN LIMITATION:** Part-level weld operations that live in a *part's own* routing (e.g. `csp00210` having JIG/TIG steps directly, rather than picking them up at the assembly level) are not surfaced as part columns -- they're only reflected in the assembly matrix. Plumbing and Wiring stations both fold into the single ASM column, so those operations are not separately trackable on the sheet.
+**KNOWN LIMITATION:** Part-level weld operations that live in a *part's own* routing (e.g. `csp00210` having JIG/LW steps directly, rather than picking them up at the assembly level) are not surfaced as part columns -- they're only reflected in the assembly matrix. Plumbing and Wiring stations both fold into the single ASM column, so those operations are not separately trackable on the sheet.
 
 ---
 

@@ -242,7 +242,7 @@ def make_payload(pkg_qty=2, pkg_identity=None, pkg_code="I-SAW-1"):
                     "parts": [{"rid": "P01", "item_number": "csp00010", "displayNumber": "csp00010",
                                "name": "TUBE", "qty": pkg_qty, "readyBy": pkg_code,
                                "readyDay": 0, "source": None}],
-                    "weldSeq": [{"station": "Tig Welding", "abbrev": "TIG", "estMin": 120,
+                    "weldSeq": [{"station": "Light Weld", "abbrev": "LW", "estMin": 120,
                                  "day": 1, "notes": None}],
                     "childAsms": [],
                 },

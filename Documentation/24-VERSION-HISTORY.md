@@ -7,6 +7,105 @@
 
 ## Current Version
 
+### v3.9.11 (2026-08-12) -- Stale DXF Detection and Batch Regeneration
+
+**Status:** Current Production Release
+
+**Summary:** Identified and resolved a critical issue where DXF flat patterns were out of sync with updated STEP files. Discovered that 31 sheet metal parts had stale DXFs (some 6+ months old) causing incorrect dimensions and missing features in laser cutting files.
+
+#### Issue Discovered
+
+**Problem:** Part `sjp00010` (BOTTOM SHEET) showed 119.88" length in the DXF viewer but the engineering print showed 117.02". The bend slit was also missing from the DXF.
+
+**Root Cause:** DXF files were not being automatically regenerated when STEP files were updated. The DXF for sjp00010 was from February 2026 while the STEP was updated in August 2026 - a 184-day gap.
+
+#### Investigation
+
+```sql
+-- Query to find stale DXFs (STEP newer than DXF)
+WITH step_files AS (
+  SELECT DISTINCT ON (item_id) item_id, updated_at as step_updated
+  FROM files WHERE file_type = 'STEP'
+  ORDER BY item_id, updated_at DESC
+),
+dxf_files AS (
+  SELECT DISTINCT ON (item_id) item_id, updated_at as dxf_updated
+  FROM files WHERE file_type = 'DXF'
+  ORDER BY item_id, updated_at DESC
+)
+SELECT i.item_number, i.name,
+  ROUND(EXTRACT(EPOCH FROM (s.step_updated - d.dxf_updated))/86400) as days_behind
+FROM items i
+JOIN step_files s ON s.item_id = i.id
+JOIN dxf_files d ON d.item_id = i.id
+WHERE s.step_updated > d.dxf_updated
+  AND i.thickness IS NOT NULL
+ORDER BY days_behind DESC;
+```
+
+**Found:** 31 sheet metal parts with stale DXFs, ranging from 4 to 184 days behind.
+
+#### Resolution
+
+1. **Queued batch regeneration:** Inserted 31 `GENERATE_DXF` tasks into `work_queue`
+2. **Started FreeCAD worker:** `docker-compose up -d freecad-worker` + `python worker/worker_loop.py`
+3. **Results:**
+   - 23 parts successfully regenerated
+   - 8 parts failed (FreeCAD SheetMetal unfolder compatibility issues)
+
+#### Parts Successfully Regenerated
+
+| Part | Name | Days Behind |
+|------|------|-------------|
+| sjp00010 | BOTTOM SHEET | 184 |
+| sjp00015 | BOTTOM SHEET | 184 |
+| sjp00060 | RAIN SHIELD | 184 |
+| sjp00070 | ACCESS COVER | 184 |
+| sjp00090 | CONTROL COVER | 184 |
+| stp00105 | GOOSNECK BRACKET | 184 |
+| stp00110 | PLATE, FRONT COVER | 184 |
+| stp00340 | REAR PLATE | 184 |
+| stp00440 | SPACER PLATE | 184 |
+| jbp00105 | GOOSNECK BRACKET | 184 |
+| sjp00065 | RAIN SHIELD | 70 |
+| sjp00080 | TOP COVER | 70 |
+| sjp00470 | SIDE SHEET, ACCESS | 70 |
+| stp00100 | GOOSNECK BRACKET | 70 |
+| stp00160 | MOUNTING PLATE | 70 |
+| stp00200 | TOP COVER PLATE | 70 |
+| stp00250 | OVERLAP TAB | 70 |
+| stp00260 | VINYL DECAL | 70 |
+| stp00315 | SIDE PLATE | 70 |
+| stp00320 | SIDE PLATE | 70 |
+| stp00510 | BOTTOM PLATE | 70 |
+| stp00330 | FRONT PLATE | 66 |
+| rxp00180 | TOP RAIL | 4 |
+
+#### Parts Requiring Manual DXF Export
+
+These parts have geometry that FreeCAD's SheetMetal unfolder cannot process automatically:
+
+| Part | Name | Error Type |
+|------|------|------------|
+| csp00210 | MECH CABINET FLOOR | SheetTree thickness detection |
+| csp00540 | DOOR PLATE | SheetTree thickness detection |
+| csp00610 | DOOR STIFFNER | SheetTree thickness detection |
+| csp00650 | HINGE DOUBLER | SheetTree thickness detection |
+| csp00660 | LATCH PLATE | SheetTree thickness detection |
+| csp00670 | DOOR STIFFNER | SheetTree thickness detection |
+| stp00380 | TOP LID PLATE | BRepAdaptor geometry error |
+| stp00385 | TOP COVER PLATE | SheetTree thickness detection |
+
+**Workaround:** Export DXF manually from Creo and upload via PDM-Upload bridge.
+
+#### Recommendations
+
+1. **Automatic DXF regeneration:** Consider adding a trigger to automatically queue `GENERATE_DXF` tasks when STEP files are uploaded/updated
+2. **Stale DXF monitoring:** Add a dashboard widget or periodic report to flag parts where DXF is older than STEP
+3. **FreeCAD compatibility:** Investigate SheetMetal addon updates or alternative flattening approaches for the failing parts
+
+---
+
 ### v3.9.10 (2026-08-11) -- One-Click Build Tracker Sharing
 
 **Status:** Current Production Release
@@ -1048,7 +1147,7 @@ A new printable view gives the shop floor a paper twin of the same completion da
 
 - **Access:** MRP Project Tracking (`/mrp/tracking`) -> select a project -> "Print Build Tracker Sheet" button -> `/mrp/tracker/:projectCode`
 - **Per-station checkboxes:** Fab parts get a box per routing station (SAW/WJ/BRK/BND/DBR/INS/STG), not a single "fab complete" box
-- **Assembly matrix:** Second table with JIG/TIG/DS/WCU/ASM/INS columns for weldments and assemblies, ordered by DFS post-order traversal from the project's top assembly
+- **Assembly matrix:** Second table with JIG/LW/HW/WCU/ASM/INS columns for weldments and assemblies, ordered by DFS post-order traversal from the project's top assembly
 - **Milestones:** 7 standard build milestones (op 10-70: purchased ordered, purchased received, all cut/deburred, all welded, assembly complete, final inspection, ship) with plan dates derived from the existing scheduling engine
 - **Purchased parts checklist:** Compact receive checklist; long-lead (`spn`, receive-only) items get ORD+RCV columns, `mmc` stock hardware gets RCV only
 - **Pre-fill toggle:** "Pre-fill recorded progress" checkbox in the toolbar; off prints a blank sheet, on prints already-recorded stations as solid boxes with partials shown as a handwritten tally
@@ -1102,7 +1201,7 @@ Pure data-shaping logic with no Supabase access (so the same logic can later bac
 
 - Pre-existing `PdfMeasure.vue` TypeScript errors still fail `npm run build` -- unrelated to this feature, flagged separately
 - `mrp_project_parts` flat quantities can disagree with the BOM-tree cost rollup (known issue, see `06-BOM-COST-ROLLUP-GUIDE.md`); the tracker avoids this by grouping from the BOM tree directly
-- Part-level weld operations in a part's own routing (e.g. `csp00210` having JIG/TIG steps directly) are not shown as fab-part columns -- only reflected at the assembly-matrix level
+- Part-level weld operations in a part's own routing (e.g. `csp00210` having JIG/LW steps directly) are not shown as fab-part columns -- only reflected at the assembly-matrix level
 - Plumbing and Wiring stations both fold into the single ASM column on the assembly matrix
 
 #### Files Changed Summary

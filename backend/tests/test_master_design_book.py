@@ -98,7 +98,7 @@ def kit_descriptor():
                 {"station": "Weld Jigging", "abbrev": "JIG", "estMin": 180, "day": 4,
                  # deliberate unicode — must transliterate, not crash
                  "notes": "Square to rails — gussets pull the frame ±1/16″ if welded free. Ø0.25 holes."},
-                {"station": "Tig Welding", "abbrev": "TIG", "estMin": 180, "day": 5, "notes": None},
+                {"station": "Light Weld", "abbrev": "LW", "estMin": 180, "day": 5, "notes": None},
             ],
             "childAsms": [],
         },

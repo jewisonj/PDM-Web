@@ -16,7 +16,7 @@ const WS = [
   { id: 's-wj', station_code: '012', station_name: 'Waterjet', station_group: 'Fabrication', sort_order: 11 },
   { id: 's-brk', station_code: '013', station_name: 'Press Brake', station_group: 'Fabrication', sort_order: 13 },
   { id: 's-jig', station_code: '014', station_name: 'Weld Jigging', station_group: 'Weld', sort_order: 14 },
-  { id: 's-tig', station_code: '015', station_name: 'Tig Welding', station_group: 'Weld', sort_order: 15 },
+  { id: 's-lw', station_code: '015', station_name: 'Light Weld', station_group: 'Weld', sort_order: 15 },
   { id: 's-wcu', station_code: '017', station_name: 'Weld Cleanup', station_group: 'Weld', sort_order: 17 },
   { id: 's-stg', station_code: '020', station_name: 'Part Staging', station_group: 'Assembly', sort_order: 20 },
   { id: 's-asm', station_code: '025', station_name: 'Mechanical Assembly', station_group: 'Assembly', sort_order: 25 },
@@ -93,8 +93,8 @@ const routing = [
   ...ops(ITEMS.csp01.id, ['Saw', 'Deburr', 'Inspection'], 500),
   ...ops(ITEMS.csp05.id, ['Saw', 'Deburr', 'Inspection'], 300),
   ...ops(ITEMS.csp21.id, ['Waterjet', 'Press Brake', 'Deburr', 'Inspection']),
-  ...ops(ITEMS.csa30.id, ['Weld Jigging', 'Tig Welding', 'Weld Cleanup', 'Inspection']),
-  ...ops(ITEMS.csa20.id, ['Weld Jigging', 'Tig Welding', 'Weld Cleanup', 'Inspection']),
+  ...ops(ITEMS.csa30.id, ['Weld Jigging', 'Light Weld', 'Weld Cleanup', 'Inspection']),
+  ...ops(ITEMS.csa20.id, ['Weld Jigging', 'Light Weld', 'Weld Cleanup', 'Inspection']),
   ...ops(ITEMS.csa10.id, ['Mechanical Assembly', 'Inspection']),
   ...ops(ITEMS.cspro.id, ['Receiving']),
   ...ops(ITEMS.mmc1.id, ['Receiving']),
@@ -323,7 +323,7 @@ describe('masterDesignBook', () => {
       { parent_item_id: csaDD.id, child_item_id: cspDD.id, quantity: 3 }
     )
     inp.routing.push(
-      ...ops(csaDD.id, ['Weld Jigging', 'Tig Welding']),
+      ...ops(csaDD.id, ['Weld Jigging', 'Light Weld']),
       ...ops(cspDD.id, ['Saw'])
     )
     const result = masterDesignBook(inp)
@@ -496,7 +496,7 @@ describe('masterDesignBook with kit sourcing', () => {
     const result = masterDesignBook(inp)
     // csa30 keeps its weld sequence; nothing is bundled
     const lower = result.sections.find(s => s.section_code === 'II-CSA00030')!
-    expect((lower.payload as any).weldSeq.map((s: any) => s.abbrev)).toContain('TIG')
+    expect((lower.payload as any).weldSeq.map((s: any) => s.abbrev)).toContain('LW')
     expect(result.book.bundles).toEqual([])
   })
 })

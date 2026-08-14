@@ -118,8 +118,8 @@ const STATION_CAPACITIES: Record<string, StationCapacityConfig> = {
   '025': { daily_minutes: 8 * 60, max_parallel: 3 },   // Mech Assembly (1440 min)
 
   // Welding pool - shared welders (treat as single pool)
-  '015': { daily_minutes: 8 * 60, max_parallel: 2 },   // Tig Welding (960 min)
-  '016': { daily_minutes: 8 * 60, max_parallel: 2 },   // Dual Shield Weld (960 min)
+  '015': { daily_minutes: 8 * 60, max_parallel: 2 },   // Light Weld (960 min)
+  '016': { daily_minutes: 8 * 60, max_parallel: 2 },   // Heavy Weld (960 min)
   '017': { daily_minutes: 8 * 60, max_parallel: 2 },   // Weld Cleanup (960 min)
 
   // Finishing/support operations

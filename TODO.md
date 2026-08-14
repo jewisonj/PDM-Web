@@ -53,7 +53,7 @@ PDM-Web is a Product Data Management system migrated from Windows/PowerShell/SQL
 ### v3.8 (2026-07-05) - Shop-Floor Build Tracker Sheet
 - [x] New printable per-project Build Tracker sheet: `/mrp/tracking` -> "Print Build Tracker Sheet" -> `/mrp/tracker/:projectCode`
 - [x] Fab parts grouped under parent weldment with per-station checkboxes (SAW/WJ/BRK/BND/DBR/INS/STG)
-- [x] Weldments/assemblies matrix (JIG/TIG/DS/WCU/ASM/INS columns), DFS post-order assembly ordering
+- [x] Weldments/assemblies matrix (JIG/LW/HW/WCU/ASM/INS columns), DFS post-order assembly ordering
 - [x] 7 derived build milestones (op 10-70) with plan dates from the existing scheduling engine
 - [x] Purchased-parts receive checklist (ORD/RCV, long-lead flag for spn/receive-only vs. mmc)
 - [x] Pre-fill toggle: already-completed stations print as solid boxes for mid-project reprints; toggle off for a blank sheet

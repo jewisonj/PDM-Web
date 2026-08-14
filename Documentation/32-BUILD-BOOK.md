@@ -221,8 +221,8 @@ export function purchasedSource(itemNumber: string, supplierName?: string | null
 ```typescript
 export const STATION_ABBREV: Record<string, string> = {
   'Receiving': 'RCV', 'Saw': 'SAW', 'Deburr': 'DBR', 'Waterjet': 'WJ',
-  'Press Brake': 'PB', 'Weld Jigging': 'JIG', 'Tig Welding': 'TIG',
-  'Dual Shield Weld': 'DS', 'Weld Cleanup': 'WCU', 'Pipe Bending': 'PIP',
+  'Press Brake': 'PB', 'Weld Jigging': 'JIG', 'Light Weld': 'LW',
+  'Heavy Weld': 'HW', 'Weld Cleanup': 'WCU', 'Pipe Bending': 'PIP',
   'Hole Punch - Iron Worker': 'HP', 'Part Staging': 'STG',
   'Mechanical Assembly': 'ASM', 'Plumbing': 'PLM', 'Wiring': 'WIR',
   'Inspection': 'INS', 'Galvanizing': 'GAL', 'Paint and Paint Prep': 'PNT',

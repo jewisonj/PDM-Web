@@ -474,7 +474,7 @@ onUnmounted(() => {
             <!-- assembly matrix -->
             <div v-if="page.showRail" class="gM">
               <div class="sec">
-                <div class="sec-t">WELDMENTS &amp; ASSEMBLIES <small>JIG→TIG→DS→CLEANUP · ASM = BUILD · INS = FINAL</small></div>
+                <div class="sec-t">WELDMENTS &amp; ASSEMBLIES <small>JIG→LW→HW→CLEANUP · ASM = BUILD · INS = FINAL</small></div>
                 <table class="asm">
                   <tbody>
                     <tr>

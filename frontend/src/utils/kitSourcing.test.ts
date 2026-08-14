@@ -22,7 +22,7 @@ const WS = [
   { id: 's-dbr', station_code: '011', station_name: 'Deburr', station_group: 'Fabrication', sort_order: 12 },
   { id: 's-stg', station_code: '020', station_name: 'Part Staging', station_group: 'Assembly', sort_order: 20 },
   { id: 's-jig', station_code: '014', station_name: 'Weld Jigging', station_group: 'Weld', sort_order: 14 },
-  { id: 's-tig', station_code: '015', station_name: 'Tig Welding', station_group: 'Weld', sort_order: 15 },
+  { id: 's-lw', station_code: '015', station_name: 'Light Weld', station_group: 'Weld', sort_order: 15 },
   { id: 's-asm', station_code: '025', station_name: 'Mechanical Assembly', station_group: 'Assembly', sort_order: 25 },
   { id: 's-ins', station_code: '050', station_name: 'Inspection', station_group: 'QC', sort_order: 50 },
 ]
@@ -80,8 +80,8 @@ function ops(itemId: string, stationNames: string[], estMin = 30): SourcedRoutin
 const baseRouting: SourcedRoutingRow[] = [
   ...ops(ITEMS.csp01.id, ['Saw', 'Deburr', 'Inspection']),
   ...ops(ITEMS.csp05.id, ['Saw', 'Deburr', 'Inspection']),
-  ...ops(ITEMS.csa30.id, ['Weld Jigging', 'Tig Welding']),
-  ...ops(ITEMS.csa20.id, ['Weld Jigging', 'Tig Welding']),
+  ...ops(ITEMS.csa30.id, ['Weld Jigging', 'Light Weld']),
+  ...ops(ITEMS.csa20.id, ['Weld Jigging', 'Light Weld']),
   ...ops(ITEMS.csa10.id, ['Mechanical Assembly']),
   ...ops(ITEMS.mmc1.id, ['Receiving'], 3),
 ]

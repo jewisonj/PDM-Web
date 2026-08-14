@@ -14,7 +14,7 @@ const WS = [
   { id: 's-wj', station_code: '012', station_name: 'Waterjet', station_group: 'Fabrication', sort_order: 11 },
   { id: 's-brk', station_code: '013', station_name: 'Press Brake', station_group: 'Fabrication', sort_order: 13 },
   { id: 's-jig', station_code: '014', station_name: 'Weld Jigging', station_group: 'Weld', sort_order: 14 },
-  { id: 's-tig', station_code: '015', station_name: 'Tig Welding', station_group: 'Weld', sort_order: 15 },
+  { id: 's-lw', station_code: '015', station_name: 'Light Weld', station_group: 'Weld', sort_order: 15 },
   { id: 's-wcu', station_code: '017', station_name: 'Weld Cleanup', station_group: 'Weld', sort_order: 17 },
   { id: 's-asm', station_code: '025', station_name: 'Mechanical Assembly', station_group: 'Assembly', sort_order: 25 },
   { id: 's-ins', station_code: '050', station_name: 'Inspection', station_group: 'QC', sort_order: 50 },
@@ -89,8 +89,8 @@ const routing = [
   ...ops(ITEMS.csp05.id, ['Saw', 'Deburr', 'Inspection']),
   ...ops(ITEMS.csp21.id, ['Waterjet', 'Press Brake', 'Deburr', 'Inspection']),
   ...ops(ITEMS.csp63.id, ['Waterjet', 'Deburr', 'Inspection']),
-  ...ops(ITEMS.csa30.id, ['Weld Jigging', 'Tig Welding', 'Weld Cleanup', 'Inspection']),
-  ...ops(ITEMS.csa20.id, ['Weld Jigging', 'Tig Welding', 'Weld Cleanup', 'Inspection']),
+  ...ops(ITEMS.csa30.id, ['Weld Jigging', 'Light Weld', 'Weld Cleanup', 'Inspection']),
+  ...ops(ITEMS.csa20.id, ['Weld Jigging', 'Light Weld', 'Weld Cleanup', 'Inspection']),
   ...ops(ITEMS.csa10.id, ['Mechanical Assembly', 'Inspection']),
   ...ops(ITEMS.cspro.id, ['Receiving']),
   ...ops(ITEMS.mmc1.id, ['Receiving']),
@@ -216,7 +216,7 @@ describe('buildBook', () => {
   it('builds kit chapters in assembly build order with weld sequences', () => {
     expect(book.kits.map(k => k.item_number)).toEqual(['csa00030', 'csa00020', 'csa00010'])
     const a01 = book.kits[0]!
-    expect(a01.weldSeq.map(s => s.abbrev)).toEqual(['JIG', 'TIG', 'WCU', 'INS'])
+    expect(a01.weldSeq.map(s => s.abbrev)).toEqual(['JIG', 'LW', 'WCU', 'INS'])
     expect(a01.estMin).toBe(40)
     expect(a01.parts.map(p => p.item_number)).toEqual(['csp00010', 'csp00050'])
     // every kit part knows which package produces it

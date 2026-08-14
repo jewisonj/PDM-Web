@@ -245,7 +245,12 @@
       "Bash(cmd.exe //c \"dir /s /b V:\\\\*STP* 2>nul\")",
       "Bash(cmd.exe //c \"dir /s /b C:\\\\Users\\\\*STP_Export* 2>nul\")",
       "Bash(start cmd /k \"python -m uvicorn app.main:app --reload --port 8001\")",
-      "Bash(start cmd /k \"npm run dev\")"
+      "Bash(start cmd /k \"npm run dev\")",
+      "Bash(for pid in 168612 51432 77812 48436)",
+      "Bash(do taskkill //F //PID $pid)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(ss:*)"
     ],
     "deny": []
   },

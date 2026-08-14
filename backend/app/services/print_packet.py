@@ -125,7 +125,7 @@ def categorize_part(item_number: str) -> str:
 PRE_FAB_CUTOFF = 13  # sort_order <= 13 is pre-fab (through Press Brake)
 
 # Stations to group into single "FAB" column (welding operations)
-FAB_STATIONS = {"Weld Jigging", "Tig Welding", "Dual Shield Weld", "Weld Cleanup"}
+FAB_STATIONS = {"Weld Jigging", "Light Weld", "Heavy Weld", "Weld Cleanup"}
 
 # Post-fab individual stations (after FAB group)
 POST_FAB_STATIONS = {"Paint and Paint Prep", "Mechanical Assembly"}
@@ -138,8 +138,8 @@ STATION_ABBREV = {
     "Waterjet": "WJ",
     "Press Brake": "PB",
     "Weld Jigging": "JIG",
-    "Tig Welding": "TIG",
-    "Dual Shield Weld": "DS",
+    "Light Weld": "LW",
+    "Heavy Weld": "HW",
     "Weld Cleanup": "WCU",
     "Pipe Bending": "PIP",
     "Hole Punch - Iron Worker": "HP",
@@ -166,7 +166,7 @@ def _get_dynamic_workstation_columns(
 
     Returns: (pre_fab_columns, has_fab_work, post_fab_columns)
     - pre_fab_columns: Individual stations before TO FAB gate
-    - has_fab_work: True if any child has FAB stations (Weld Jigging, Tig, etc.)
+    - has_fab_work: True if any child has FAB stations (Weld Jigging, Light Weld, etc.)
     - post_fab_columns: Paint and Assembly columns (if used)
 
     Columns are sorted by the minimum routing sequence across all children.

@@ -44,8 +44,8 @@ The cost estimation system has three cost layers that roll up per-item and per-p
 | 012 | Waterjet | null | false | null |
 | 013 | Press Brake | null | false | null |
 | 014 | Weld Jigging | null | false | null |
-| 015 | Tig Welding | null | false | null |
-| 016 | Dual Shield Weld | null | false | null |
+| 015 | Light Weld | null | false | null |
+| 016 | Heavy Weld | null | false | null |
 | 017 | Weld Cleanup | null | false | null |
 | 018 | Pipe Bending | null | false | null |
 | 019 | Hole Punch - Iron Worker | null | false | null |
