@@ -128,7 +128,7 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     # Get flat face (largest face of unfolded shape)
     flat_faces = sorted(unfold_obj.Shape.Faces, key=lambda f: f.Area, reverse=True)
     flat_face = flat_faces[0]
-    print(f"\nUsing largest face (area={flat_face.Area:.1f}mm²)")
+    print(f"\nUsing largest face (area={flat_face.Area:.1f}mm^2)")
     print(f"  Face has {len(flat_face.Wires)} wires, {len(flat_face.Edges)} edges")
 
     # Examine each wire in detail
@@ -143,34 +143,60 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
         if small_wire_edges:
             print(f"    Small edges (<5mm): {small_wire_edges}")
 
-    # Determine face orientation to get correct 2D coordinates
+    # Determine face orientation and create proper 2D projection
     face_normal = flat_face.normalAt(0, 0)
     print(f"Face normal: ({face_normal.x:.3f}, {face_normal.y:.3f}, {face_normal.z:.3f})")
 
-    # Determine which axes to use based on face orientation
-    if abs(face_normal.z) > 0.9:
-        use_axes = ('x', 'y')
-        print("Face orientation: XY plane")
-    elif abs(face_normal.y) > 0.9:
-        use_axes = ('x', 'z')
-        print("Face orientation: XZ plane")
-    else:
-        use_axes = ('y', 'z')
-        print("Face orientation: YZ plane")
-
-    # Scale factor: mm to inches (applied during edge creation to avoid
-    # transformGeometry() which converts all curves to BSpline)
+    # Scale factor: mm to inches
     scale_factor = 1.0 / 25.4
 
-    def get_2d_coords(point):
-        """Extract 2D coordinates based on face orientation, scaled to inches."""
-        sf = scale_factor
-        if use_axes == ('x', 'y'):
-            return FreeCAD.Vector(point.x * sf, point.y * sf, 0)
-        elif use_axes == ('x', 'z'):
-            return FreeCAD.Vector(point.x * sf, point.z * sf, 0)
-        else:  # ('y', 'z')
-            return FreeCAD.Vector(point.y * sf, point.z * sf, 0)
+    # Check if face is aligned with a principal plane (within 5 degrees)
+    if abs(face_normal.z) > 0.996:  # ~5 degrees from XY
+        use_axes = ('x', 'y')
+        print("Face orientation: XY plane (aligned)")
+        def get_2d_coords(point):
+            return FreeCAD.Vector(point.x * scale_factor, point.y * scale_factor, 0)
+    elif abs(face_normal.y) > 0.996:  # ~5 degrees from XZ
+        use_axes = ('x', 'z')
+        print("Face orientation: XZ plane (aligned)")
+        def get_2d_coords(point):
+            return FreeCAD.Vector(point.x * scale_factor, point.z * scale_factor, 0)
+    elif abs(face_normal.x) > 0.996:  # ~5 degrees from YZ
+        use_axes = ('y', 'z')
+        print("Face orientation: YZ plane (aligned)")
+        def get_2d_coords(point):
+            return FreeCAD.Vector(point.y * scale_factor, point.z * scale_factor, 0)
+    else:
+        # Face is tilted - project onto actual face plane
+        print("Face orientation: TILTED - using face-plane projection")
+
+        # Create local coordinate system on the face
+        # Use principal axes from shape analysis or construct from normal
+        # Pick an arbitrary vector not parallel to normal, then cross to get tangents
+        if abs(face_normal.z) < 0.9:
+            arbitrary = FreeCAD.Vector(0, 0, 1)
+        else:
+            arbitrary = FreeCAD.Vector(1, 0, 0)
+
+        u_tangent = face_normal.cross(arbitrary).normalize()
+        v_tangent = face_normal.cross(u_tangent).normalize()
+
+        # Get face center for origin reference
+        face_center = flat_face.CenterOfMass
+        print(f"  u_tangent: ({u_tangent.x:.3f}, {u_tangent.y:.3f}, {u_tangent.z:.3f})")
+        print(f"  v_tangent: ({v_tangent.x:.3f}, {v_tangent.y:.3f}, {v_tangent.z:.3f})")
+
+        def get_2d_coords(point):
+            # Vector from face center to point
+            vec = FreeCAD.Vector(point.x - face_center.x,
+                                  point.y - face_center.y,
+                                  point.z - face_center.z)
+            # Project onto face tangent directions
+            u = vec.dot(u_tangent) * scale_factor
+            v = vec.dot(v_tangent) * scale_factor
+            return FreeCAD.Vector(u, v, 0)
+
+        use_axes = ('face_u', 'face_v')
 
     # Get all points for bounding box calculation
     all_points = []
@@ -190,12 +216,29 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     print(f"  {part_width * 25.4:.3f} mm x {part_height * 25.4:.3f} mm")
     print(f"  ({part_width:.3f}\" x {part_height:.3f}\")")
 
-    # Detect collapsed geometry (one dimension near zero = unfold failed)
+    # Get original part bounding box for comparison
+    orig_bb = imported_obj.Shape.BoundBox
+    orig_dims = sorted([orig_bb.XLength, orig_bb.YLength, orig_bb.ZLength], reverse=True)
+    orig_max_dim = orig_dims[0] / 25.4  # Convert to inches
+    orig_mid_dim = orig_dims[1] / 25.4
+    print(f"Original part bbox: {orig_dims[0]:.1f} x {orig_dims[1]:.1f} x {orig_dims[2]:.1f}mm")
+
+    # Detect failed unfold: collapsed geometry OR unreasonably large result
     min_dim = min(part_width, part_height)
     max_dim = max(part_width, part_height)
-    if min_dim < 0.1 and max_dim > 1.0:  # Less than 0.1" in one direction = likely a line
+    unfold_failed = False
+
+    print(f"Unfold vs original: {max_dim:.2f}\" vs {orig_max_dim:.2f}\" (ratio: {max_dim/orig_max_dim:.1f}x)")
+
+    if min_dim < 0.1 and max_dim > 1.0:  # Collapsed to a line
         print(f"\nWARNING: Unfold result is collapsed (aspect ratio {max_dim/max(min_dim, 0.001):.0f}:1)")
-        print("Falling back to direct face export (part may have no bends)...")
+        unfold_failed = True
+    elif max_dim > orig_max_dim * 5:  # Unfold >5x larger than original = garbage
+        print(f"\nWARNING: Unfold result is unreasonably large ({max_dim:.1f}\" vs original {orig_max_dim:.1f}\")")
+        unfold_failed = True
+
+    if unfold_failed:
+        print("Falling back to direct face export (part may have no bends or unfold failed)...")
 
         # Fall back to original imported object's largest face
         original_faces = sorted(imported_obj.Shape.Faces, key=lambda f: f.Area, reverse=True)
@@ -275,8 +318,23 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
             p1 = get_2d_coords(edge.Vertexes[0].Point)
             p2 = get_2d_coords(edge.Vertexes[1].Point)
             dist = p1.distanceToPoint(p2)
-            # Skip zero-length edges (identical points)
+            # Handle zero-length edges - try to recover from curve parameters
             if dist < 1e-6:
+                # The 2D projection might collapse edges - try using 3D edge length
+                if edge.Length > 0.1:  # Edge has real 3D length
+                    try:
+                        start_pt = edge.valueAt(edge.FirstParameter)
+                        end_pt = edge.valueAt(edge.LastParameter)
+                        p1 = get_2d_coords(start_pt)
+                        p2 = get_2d_coords(end_pt)
+                        dist = p1.distanceToPoint(p2)
+                        if dist > 1e-6:
+                            print(f"  {label}Line recovered from params (3D length={edge.Length:.2f}mm)")
+                            edges_2d.append(Part.makeLine(p1, p2))
+                            edge_stats["Line"] += 1
+                            return
+                    except:
+                        pass
                 print(f"  {label}SKIP: Zero-length line ({dist:.8f}\")")
                 edge_stats["Skipped"] += 1
                 return
