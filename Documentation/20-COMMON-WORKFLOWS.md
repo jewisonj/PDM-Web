@@ -616,11 +616,13 @@ The packet includes a cover sheet with categorized parts lists and individual pa
 
 **Routing Stamp Design:**
 - **Position:** Right edge, vertically centered on each part PDF page
-- **Content:** Project code, start/due dates, item number, quantity, routing operations
+- **Content:** Quantity (QTY) and workstation checkboxes
+- **Size:** Compact 28pt height, auto-sized width (minimum 80pt, expands to fit longest station name)
 - **Transparency:** Stamp box uses transparent background (`fill=0`) so underlying drawing content remains visible
 - **Border:** Thin (0.5pt) dark gray border for subtle visual separation
 - **Text:** Black text for maximum readability on white PDF background
-- **Purpose:** Provides routing information without obscuring critical drawing details, dimensions, or notes
+- **Workstations:** Station names shown without abbreviation codes (e.g., "Saw" not "SAW - Saw")
+- **Purpose:** Provides essential shop floor information (how many to make, which stations handle the part) without obscuring critical drawing details. Part number and project code are omitted as they're already on the drawing title block/border.
 
 ### Downloading DXF Bundle for Project
 

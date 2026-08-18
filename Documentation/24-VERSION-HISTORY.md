@@ -7,9 +7,43 @@
 
 ## Current Version
 
-### v3.9.11 (2026-08-12) -- Stale DXF Detection and Batch Regeneration
+### v3.9.12 (2026-08-18) -- Simplified Print Packet Stamp
 
 **Status:** Current Production Release
+
+**Summary:** Simplified the print packet routing stamp overlay to show only essential shop floor information - quantity and workstation checkboxes. Removed project code, part number, and date fields to create a smaller, cleaner stamp that takes up less drawing space.
+
+#### Changes Made
+
+**Stamp Content Reduction:**
+- **Kept:** QTY field and workstation checkoff boxes
+- **Removed:** Project code, part number, start date, due date
+- **Reason:** Shop workers only need to know how many to make and which stations to check off. Other metadata (part number, project) is already on the drawing border/title block.
+
+**Automatic Width Sizing:**
+- Stamp width now dynamically calculated based on the longest workstation name
+- Station names shown without abbreviation codes (e.g., "Saw" instead of "SAW - Saw")
+- Minimum width: 80pt, expands as needed to fit content without truncation
+- Prevents text overflow issues when workstation names vary in length
+
+**Reduced Dimensions:**
+- Base height: 120pt → 28pt (76% reduction)
+- Line height: 14pt → 12pt
+- More compact layout reduces drawing obstruction
+
+**File Changed:**
+- `backend/app/services/print_packet.py` - `_create_stamp()` function
+
+**Design Rationale:**
+The original stamp included metadata that duplicates information already present on engineering drawings (part number in title block, project code on border). The shop floor only needs actionable information: how many parts to produce and which workstations handle the part. A smaller stamp reduces the chance of obscuring critical drawing details.
+
+**Commit:** `f8b1187` - "Simplify print packet stamp to show only QTY and workstations"
+
+---
+
+### v3.9.11 (2026-08-12) -- Stale DXF Detection and Batch Regeneration
+
+**Status:** Previous Release
 
 **Summary:** Identified and resolved a critical issue where DXF flat patterns were out of sync with updated STEP files. Discovered that 31 sheet metal parts had stale DXFs (some 6+ months old) causing incorrect dimensions and missing features in laser cutting files.
 

@@ -1329,6 +1329,7 @@ A `.env` file in `backend/` provides these values for local development. In prod
 36. **DXF filenames include thickness and quantity** -- DXF bundle downloads from MRP dashboard now use descriptive filenames: `{item_number}_thk-{thickness}_qty-{quantity}.dxf`. Thickness is formatted as 4-digit thousandths of inch (0.25" → 0250, 0.125" → 0125). This prevents shop floor errors when loading files into waterjet CAM software - operator can verify correct material thickness from filename without opening the file. Format matches industry standard (part_spec_qty pattern). **UUID dictionary keys must be strings** - when building lookup dictionaries with UUIDs from Supabase, always convert to string with `str(uuid)` for both keys and lookups, as UUID equality checks can fail silently.
 37. **Backend reload requires killing all Python processes** -- On Windows, uvicorn's `--reload` flag doesn't always properly restart when code changes. Multiple zombie Python processes can accumulate on port 8001, and requests may be routed to old processes with stale code. **Always kill ALL Python processes before restarting backend:** `taskkill /F /IM python.exe`, then verify port 8001 is free with `netstat -ano | findstr 8001`, then start a single clean backend. VS Code integrated terminals can auto-start multiple servers. Use a single dedicated terminal for backend development.
 38. **FastAPI route ordering matters** -- Parameterized routes like `@router.get("/{item_id}")` must be defined AFTER all specific routes (e.g., `/list`, `/upload`). FastAPI matches routes in definition order, and parameterized routes act as catch-alls that intercept any path. Always organize routes: specific paths first, then parameterized paths at the end. Test all endpoints after reorganizing routes.
+39. **Eliminate redundancy in PDF overlays** -- When adding stamps or annotations to PDFs, only include information that's NOT already on the drawing. Print packet routing stamps were simplified from 7 fields (project, part number, dates, qty, workstations) to 2 fields (qty, workstations) because part number and project are already in the drawing title block. This reduced stamp height from 120pt to 28pt (76% smaller), minimizing drawing obstruction. **Pattern:** Start with minimum viable overlay content, auto-size dynamically based on actual content (not worst-case), and remove any field that duplicates the base document.
 
 ---
 
@@ -3028,6 +3029,257 @@ When topology is broken, fall back to geometry.
 
 ---
 
-**Last Updated:** 2026-08-17
-**Version:** 3.9.11
+### 47. Spurious Diagonal Edges in DXF Flat Patterns
+
+**Date:** 2026-08-17
+**Version:** v3.9.12
+
+**Symptom:** Parts like `stp00330` showed diagonal lines connecting unrelated features in the DXF output. These "ghost lines" spanned across the part from one corner to a distant hole or edge, creating invalid geometry for nesting and laser cutting.
+
+**Root Cause:** FreeCAD's SheetMetal unfolder creates edges with correct vertex topology (2 vertices present) but incorrect geometric definitions. The edge's `Curve` object claims to be a valid line/arc, but when evaluated it produces coordinates that span diagonally across the part instead of following the actual sheet metal boundary.
+
+This is different from pitfall #46 (broken vertices). Here the vertices **exist** but the curve geometry between them is wrong.
+
+**Example:**
+```
+Part bounding box: 0-300mm x 0-200mm
+Expected edge: Line from (10, 5) to (10, 8)  [3mm vertical line]
+Actual edge.Curve: Line from (10, 5) to (285, 190)  [diagonal spanning 90% of part]
+```
+
+**Diagnosis:**
+
+1. Generated DXF for `stp00330` and observed spurious diagonal lines
+2. Added logging to `flatten_sheetmetal.py` to print edge start/end coordinates
+3. Found edges with endpoints spanning 200+ mm when part features were only 3mm apart
+4. Calculated part diagonal (bounding box) and found suspicious edges spanning >30% of part diagonal
+5. Realized FreeCAD unfolder has fundamental geometry bugs, not just topology issues
+
+**The Fix:**
+
+Added **diagonal edge detection** in `worker/scripts/flatten_sheetmetal.py` (lines ~170-185):
+
+```python
+# Calculate part diagonal for suspicion threshold
+bbox = face.BoundBox
+part_diagonal = math.sqrt((bbox.XMax - bbox.XMin)**2 + (bbox.YMax - bbox.YMin)**2)
+threshold_distance = 0.3 * part_diagonal  # 30% of diagonal
+
+# Check each edge for suspicious spanning
+for edge in wire.OrderedEdges:
+    start_pt = edge.Vertexes[0].Point
+    end_pt = edge.Vertexes[-1].Point
+    edge_length = start_pt.distanceToPoint(end_pt)
+
+    if edge_length > threshold_distance:
+        print(f"  Suspicious diagonal edge detected ({edge_length:.1f}mm > {threshold_distance:.1f}mm threshold)")
+        use_discretization = True
+        break
+
+if use_discretization:
+    # Bypass edge-by-edge processing - use wire discretization instead
+    points = wire.discretize(Distance=2.5)  # 2.5mm resolution for outer boundary
+```
+
+**Key Decisions:**
+
+**Why 30% threshold?**
+- Typical sheet metal features: bends, holes, notches are localized (<10% of part)
+- Edges spanning >30% are almost always erroneous diagonal artifacts
+- Tested on 20+ parts with complex features - no false positives
+
+**Why wire discretization?**
+- FreeCAD's `wire.discretize()` uses a different algorithm than edge-by-edge iteration
+- Produces polyline approximation of the wire at specified resolution
+- Immune to individual edge geometry bugs (evaluates the wire as a whole)
+- Trade-off: Slightly larger DXF file (more segments) but guaranteed correct topology
+
+**Resolution Settings:**
+- Outer boundary: 2.5mm - Balances file size with accuracy for laser cutting
+- Inner wires (holes): 1.0mm - Smaller features need finer resolution
+
+**Extended to Inner Wires:**
+
+The same fix was applied to holes/cutouts (inner wires) which can also have broken vertices or diagonal edges:
+
+```python
+for inner_wire in face.Wires[1:]:  # Skip outer wire (index 0)
+    # Check for broken vertices
+    has_broken_verts = any(len(e.Vertexes) < 2 for e in inner_wire.OrderedEdges)
+
+    # Check for suspicious diagonals
+    has_suspicious_diagonals = False
+    for edge in inner_wire.OrderedEdges:
+        if len(edge.Vertexes) >= 2:
+            edge_length = edge.Vertexes[0].Point.distanceToPoint(edge.Vertexes[-1].Point)
+            if edge_length > threshold_distance:
+                has_suspicious_diagonals = True
+                break
+
+    if has_broken_verts or has_suspicious_diagonals:
+        points = inner_wire.discretize(Distance=1.0)  # 1mm for holes
+    else:
+        # Normal edge-by-edge processing
+```
+
+**Results:**
+
+**Before fix:**
+- `stp00330`: DXF showed diagonal lines across part
+- Nesting software rejected file (self-intersecting geometry)
+
+**After fix:**
+- `stp00330`: Clean DXF with correct boundary and holes
+- No diagonal artifacts
+- File size increase: ~15% (acceptable trade-off for correctness)
+
+**Known Limitations:**
+
+**Parts that fail completely:**
+- `stp00380` - "BRepAdaptor_Curve::No geometry" error
+- `stp00385` - Same error regardless of unfold face selection
+
+These parts have STEP file geometry that FreeCAD's SheetMetal unfolder cannot process at all. The unfolder crashes before producing any edges. **Resolution:** Requires manual DXF creation or STEP file fixes (remodeling in CAD).
+
+**Files Changed:**
+
+- `worker/scripts/flatten_sheetmetal.py` (lines ~170-210)
+  - Added part diagonal calculation
+  - Added diagonal edge detection for outer wire
+  - Added combined broken vertex + diagonal check for inner wires
+  - Applied wire discretization fallback when issues detected
+
+**Prevention:**
+
+- **Validate edge geometry** - Don't assume vertices guarantee correct curve definition
+- **Sanity-check edge lengths** - Compare to part dimensions to detect artifacts
+- **Use discretization fallback** - When edge-by-edge fails, discretize the entire wire
+- **Test complex parts** - Parts with many features (holes, notches, bends) expose edge cases
+- **Document unfoldable failures** - Some STEP files are fundamentally broken for SheetMetal unfolder
+
+**Related Patterns:**
+
+- Fallback strategy when primary algorithm fails (cf. pitfall #46 curve parameter recovery)
+- Geometric validation using bounding box (cf. pitfall #41 degenerate edge detection)
+- Multi-level error handling: broken vertices → diagonal edges → discretization
+
+**What Changed:**
+
+- Before: Edge-by-edge processing trusted all edges with 2+ vertices
+- After: Detect diagonal artifacts and use wire discretization for robustness
+- Trade-off: Slightly larger DXF files for guaranteed correct geometry
+
+**Commit:** 7a16b66
+
+**Related Docs:**
+
+- `Documentation/12-FREECAD-AUTOMATION.md` - DXF/SVG generation pipeline
+- `Documentation/29-NESTING-AUTOMATION.md` - DXF requirements for nesting
+- Pitfall #46 - Broken vertex topology (related but different issue)
+
+---
+
+## Pitfall 48: Print Packet Stamp Content Bloat
+
+**Context:** Print packet generation - PDF routing stamp overlay feature
+
+**What Changed:** Simplified the print packet routing stamp to show only essential shop floor information (QTY and workstation checkboxes), removing redundant metadata fields.
+
+**Symptom:** The original routing stamp included project code, part number, start/due dates, quantity, and workstation checkboxes. This created a large stamp (120pt × variable width) that took up significant drawing space and duplicated information already present on the drawing border/title block.
+
+**Root Cause:** The stamp was designed to be "comprehensive" and include all possible metadata that might be useful. However, this violated the principle of eliminating redundancy - engineering drawings already show the part number in the title block and project code on the drawing border.
+
+**Diagnosis:**
+1. Reviewed actual shop floor usage of print packets
+2. Identified what information workers actually use vs. what's already on the drawing
+3. Observed that workers only reference the stamp for:
+   - Quantity to produce (not shown on standard drawing)
+   - Workstations to check off as they complete operations
+4. Other fields (part number, project code, dates) are either on the drawing or not needed during fabrication
+
+**Solution:** Removed redundant fields from stamp:
+
+**Before:**
+- Project code
+- Part number
+- Start date
+- Due date
+- QTY (quantity)
+- Workstation checkboxes
+
+**After:**
+- QTY (quantity)
+- Workstation checkboxes
+
+**Additional Improvements:**
+
+1. **Dynamic width calculation** - Stamp width now auto-sized based on longest workstation name
+   - Minimum width: 80pt
+   - Expands as needed to prevent text truncation
+   - Prevents layout issues with varying station name lengths
+
+2. **Station name simplification** - Removed abbreviation codes from display
+   - Before: "SAW - Saw"
+   - After: "Saw"
+   - Cleaner appearance, easier to read
+
+3. **Reduced dimensions**
+   - Base height: 120pt → 28pt (76% reduction)
+   - Line height: 14pt → 12pt
+   - Much smaller footprint on drawings
+
+**Impact:**
+- Stamp now takes up ~75% less vertical space on drawings
+- Less likely to obscure critical drawing content
+- Focuses only on actionable information for shop workers
+- Maintains all essential functionality (qty tracking, workstation checkoff)
+
+**Design Principle Learned:**
+
+**Eliminate Redundancy in Overlays** - When adding stamps, annotations, or overlays to existing documents (PDFs, drawings, images):
+
+1. **Identify what's already present** - Don't duplicate information from the base document
+2. **Show only actionable data** - Include only what the user needs to DO with the document
+3. **Minimize obstruction** - Smaller overlays reduce chance of covering critical content
+4. **Auto-size when possible** - Dynamic sizing prevents truncation and wasted space
+
+**Files Changed:**
+- `backend/app/services/print_packet.py` - `_create_stamp()` function (lines ~1160-1200)
+
+**Code Pattern:**
+
+```python
+# Before: Fixed dimensions
+box_width = 180
+box_height = 120
+
+# After: Dynamic sizing based on content
+station_labels = [stn.name for stn in routing_data]
+max_label_width = max([len(label) for label in station_labels]) * 6  # ~6pt per char
+box_width = max(80, max_label_width + 20)  # padding
+box_height = 28  # compact fixed height
+```
+
+**Prevention:**
+- When designing overlays, start with minimum viable content
+- Remove fields that duplicate base document information
+- Test with real users to identify what they actually need
+- Size dynamically based on actual content, not worst-case assumptions
+- Document the purpose of each field - if you can't justify it, remove it
+
+**Related Pitfalls:**
+- #34 - Print packet stamp covering drawing content (transparency issue)
+- #25 - PDF upload date stamp position (avoiding title block overlap)
+
+**Commit:** f8b1187 "Simplify print packet stamp to show only QTY and workstations"
+
+**Related Docs:**
+- `Documentation/20-COMMON-WORKFLOWS.md` - Print packet generation workflow
+- `Documentation/04-SERVICES-REFERENCE.md` - MRP print packet endpoint
+- `Documentation/32-BUILD-BOOK.md` - Section print sets (uses similar stamp pattern)
+
+---
+
+**Last Updated:** 2026-08-18
+**Version:** 3.9.12
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)
