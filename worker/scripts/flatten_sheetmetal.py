@@ -432,12 +432,83 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     else:
         print("  No small edges (<5mm) found - bend reliefs may be missing from source!")
 
-    for i, edge in enumerate(outer_edges):
-        process_edge(edge, f"Outer[{i}] ")
+    # Check for suspicious diagonals in OuterWire (unfolder artifacts)
+    # If any edge spans more than 50% of the part diagonally, use discretization
+    part_diagonal = ((part_width**2 + part_height**2)**0.5)
+    has_suspicious_diagonals = False
+    for edge in outer_edges:
+        if len(edge.Vertexes) >= 2:
+            p1 = get_2d_coords(edge.Vertexes[0].Point)
+            p2 = get_2d_coords(edge.Vertexes[1].Point)
+            edge_len = p1.distanceToPoint(p2)
+            # Check if edge is diagonal (not axis-aligned) and spans large distance
+            dx = abs(p1.x - p2.x)
+            dy = abs(p1.y - p2.y)
+            if edge_len > part_diagonal * 0.3 and min(dx, dy) > 0.1:  # Diagonal if both dx and dy significant
+                print(f"  WARNING: Suspicious diagonal edge detected ({edge_len:.2f}\" across part)")
+                has_suspicious_diagonals = True
+                break
+
+    if has_suspicious_diagonals:
+        print("  Using wire discretization to avoid unfolder artifacts...")
+        # Discretize the outer wire to get proper boundary
+        try:
+            # Discretize with enough points to capture detail
+            outer_points = flat_face.OuterWire.discretize(Distance=2.5)  # 2.5mm resolution (0.1")
+            scaled_pts = [get_2d_coords(p) for p in outer_points]
+            if len(scaled_pts) >= 3:
+                # Close the polygon if needed
+                if scaled_pts[0].distanceToPoint(scaled_pts[-1]) > 1e-6:
+                    scaled_pts.append(scaled_pts[0])
+                outer_poly = Part.makePolygon(scaled_pts)
+                for e in outer_poly.Edges:
+                    edges_2d.append(e)
+                edge_stats["Line"] += len(outer_poly.Edges)
+                print(f"  Discretized outer wire: {len(scaled_pts)} points, {len(outer_poly.Edges)} edges")
+        except Exception as ex:
+            print(f"  Discretization failed ({ex}), falling back to edge processing")
+            for i, edge in enumerate(outer_edges):
+                process_edge(edge, f"Outer[{i}] ")
+    else:
+        for i, edge in enumerate(outer_edges):
+            process_edge(edge, f"Outer[{i}] ")
 
     # Process inner wires (holes)
     inner_wires = [w for w in flat_face.Wires if w.hashCode() != flat_face.OuterWire.hashCode()]
     for wi, wire in enumerate(inner_wires):
+        # Check if this wire has broken vertices or suspicious edges
+        wire_has_issues = False
+        for edge in wire.Edges:
+            if len(edge.Vertexes) < 2:
+                wire_has_issues = True
+                break
+            # Check for suspicious diagonals in hole
+            p1 = get_2d_coords(edge.Vertexes[0].Point)
+            p2 = get_2d_coords(edge.Vertexes[1].Point)
+            dx = abs(p1.x - p2.x)
+            dy = abs(p1.y - p2.y)
+            edge_len = p1.distanceToPoint(p2)
+            if edge_len > 5.0 and min(dx, dy) > 0.5:  # Large diagonal in a hole
+                wire_has_issues = True
+                break
+
+        if wire_has_issues:
+            # Use discretization for this hole
+            try:
+                hole_points = wire.discretize(Distance=1.0)  # 1mm resolution for holes
+                scaled_pts = [get_2d_coords(p) for p in hole_points]
+                if len(scaled_pts) >= 3:
+                    if scaled_pts[0].distanceToPoint(scaled_pts[-1]) > 1e-6:
+                        scaled_pts.append(scaled_pts[0])
+                    hole_poly = Part.makePolygon(scaled_pts)
+                    for e in hole_poly.Edges:
+                        edges_2d.append(e)
+                    edge_stats["Line"] += len(hole_poly.Edges)
+                    continue  # Skip normal edge processing
+            except:
+                pass  # Fall through to normal processing
+
+        # Normal edge-by-edge processing
         for ei, edge in enumerate(wire.Edges):
             process_edge(edge, f"Hole[{wi}][{ei}] ")
 
