@@ -300,6 +300,42 @@ async def list_files(
     return result.data
 
 
+@router.get("/signed-url")
+async def get_signed_url(path: str):
+    """Get a signed URL for a file in storage.
+
+    Args:
+        path: Storage path (e.g., 'pdm-files/jbp00010/jbp00010.dxf')
+
+    Returns:
+        JSON with 'url' field containing the signed URL
+    """
+    supabase = get_supabase_admin()
+
+    # Parse bucket and path
+    # Path format: 'pdm-files/item/file.ext' or 'item/file.ext'
+    if path.startswith('pdm-files/'):
+        bucket = 'pdm-files'
+        storage_path = path[len('pdm-files/'):]
+    else:
+        bucket = 'pdm-files'
+        storage_path = path
+
+    try:
+        # Create signed URL valid for 1 hour
+        result = supabase.storage.from_(bucket).create_signed_url(storage_path, 3600)
+
+        if result and 'signedURL' in result:
+            return {"url": result['signedURL']}
+        elif result and 'signed_url' in result:
+            return {"url": result['signed_url']}
+        else:
+            raise HTTPException(status_code=404, detail="Could not generate signed URL")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating signed URL: {str(e)}")
+
+
 @router.get("/fingerprint/{item_number}")
 async def get_step_fingerprint(item_number: str):
     """

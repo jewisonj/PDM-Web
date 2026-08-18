@@ -1,0 +1,5 @@
+{
+  "supabase_url": "https://YOUR_PROJECT.supabase.co",
+  "supabase_key": "YOUR_SERVICE_ROLE_KEY",
+  "backend_url": "http://localhost:8001"
+}

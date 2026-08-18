@@ -20,7 +20,7 @@ async def list_tasks(
     offset: int = 0,
 ):
     """List work queue tasks."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     query = supabase.table("work_queue").select("*")
 
@@ -40,7 +40,7 @@ async def list_tasks(
 @router.get("/pending", response_model=list[Task])
 async def get_pending_tasks(task_type: Optional[str] = None, limit: int = 10):
     """Get pending tasks for worker processing."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     query = supabase.table("work_queue").select("*").eq("status", "pending")
 
@@ -56,7 +56,7 @@ async def get_pending_tasks(task_type: Optional[str] = None, limit: int = 10):
 @router.get("/{task_id}", response_model=Task)
 async def get_task(task_id: UUID):
     """Get task by ID."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     result = supabase.table("work_queue").select("*").eq("id", str(task_id)).single().execute()
 
@@ -69,7 +69,7 @@ async def get_task(task_id: UUID):
 @router.post("", response_model=Task)
 async def create_task(task: TaskCreate):
     """Create a new task."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     task_data = task.model_dump()
 
@@ -86,15 +86,15 @@ async def create_task(task: TaskCreate):
 @router.post("/generate-dxf/{item_number}")
 async def queue_dxf_generation(item_number: str):
     """Queue DXF generation for an item's STEP file."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Get item
-    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).single().execute()
+    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).limit(1).execute()
 
     if not item_result.data:
         raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
 
-    item_id = item_result.data["id"]
+    item_id = item_result.data[0]["id"]
 
     # Find STEP file
     file_result = supabase.table("files").select("id, file_path").eq("item_id", item_id).eq("file_type", "STEP").order("created_at", desc=True).limit(1).execute()
@@ -110,7 +110,7 @@ async def queue_dxf_generation(item_number: str):
         "item_id": item_id,
         "file_id": file_id,
         "task_type": "GENERATE_DXF",
-        "payload": {"file_path": file_path},
+        "payload": {"file_path": file_path, "item_number": item_number.lower()},
         "status": "pending"
     }
 
@@ -121,15 +121,15 @@ async def queue_dxf_generation(item_number: str):
 @router.post("/generate-svg/{item_number}")
 async def queue_svg_generation(item_number: str):
     """Queue SVG bend drawing generation for an item's STEP file."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     # Get item
-    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).single().execute()
+    item_result = supabase.table("items").select("id").eq("item_number", item_number.lower()).limit(1).execute()
 
     if not item_result.data:
         raise HTTPException(status_code=404, detail=f"Item {item_number} not found")
 
-    item_id = item_result.data["id"]
+    item_id = item_result.data[0]["id"]
 
     # Find STEP file
     file_result = supabase.table("files").select("id, file_path").eq("item_id", item_id).eq("file_type", "STEP").order("created_at", desc=True).limit(1).execute()
@@ -145,7 +145,7 @@ async def queue_svg_generation(item_number: str):
         "item_id": item_id,
         "file_id": file_id,
         "task_type": "GENERATE_SVG",
-        "payload": {"file_path": file_path},
+        "payload": {"file_path": file_path, "item_number": item_number.lower()},
         "status": "pending"
     }
 
@@ -193,7 +193,7 @@ async def complete_task(task_id: UUID, error_message: Optional[str] = None):
 @router.delete("/{task_id}")
 async def delete_task(task_id: UUID):
     """Delete a task."""
-    supabase = get_supabase_client()
+    supabase = get_supabase_admin()
 
     result = supabase.table("work_queue").delete().eq("id", str(task_id)).execute()
 
