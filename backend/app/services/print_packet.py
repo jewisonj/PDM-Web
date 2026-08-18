@@ -1305,21 +1305,44 @@ def _create_stamp(
     page_width: float,
     page_height: float,
 ) -> BytesIO:
-    """Create stamp overlay for a page."""
+    """Create stamp overlay for a page - compact version with QTY and workstations only."""
 
     routing = part.get("routing", [])
 
-    # Calculate stamp height based on routing lines
-    base_height = 120
-    routing_height = len(routing) * 14
-    stamp_height = base_height + routing_height
-    stamp_width = 180
+    # Extract just station names (routing entries are "CODE - Station Name")
+    station_names = []
+    for route in routing:
+        if " - " in route:
+            station_names.append(route.split(" - ", 1)[1])
+        else:
+            station_names.append(route)
 
+    # Calculate stamp dimensions
+    line_height = 12
+    base_height = 28  # QTY line + padding
+    routing_height = len(station_names) * line_height if station_names else 0
+    stamp_height = base_height + routing_height
+
+    # Calculate width to fit longest station name (measure with temp canvas)
     packet = BytesIO()
     c = canvas.Canvas(packet, pagesize=(page_width, page_height))
 
+    font_size = 8
+    min_width = 80
+    padding = 24  # checkbox "( ) " + margins
+    max_text_width = 0
+    for name in station_names:
+        text_width = c.stringWidth(f"( ) {name}", "Helvetica", font_size)
+        max_text_width = max(max_text_width, text_width)
+
+    # Also check QTY line width
+    qty_width = c.stringWidth(f"QTY: {part['quantity']}", "Helvetica-Bold", 10)
+    max_text_width = max(max_text_width, qty_width)
+
+    stamp_width = max(min_width, max_text_width + 16)  # 16 for left/right padding
+
     # Position: right edge, vertically centered
-    x = page_width - stamp_width - 20
+    x = page_width - stamp_width - 12
     y = (page_height - stamp_height) / 2
 
     # Draw stamp box - transparent background (no fill) so drawing shows through
@@ -1329,35 +1352,19 @@ def _create_stamp(
 
     # Text settings
     c.setFillColorRGB(0, 0, 0)
-    line_height = 14
-    current_y = y + stamp_height - 18
+    current_y = y + stamp_height - 14
 
-    def draw_line(text: str, bold: bool = False):
-        nonlocal current_y
-        if bold:
-            c.setFont("Helvetica-Bold", 9)
-        else:
-            c.setFont("Helvetica", 9)
-        c.drawString(x + 8, current_y, text)
-        current_y -= line_height
+    # Draw QTY
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(x + 6, current_y, f"QTY: {part['quantity']}")
+    current_y -= line_height
 
-    # Draw stamp content - strip MMC/SPN prefixes for display
-    pn = part['item_number']
-    pn_lower = pn.lower()
-    display_pn = pn[3:] if pn_lower.startswith("mmc") or pn_lower.startswith("spn") else pn
-    draw_line(f"Project - {project_code}", bold=True)
-    draw_line(f"Part # - {display_pn}")
-    if start_date:
-        draw_line(f"Start - {start_date}")
-    if due_date:
-        draw_line(f"Due - {due_date}")
-    draw_line(f"QTY - ({part['quantity']})")
-
-    if routing:
-        current_y -= 4
-        draw_line("WORKSTATIONS", bold=True)
-        for route in routing:
-            draw_line(f"  {route}  ( )")
+    # Draw station names with checkboxes
+    if station_names:
+        c.setFont("Helvetica", font_size)
+        for name in station_names:
+            c.drawString(x + 6, current_y, f"( ) {name}")
+            current_y -= line_height
 
     c.save()
     packet.seek(0)
