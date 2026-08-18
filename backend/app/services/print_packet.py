@@ -1341,8 +1341,8 @@ def _create_stamp(
 
     stamp_width = max(min_width, max_text_width + 16)  # 16 for left/right padding
 
-    # Position: right edge, vertically centered
-    x = page_width - stamp_width - 12
+    # Position: right side, vertically centered (offset from edge to clear drawing border)
+    x = page_width - stamp_width - 48
     y = (page_height - stamp_height) / 2
 
     # Draw stamp box - transparent background (no fill) so drawing shows through
