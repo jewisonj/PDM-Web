@@ -35,6 +35,15 @@ print("=" * 60)
 print("FreeCAD Sheet Metal Flattening Tool - Docker CLI v2")
 print("=" * 60)
 
+# Log to file for debugging
+_log_file = None
+def debug_log(msg):
+    global _log_file
+    print(msg)
+    if _log_file:
+        _log_file.write(msg + "\n")
+        _log_file.flush()
+
 import FreeCAD
 import Part
 import Import
@@ -43,8 +52,17 @@ import importDXF
 
 def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     """Flatten a sheet metal STEP file to DXF"""
+    global _log_file
 
     step_file = os.path.abspath(step_file)
+
+    # Open debug log file
+    log_path = step_file.replace('.step', '_flatten_debug.log').replace('.stp', '_flatten_debug.log')
+    try:
+        _log_file = open(log_path, 'w')
+        debug_log(f"Debug log: {log_path}")
+    except:
+        pass
 
     if not os.path.exists(step_file):
         raise FileNotFoundError(f"Input file not found: {step_file}")
@@ -89,9 +107,41 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     unfold_obj.Shape = unfold_shape
     doc.recompute()
 
+    # Investigate the unfold result thoroughly
+    print(f"\n--- UNFOLD RESULT INVESTIGATION ---")
+    print(f"Unfold shape type: {unfold_shape.ShapeType}")
+    print(f"  Faces: {len(unfold_shape.Faces)}")
+    print(f"  Edges: {len(unfold_shape.Edges)}")
+    print(f"  Wires: {len(unfold_shape.Wires)}")
+
+    # Find ALL edges in the unfold, categorized by length
+    all_unfold_edges = unfold_shape.Edges
+    edge_by_length = sorted([(e.Length, e.Curve.TypeId if hasattr(e, 'Curve') else 'None') for e in all_unfold_edges])
+    small_unfold_edges = [(l, t) for l, t in edge_by_length if l < 10.0]  # < 10mm
+    if small_unfold_edges:
+        print(f"  Small edges (<10mm) in entire unfold: {len(small_unfold_edges)}")
+        for i, (length, ctype) in enumerate(small_unfold_edges[:10]):
+            print(f"    [{i}] {length:.4f}mm - {ctype}")
+    else:
+        print(f"  No small edges (<10mm) in entire unfold shape")
+
     # Get flat face (largest face of unfolded shape)
     flat_faces = sorted(unfold_obj.Shape.Faces, key=lambda f: f.Area, reverse=True)
     flat_face = flat_faces[0]
+    print(f"\nUsing largest face (area={flat_face.Area:.1f}mm²)")
+    print(f"  Face has {len(flat_face.Wires)} wires, {len(flat_face.Edges)} edges")
+
+    # Examine each wire in detail
+    for wi, wire in enumerate(flat_face.Wires):
+        is_outer = wire.hashCode() == flat_face.OuterWire.hashCode()
+        wire_type = "OUTER" if is_outer else "inner"
+        wire_edges = wire.Edges
+        edge_lengths = sorted([e.Length for e in wire_edges])
+        small_wire_edges = [l for l in edge_lengths if l < 5.0]
+        print(f"  Wire[{wi}] ({wire_type}): {len(wire_edges)} edges, "
+              f"lengths {min(edge_lengths):.3f}mm to {max(edge_lengths):.3f}mm")
+        if small_wire_edges:
+            print(f"    Small edges (<5mm): {small_wire_edges}")
 
     # Determine face orientation to get correct 2D coordinates
     face_normal = flat_face.normalAt(0, 0)
@@ -198,14 +248,36 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
         curve_type = edge.Curve.TypeId
 
         if 'Line' in curve_type:
-            # Skip degenerate line edges with fewer than 2 vertices
+            # Handle line edges - some may have degenerate vertex data
             if len(edge.Vertexes) < 2:
+                # The edge exists but has broken vertex topology
+                # Recover geometry from curve parameters (this IS the real edge, not a guess)
+                try:
+                    start_pt = edge.valueAt(edge.FirstParameter)
+                    end_pt = edge.valueAt(edge.LastParameter)
+                    p1 = get_2d_coords(start_pt)
+                    p2 = get_2d_coords(end_pt)
+                    dist = p1.distanceToPoint(p2)
+                    if dist > 1e-6:
+                        # Log details to prove this is real geometry
+                        print(f"  {label}Line with broken vertex refs, recovered from curve params:")
+                        print(f"    Edge.Length={edge.Length:.3f}mm, Params=[{edge.FirstParameter:.6f}, {edge.LastParameter:.6f}]")
+                        print(f"    Start: ({start_pt.x:.3f}, {start_pt.y:.3f}, {start_pt.z:.3f})mm")
+                        print(f"    End:   ({end_pt.x:.3f}, {end_pt.y:.3f}, {end_pt.z:.3f})mm")
+                        edges_2d.append(Part.makeLine(p1, p2))
+                        edge_stats["Line"] += 1
+                        return
+                except Exception as ex:
+                    print(f"  {label}SKIP: Could not recover line geometry: {ex}")
+                print(f"  {label}SKIP: Line with <2 vertices and no valid parameters")
                 edge_stats["Skipped"] += 1
                 return
             p1 = get_2d_coords(edge.Vertexes[0].Point)
             p2 = get_2d_coords(edge.Vertexes[1].Point)
+            dist = p1.distanceToPoint(p2)
             # Skip zero-length edges (identical points)
-            if p1.distanceToPoint(p2) < 1e-6:
+            if dist < 1e-6:
+                print(f"  {label}SKIP: Zero-length line ({dist:.8f}\")")
                 edge_stats["Skipped"] += 1
                 return
             edges_2d.append(Part.makeLine(p1, p2))
@@ -224,11 +296,14 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
                     arc = Part.Arc(p1, mid_2d, p2)
                     edges_2d.append(arc.toShape())
                     edge_stats["Arc"] += 1
-                except Exception:
+                except Exception as ex:
                     # Skip zero-length edges (coincident points)
-                    if p1.distanceToPoint(p2) < 1e-6:
+                    dist = p1.distanceToPoint(p2)
+                    if dist < 1e-6:
+                        print(f"  {label}SKIP: Arc with coincident endpoints ({dist:.8f}\")")
                         edge_stats["Skipped"] += 1
                         return
+                    print(f"  {label}Arc failed ({ex}), using line fallback")
                     edges_2d.append(Part.makeLine(p1, p2))
                     edge_stats["Fallback"] += 1
             elif len(edge.Vertexes) == 0:
@@ -277,8 +352,29 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
             edge_stats["Fallback"] += 1
             print(f"  {label}Fallback: line from vertex to vertex")
 
-    # Process outer wire
-    for i, edge in enumerate(flat_face.OuterWire.Edges):
+    # Process outer wire - first analyze edge lengths to understand geometry
+    outer_edges = flat_face.OuterWire.Edges
+    edge_lengths = [(e.Length, e.Curve.TypeId if hasattr(e, 'Curve') else 'NoCurve') for e in outer_edges]
+    lengths_only = [l for l, t in edge_lengths]
+    min_len = min(lengths_only) if lengths_only else 0
+    max_len = max(lengths_only) if lengths_only else 0
+    small_edges = [(l, t) for l, t in edge_lengths if l < 5.0]  # < 5mm edges
+
+    print(f"\nOuterWire Analysis:")
+    print(f"  Total edges: {len(outer_edges)}")
+    print(f"  Edge lengths: {min_len:.3f}mm to {max_len:.3f}mm")
+    debug_log(f"OuterWire: {len(outer_edges)} edges, lengths {min_len:.3f}mm to {max_len:.3f}mm")
+
+    if small_edges:
+        print(f"  Small edges (<5mm): {len(small_edges)} - these may be bend reliefs!")
+        for i, (length, ctype) in enumerate(sorted(small_edges, key=lambda x: x[0])):
+            msg = f"    [{i}] {length:.4f}mm ({length/25.4:.5f}in) - {ctype}"
+            print(msg)
+            debug_log(msg)
+    else:
+        print("  No small edges (<5mm) found - bend reliefs may be missing from source!")
+
+    for i, edge in enumerate(outer_edges):
         process_edge(edge, f"Outer[{i}] ")
 
     # Process inner wires (holes)
@@ -287,14 +383,47 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
         for ei, edge in enumerate(wire.Edges):
             process_edge(edge, f"Hole[{wi}][{ei}] ")
 
-    print(f"Created {len(edges_2d)} 2D edges")
+
+    total_input = len(outer_edges) + sum(len(w.Edges) for w in inner_wires)
+    print(f"\nEdge Processing Summary:")
+    print(f"  Input edges:  {total_input}")
+    print(f"  Output edges: {len(edges_2d)}")
     print(f"  Edge types: {', '.join(f'{k}={v}' for k, v in edge_stats.items() if v > 0)}")
+    if edge_stats["Skipped"] > 0:
+        print(f"  WARNING: {edge_stats['Skipped']} edges SKIPPED (too small or degenerate)")
 
     if not edges_2d:
         raise RuntimeError("No edges created for DXF export")
 
     # Create compound from edges (already scaled to inches during creation)
     compound = Part.makeCompound(edges_2d)
+
+    # Analyze contours - report open vs closed (no auto-repair)
+    print("\n" + "-" * 40)
+    print("CONTOUR ANALYSIS")
+    print("-" * 40)
+    try:
+        sorted_edges = Part.sortEdges(edges_2d)
+        open_contours = 0
+        closed_contours = 0
+        for edge_group in sorted_edges:
+            try:
+                wire = Part.Wire(edge_group)
+                if wire.isClosed():
+                    closed_contours += 1
+                else:
+                    open_contours += 1
+            except:
+                open_contours += 1
+
+        print(f"  Closed contours: {closed_contours}")
+        print(f"  Open contours:   {open_contours}")
+        if open_contours > 0:
+            print(f"  WARNING: {open_contours} open contours = geometry may be incomplete")
+        debug_log(f"CONTOUR RESULT: {closed_contours} closed, {open_contours} open")
+    except Exception as e:
+        print(f"  Contour analysis failed: {e}")
+    print("-" * 40)
 
     # Create object for export
     export_obj = doc.addObject("Part::Feature", "FlatPattern2D")

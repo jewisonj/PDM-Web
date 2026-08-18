@@ -2933,6 +2933,101 @@ total_project_cost = total_in_house_cost + total_kit_cost
 
 ---
 
-**Last Updated:** 2026-08-11
+### 46. DXF Bend Relief Edges Missing from Flat Patterns
+
+**Date:** 2026-08-17
+**Version:** v3.9.11
+
+**Symptom:** DXF flat pattern exports were missing bend relief slit edges. The DXF showed 2 open contours (with gaps where bend reliefs should be) instead of 3 closed contours. Visual inspection of the DXF revealed that the bend relief geometry was absent.
+
+**Root Cause:** FreeCAD's SheetMetalUnfolder produces edges with valid curve geometry but broken vertex topology:
+
+- `edge.Curve` - Valid geometric line/arc definition
+- `edge.FirstParameter` / `edge.LastParameter` - Valid parameter range
+- `edge.Vertexes` - **BROKEN** (empty list or fewer than 2 entries)
+
+The old code checked `len(edge.Vertexes) < 2` and skipped these edges entirely, assuming they were invalid. This caused bend relief slit lines to be excluded from the DXF export.
+
+**Diagnosis:**
+
+1. Generated DXF for part with bend reliefs
+2. Checked contour count - 2 open contours instead of expected 3 closed contours
+3. Added diagnostic logging to `flatten_sheetmetal.py` to inspect edge properties
+4. Found edges with empty `Vertexes` list but valid `Curve` geometry
+5. Realized the SheetMetal unfolder creates edges with degenerate vertex topology but mathematically correct curves
+
+**The Fix:**
+
+Added edge recovery logic in `worker/scripts/flatten_sheetmetal.py` (lines ~150-165):
+
+```python
+# Check vertex count first (fast check)
+if len(edge.Vertexes) < 2:
+    # Vertex topology is broken - recover from curve parameters
+    try:
+        start_pt = edge.valueAt(edge.FirstParameter)
+        end_pt = edge.valueAt(edge.LastParameter)
+        print(f"  Recovered edge from curve parameters (broken vertex topology)")
+    except Exception as e:
+        print(f"  Skipping edge - cannot recover geometry: {e}")
+        continue
+else:
+    # Normal case - use vertex positions
+    start_pt = edge.Vertexes[0].Point
+    end_pt = edge.Vertexes[-1].Point
+```
+
+**Why This Works:**
+
+The edge's `Curve` object contains the mathematically correct geometric definition. The `valueAt(parameter)` method evaluates the curve at a specific parameter value to get the actual 3D point. This is **not guessing** - it's using the edge's own curve definition to recover the correct start/end points that the broken vertex list failed to provide.
+
+**Key Insight:**
+
+In CAD systems, edges have two representations:
+1. **Topological** - Vertex list (broken in this case)
+2. **Geometric** - Curve definition with parameter range (always valid)
+
+When topology is broken, fall back to geometry.
+
+**Results:**
+
+- Before fix: 2 open contours (missing bend relief edges)
+- After fix: 3 closed contours (all geometry present)
+- DXF now includes bend relief slit lines correctly
+
+**Files Changed:**
+
+- `worker/scripts/flatten_sheetmetal.py` (lines ~150-165) - Added edge recovery from curve parameters
+- Added diagnostic logging for edge vertex count and recovery path
+
+**Prevention:**
+
+- **Trust geometry over topology** - When vertices are broken but curve is valid, use the curve
+- **Diagnostic logging** - Log edge counts, vertex counts, and recovery paths
+- **Test edge cases** - Bend reliefs are common features but produce unusual unfold geometry
+- **Understand CAD internals** - FreeCAD's SheetMetal addon has known quirks with vertex topology
+
+**Related Patterns:**
+
+- Similar to pitfall #41 (degenerate edge detection) - geometric validation is critical
+- Fallback logic when primary data source fails (cf. pitfall #44 flat part detection)
+- CAD geometry has multiple representations - choose the most reliable one
+
+**What Changed:**
+
+- Before: Edges with `len(Vertexes) < 2` were skipped entirely
+- After: Edges with broken vertices are recovered using curve parameters
+- No longer losing bend relief geometry from DXF exports
+
+**Commit:** (Current session - v3.9.11)
+
+**Related Docs:**
+
+- `Documentation/12-FREECAD-AUTOMATION.md` - DXF/SVG generation details
+- `Documentation/29-NESTING-AUTOMATION.md` - DXF nesting requires complete geometry
+
+---
+
+**Last Updated:** 2026-08-17
 **Version:** 3.9.11
 **Related:** [27-WEB-MIGRATION-PLAN.md](27-WEB-MIGRATION-PLAN.md), [24-VERSION-HISTORY.md](24-VERSION-HISTORY.md)

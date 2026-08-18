@@ -411,6 +411,7 @@ freecadcmd
 | Script timeout | Very complex geometry | Increase timeout; consider simpler geometry |
 | `Part.OCCError: Line through identical points` | Degenerate geometry (zero-length edges) | Fixed in v3.7.6 - script now skips coincident points automatically. Re-export STEP from CAD if issue persists. |
 | Collapsed/invalid DXF for flat parts (no bends) | SheetMetal unfold fails on already-flat geometry | Fixed in v3.9.10 - script detects collapsed geometry and falls back to direct face export from original imported shape. |
+| Missing bend relief edges in DXF | SheetMetal unfolder creates edges with broken vertex topology | Fixed in v3.9.11 - script recovers edge geometry from curve parameters when `edge.Vertexes` is empty or incomplete. See Development Notes #46. |
 
 ## Performance Considerations
 

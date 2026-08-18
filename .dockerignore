@@ -18,7 +18,7 @@ MRP_System/
 .claude/
 STP_Export/
 Local_Creo_Files/
-FreeCAD/
+FreeCAD/Tools/Test Parts/
 STP_Tubes/
 
 # Worker (separate deployment)

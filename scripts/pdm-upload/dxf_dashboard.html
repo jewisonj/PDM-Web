@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DXF Processing Dashboard</title>
+    <!-- Import map for ES modules -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "dxf-viewer": "https://cdn.jsdelivr.net/npm/dxf-viewer@1.0.48/src/DxfViewer.js"
+        }
+    }
+    </script>
+    <!-- Three.js global for non-module code -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 20px;
+            margin: 0;
+        }
+        h1 { color: #4ade80; margin-bottom: 5px; }
+        h2 { color: #38bdf8; margin-top: 30px; margin-bottom: 15px; }
+        .subtitle { color: #64748b; margin-bottom: 20px; }
+
+        .config-bar {
+            background: #1e293b;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        .config-bar label { color: #64748b; font-size: 12px; }
+        .config-bar input {
+            padding: 6px 10px;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            background: #0f172a;
+            color: #e2e8f0;
+            width: 250px;
+        }
+        .config-bar button {
+            padding: 6px 15px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .summary { display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }
+        .stat {
+            background: #1e293b;
+            padding: 15px 25px;
+            border-radius: 8px;
+            min-width: 120px;
+        }
+        .stat-value { font-size: 28px; font-weight: bold; }
+        .stat-label { color: #64748b; font-size: 12px; text-transform: uppercase; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #1e293b;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+        }
+        th {
+            background: #0f172a;
+            color: #4ade80;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            position: sticky;
+            top: 0;
+        }
+
+        .status { font-weight: bold; }
+        .status-pending { color: #fbbf24; }
+        .status-processing { color: #38bdf8; }
+        .status-completed { color: #4ade80; }
+        .status-failed { color: #f87171; }
+        tr.row-failed { background: rgba(248, 113, 113, 0.1); }
+
+        .error { color: #f87171; font-size: 11px; max-width: 300px; }
+
+        .search-box {
+            background: #1e293b;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .search-box input {
+            padding: 10px 15px;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-size: 14px;
+            width: 300px;
+        }
+        .search-box button {
+            padding: 10px 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-generate {
+            padding: 6px 12px;
+            background: #22c55e;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .btn-generate:hover { background: #16a34a; }
+        .btn-generate:disabled { background: #4b5563; cursor: not-allowed; }
+
+        .loading { color: #64748b; text-align: center; padding: 20px; }
+        .error-msg {
+            background: #450a0a;
+            border-left: 4px solid #f87171;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .refresh-btn {
+            padding: 8px 16px;
+            background: #334155;
+            color: #e2e8f0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 15px;
+        }
+
+        .queue-container {
+            max-height: 350px;
+            overflow-y: auto;
+            border-radius: 8px;
+            background: #1e293b;
+        }
+        .queue-container table { margin-bottom: 0; }
+        #searchResults table { margin-bottom: 20px; }
+
+        .item-link {
+            color: #38bdf8;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .item-link:hover { color: #7dd3fc; }
+
+        /* Item Info Modal styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: #1e293b;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 24px;
+            border-bottom: 1px solid #334155;
+            background: #0f172a;
+            border-radius: 12px 12px 0 0;
+            position: sticky;
+            top: 0;
+        }
+        .modal-header h3 { margin: 0; color: #4ade80; font-size: 20px; }
+        .modal-close {
+            background: none;
+            border: none;
+            color: #64748b;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        .modal-close:hover { color: #e2e8f0; }
+        .modal-body { padding: 24px; }
+
+        .item-name { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .info-item { background: #0f172a; padding: 12px 16px; border-radius: 8px; }
+        .info-label { color: #64748b; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+        .info-value { color: #e2e8f0; font-size: 16px; font-weight: 600; }
+
+        .files-section h4 { color: #38bdf8; margin: 0 0 12px 0; font-size: 14px; }
+        .file-tiles { display: flex; gap: 12px; flex-wrap: wrap; }
+        .file-tile {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 16px 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+            min-width: 100px;
+        }
+        .file-tile:hover { border-color: #4ade80; background: #1a2e1a; }
+        .file-tile.disabled { opacity: 0.4; cursor: not-allowed; }
+        .file-tile.disabled:hover { border-color: #334155; background: #0f172a; }
+        .file-type { font-size: 24px; font-weight: bold; margin-bottom: 4px; }
+        .file-type.dxf { color: #4ade80; }
+        .file-type.step { color: #38bdf8; }
+        .file-type.pdf { color: #f87171; }
+        .file-type.svg { color: #fbbf24; }
+        .file-name { font-size: 10px; color: #64748b; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .modal-actions { display: flex; gap: 10px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #334155; }
+
+        /* DXF Viewer Modal */
+        .dxf-viewer-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 2000;
+            flex-direction: column;
+        }
+        .dxf-viewer-overlay.active { display: flex; }
+        .dxf-viewer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: #0f172a;
+            border-bottom: 1px solid #334155;
+        }
+        .dxf-viewer-header h3 { margin: 0; color: #4ade80; font-size: 16px; }
+        .dxf-viewer-body {
+            flex: 1;
+            position: relative;
+            background: #1e293b;
+            overflow: hidden;
+        }
+        #dxfViewerContainer {
+            width: 100%;
+            height: 100%;
+        }
+        .dxf-viewer-loading {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: #64748b;
+            font-size: 16px;
+        }
+        .dxf-viewer-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: #0f172a;
+            border-top: 1px solid #334155;
+        }
+        .dxf-toolbar { display: flex; gap: 8px; align-items: center; }
+        .dxf-toolbar-divider { width: 1px; height: 24px; background: #334155; margin: 0 8px; }
+        .dxf-tool-btn {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            padding: 8px 14px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .dxf-tool-btn:hover { background: #334155; }
+        .dxf-tool-btn.active { background: #2563eb; border-color: #3b82f6; }
+        .dxf-download-btn {
+            background: #2563eb;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .dxf-download-btn:hover { background: #1d4ed8; }
+
+        /* Measure overlay */
+        .measure-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+        }
+        .measure-overlay svg {
+            width: 100%;
+            height: 100%;
+        }
+        .measure-line { stroke: #ef4444; stroke-width: 2; }
+        .measure-point { fill: #ef4444; stroke: white; stroke-width: 2; }
+        .measure-label {
+            position: absolute;
+            background: #dc2626;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            font-family: monospace;
+            transform: translate(-50%, -150%);
+            white-space: nowrap;
+        }
+        .measure-cursor {
+            position: absolute;
+            width: 12px; height: 12px;
+            border: 2px solid white;
+            border-radius: 50%;
+            background: #9ca3af;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        .measure-cursor.snapped { background: #fbbf24; box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.3); }
+    </style>
+</head>
+<body>
+    <h1>DXF Processing Dashboard</h1>
+    <p class="subtitle">
+        <span id="lastUpdate">Loading...</span>
+        <button class="refresh-btn" onclick="refreshAll()">Refresh Now</button>
+    </p>
+
+    <div class="config-bar">
+        <label>Backend URL:</label>
+        <input type="text" id="backendUrl" value="http://localhost:8001" onchange="saveConfig()">
+        <button onclick="testConnection()">Test Connection</button>
+        <span id="connStatus"></span>
+    </div>
+
+    <div id="errorMsg"></div>
+
+    <div class="summary">
+        <div class="stat">
+            <div class="stat-value" style="color: #fbbf24;" id="statPending">-</div>
+            <div class="stat-label">Pending</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value" style="color: #38bdf8;" id="statProcessing">-</div>
+            <div class="stat-label">Processing</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value" style="color: #4ade80;" id="statCompleted">-</div>
+            <div class="stat-label">Completed</div>
+        </div>
+        <div class="stat">
+            <div class="stat-value" style="color: #f87171;" id="statFailed">-</div>
+            <div class="stat-label">Failed</div>
+        </div>
+    </div>
+
+    <h2>Generate DXF</h2>
+    <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Enter item number (e.g., jbp00010)..." onkeypress="if(event.key==='Enter')searchItem()">
+        <button onclick="searchItem()">Search</button>
+    </div>
+    <div id="searchResults"></div>
+
+    <h2>Recent Tasks</h2>
+    <div class="queue-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Item #</th>
+                    <th>Task</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Completed</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody id="queueTable">
+                <tr><td colspan="6" class="loading">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Item Info Modal -->
+    <div class="modal-overlay" id="itemModal" onclick="if(event.target===this)closeModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="modalItemNumber">Loading...</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <div class="loading">Loading item details...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DXF Viewer Modal -->
+    <div class="dxf-viewer-overlay" id="dxfViewerModal">
+        <div class="dxf-viewer-header">
+            <h3 id="dxfViewerTitle">DXF Viewer</h3>
+            <button class="modal-close" onclick="closeDxfViewer()">&times;</button>
+        </div>
+        <div class="dxf-viewer-body">
+            <div id="dxfViewerContainer"></div>
+            <div class="dxf-viewer-loading" id="dxfLoading">Loading DXF...</div>
+            <div class="measure-overlay" id="measureOverlay" style="display:none;">
+                <svg id="measureSvg"></svg>
+                <div class="measure-label" id="measureLabel" style="display:none;"></div>
+                <div class="measure-cursor" id="measureCursor" style="display:none;"></div>
+            </div>
+        </div>
+        <div class="dxf-viewer-footer">
+            <div class="dxf-toolbar">
+                <button class="dxf-tool-btn" onclick="dxfFitView()" title="Fit View">Fit</button>
+                <div class="dxf-toolbar-divider"></div>
+                <button class="dxf-tool-btn" onclick="dxfRotate(-90)" title="Rotate CCW">-90°</button>
+                <button class="dxf-tool-btn" onclick="dxfRotate(90)" title="Rotate CW">+90°</button>
+                <span id="rotationDisplay" style="color:#64748b; margin-left:8px;"></span>
+                <div class="dxf-toolbar-divider"></div>
+                <button class="dxf-tool-btn" id="measureBtn" onclick="toggleMeasure()" title="Measure">Measure</button>
+            </div>
+            <button class="dxf-download-btn" onclick="downloadCurrentDxf()">Download DXF</button>
+        </div>
+    </div>
+
+    <script>
+        // Config
+        let BACKEND_URL = localStorage.getItem('dxf_backend_url') || 'http://localhost:8001';
+        document.getElementById('backendUrl').value = BACKEND_URL;
+
+        // DXF Viewer state
+        let dxfViewer = null;
+        let currentDxfUrl = null;
+        let currentRotation = 0;
+        let measureMode = false;
+        let measurePoints = [];
+        let cachedVertices = [];
+
+        function saveConfig() {
+            BACKEND_URL = document.getElementById('backendUrl').value;
+            localStorage.setItem('dxf_backend_url', BACKEND_URL);
+        }
+
+        async function testConnection() {
+            const status = document.getElementById('connStatus');
+            status.textContent = 'Testing...';
+            status.style.color = '#64748b';
+            try {
+                const resp = await fetch(`${BACKEND_URL}/health`, {mode: 'cors'});
+                if (resp.ok) {
+                    status.textContent = '✓ Connected';
+                    status.style.color = '#4ade80';
+                } else {
+                    status.textContent = '✗ Error: ' + resp.status;
+                    status.style.color = '#f87171';
+                }
+            } catch (e) {
+                status.textContent = '✗ Failed: ' + e.message;
+                status.style.color = '#f87171';
+            }
+        }
+
+        function formatDate(iso) {
+            if (!iso) return '-';
+            const d = new Date(iso);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+
+        async function fetchQueue() {
+            try {
+                const resp = await fetch(`${BACKEND_URL}/api/tasks?limit=25`, {mode: 'cors'});
+                if (!resp.ok) throw new Error('Failed to fetch tasks');
+                const data = await resp.json();
+                return data.tasks || data || [];
+            } catch (e) {
+                console.error('Queue fetch error:', e);
+                return [];
+            }
+        }
+
+        async function updateQueue() {
+            const tasks = await fetchQueue();
+            const tbody = document.getElementById('queueTable');
+
+            if (!tasks.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="loading">No recent tasks</td></tr>';
+                updateStats([]);
+                return;
+            }
+
+            let html = '';
+            for (const t of tasks) {
+                const payload = t.payload || {};
+                const itemNum = payload.item_number || t.item_id?.substring(0,8) || '-';
+                const statusClass = 'status-' + (t.status || 'pending');
+                const rowClass = t.status === 'failed' ? 'row-failed' : '';
+
+                html += `<tr class="${rowClass}">
+                    <td><span class="item-link" onclick="openItemModal('${itemNum}')">${itemNum}</span></td>
+                    <td>${(t.task_type || '-').replace('GENERATE_', '')}</td>
+                    <td class="status ${statusClass}">${(t.status || 'pending').toUpperCase()}</td>
+                    <td>${formatDate(t.created_at)}</td>
+                    <td>${formatDate(t.completed_at)}</td>
+                    <td class="error">${(t.error_message || '').substring(0, 100)}</td>
+                </tr>`;
+            }
+            tbody.innerHTML = html;
+            updateStats(tasks);
+        }
+
+        function updateStats(tasks) {
+            document.getElementById('statPending').textContent = tasks.filter(t => t.status === 'pending').length;
+            document.getElementById('statProcessing').textContent = tasks.filter(t => t.status === 'processing').length;
+            document.getElementById('statCompleted').textContent = tasks.filter(t => t.status === 'completed').length;
+            document.getElementById('statFailed').textContent = tasks.filter(t => t.status === 'failed').length;
+        }
+
+        async function searchItem() {
+            const term = document.getElementById('searchInput').value.trim();
+            if (!term) return;
+
+            const results = document.getElementById('searchResults');
+            results.innerHTML = '<div class="loading">Searching...</div>';
+
+            try {
+                const resp = await fetch(`${BACKEND_URL}/api/items?q=${encodeURIComponent(term)}&limit=10`, {mode: 'cors'});
+                if (!resp.ok) throw new Error('Search failed');
+                const items = await resp.json();
+
+                if (!items.length) {
+                    results.innerHTML = '<div class="loading">No items found matching "' + term + '"</div>';
+                    return;
+                }
+
+                let html = `<table><thead><tr><th>Item #</th><th>Name</th><th>Material</th><th>Thickness</th><th>Action</th></tr></thead><tbody>`;
+                for (const item of items) {
+                    html += `<tr>
+                        <td><span class="item-link" onclick="openItemModal('${item.item_number}')">${item.item_number}</span></td>
+                        <td>${(item.name || '').substring(0, 40)}</td>
+                        <td>${item.material || '-'}</td>
+                        <td>${item.thickness || '-'}</td>
+                        <td><button class="btn-generate" onclick="generateDxf('${item.item_number}')">Generate DXF</button></td>
+                    </tr>`;
+                }
+                results.innerHTML = html + '</tbody></table>';
+            } catch (e) {
+                results.innerHTML = '<div class="error-msg">Error: ' + e.message + '</div>';
+            }
+        }
+
+        async function generateDxf(itemNumber) {
+            if (!confirm(`Queue DXF generation for ${itemNumber}?`)) return;
+            try {
+                const resp = await fetch(`${BACKEND_URL}/api/tasks/generate-dxf/${itemNumber}`, { method: 'POST', mode: 'cors' });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || 'Failed to queue task');
+                }
+                alert('DXF generation queued for ' + itemNumber);
+                refreshAll();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        // Item Info Modal
+        async function openItemModal(itemNumber) {
+            const modal = document.getElementById('itemModal');
+            const header = document.getElementById('modalItemNumber');
+            const body = document.getElementById('modalBody');
+
+            header.textContent = itemNumber.toUpperCase();
+            body.innerHTML = '<div class="loading">Loading item details...</div>';
+            modal.classList.add('active');
+
+            try {
+                const resp = await fetch(`${BACKEND_URL}/api/items/${itemNumber}`, {mode: 'cors'});
+                if (!resp.ok) throw new Error('Item not found');
+                const item = await resp.json();
+
+                const files = item.files || [];
+                const fileTypes = ['DXF', 'STEP', 'PDF', 'SVG'];
+
+                let filesHtml = '';
+                for (const ft of fileTypes) {
+                    const file = files.find(f => f.file_type === ft);
+                    if (file) {
+                        const onclick = ft === 'DXF'
+                            ? `openDxfViewer('${file.file_path}', '${file.file_name}')`
+                            : `openFile('${file.file_path}')`;
+                        filesHtml += `<div class="file-tile" onclick="${onclick}">
+                            <div class="file-type ${ft.toLowerCase()}">${ft}</div>
+                            <div class="file-name">${file.file_name || ft + ' file'}</div>
+                        </div>`;
+                    } else {
+                        filesHtml += `<div class="file-tile disabled">
+                            <div class="file-type ${ft.toLowerCase()}">${ft}</div>
+                            <div class="file-name">Not available</div>
+                        </div>`;
+                    }
+                }
+
+                body.innerHTML = `
+                    <div class="item-name">${item.name || item.description || 'No description'}</div>
+                    <div class="info-grid">
+                        <div class="info-item"><div class="info-label">Material</div><div class="info-value">${item.material || '-'}</div></div>
+                        <div class="info-item"><div class="info-label">Thickness</div><div class="info-value">${item.thickness ? item.thickness + '"' : '-'}</div></div>
+                        <div class="info-item"><div class="info-label">Mass</div><div class="info-value">${item.mass ? item.mass.toFixed(2) + ' lb' : '-'}</div></div>
+                        <div class="info-item"><div class="info-label">Cut Length</div><div class="info-value">${item.cut_length ? item.cut_length.toFixed(1) + '"' : '-'}</div></div>
+                    </div>
+                    <div class="files-section">
+                        <h4>Files</h4>
+                        <div class="file-tiles">${filesHtml}</div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn-generate" onclick="generateDxf('${itemNumber}'); closeModal();">Regenerate DXF</button>
+                    </div>
+                `;
+            } catch (e) {
+                body.innerHTML = `<div class="error-msg">Error: ${e.message}</div>`;
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('itemModal').classList.remove('active');
+        }
+
+        async function openFile(filePath) {
+            if (!filePath) return;
+            try {
+                const resp = await fetch(`${BACKEND_URL}/api/files/signed-url?path=${encodeURIComponent(filePath)}`, {mode: 'cors'});
+                if (!resp.ok) throw new Error('Failed to get file URL');
+                const data = await resp.json();
+                if (data.url) window.open(data.url, '_blank');
+            } catch (e) {
+                alert('Error opening file: ' + e.message);
+            }
+        }
+
+        // DXF Viewer - placeholder functions, real implementation in module script below
+        async function openDxfViewer(filePath, fileName) {
+            // This will be implemented in the module script
+            window._pendingDxfView = { filePath, fileName };
+            window._triggerDxfView && window._triggerDxfView();
+        }
+
+        function closeDxfViewer() {
+            window._closeDxfViewer && window._closeDxfViewer();
+        }
+
+        function dxfFitView() {
+            window._dxfFitView && window._dxfFitView();
+        }
+
+        function dxfRotate(degrees) {
+            window._dxfRotate && window._dxfRotate(degrees);
+        }
+
+        function updateRotationDisplay() {
+            const el = document.getElementById('rotationDisplay');
+            el.textContent = currentRotation !== 0 ? currentRotation + '°' : '';
+        }
+
+        function downloadCurrentDxf() {
+            if (currentDxfUrl) window.open(currentDxfUrl, '_blank');
+        }
+
+        function toggleMeasure() {
+            window._toggleMeasure && window._toggleMeasure();
+        }
+
+        // Placeholder - measurement will be handled in module
+        function handleMeasureClick(e) {}
+        function handleMeasureMove(e) {}
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (document.getElementById('dxfViewerModal').classList.contains('active')) {
+                    if (measureMode) {
+                        toggleMeasure();
+                    } else {
+                        closeDxfViewer();
+                    }
+                } else {
+                    closeModal();
+                }
+            }
+        });
+
+        function refreshAll() {
+            document.getElementById('lastUpdate').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+            updateQueue();
+        }
+
+        // Check library availability
+        function checkLibraries() {
+            console.log('Library check:');
+            console.log('  THREE:', typeof THREE !== 'undefined' ? 'loaded (v' + THREE.REVISION + ')' : 'MISSING');
+            console.log('  DxfParser:', typeof DxfParser !== 'undefined' ? 'loaded' : 'MISSING');
+            console.log('  ThreeDxf:', typeof ThreeDxf !== 'undefined' ? 'loaded' : 'MISSING');
+        }
+        checkLibraries();
+
+        // Initial load
+        refreshAll();
+        testConnection();
+        setInterval(refreshAll, 15000);
+    </script>
+</body>
+</html>
