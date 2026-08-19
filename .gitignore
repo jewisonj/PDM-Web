@@ -134,8 +134,20 @@ Thumbs.db
 ########################
 # Export/output directories
 ########################
+Export/
 STP_Export/
+Stp_export/
 files/temp/
+
+########################
+# Claude Code local settings
+########################
+.claude/settings.local.json
+
+########################
+# Local config files with secrets
+########################
+scripts/pdm-upload/report_config.json
 
 ########################
 # Future Web App (Vue/FastAPI)
