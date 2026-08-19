@@ -83,7 +83,7 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     imported_obj = doc.Objects[0]
     print(f"Imported: {imported_obj.Label}")
 
-    # Unfold with SheetMetal (with fallback for flat parts)
+    # Unfold with SheetMetal
     import SheetMetalUnfolder
 
     faces = imported_obj.Shape.Faces
@@ -94,30 +94,18 @@ def flatten_sheetmetal(step_file, output_dxf=None, k_factor=0.35):
     print(f"Using face: {face_name} (largest by area)")
 
     k_factor_lookup = {0.0: k_factor, 1.0: k_factor, 10.0: k_factor}
+    unfold_result = SheetMetalUnfolder.getUnfold(
+        k_factor_lookup,
+        imported_obj,
+        face_name,
+        k_factor
+    )
 
-    # Try sheet metal unfold first, fall back to direct face projection for flat parts
-    use_flat_fallback = False
-    try:
-        unfold_result = SheetMetalUnfolder.getUnfold(
-            k_factor_lookup,
-            imported_obj,
-            face_name,
-            k_factor
-        )
-        unfold_shape = unfold_result[0] if isinstance(unfold_result, tuple) else unfold_result
-    except Exception as unfold_err:
-        print(f"SheetMetal unfold failed: {unfold_err}")
-        print("Falling back to direct face projection (flat part mode)...")
-        use_flat_fallback = True
-        # For flat parts (rings, plates with no bends), use original shape directly
-        unfold_shape = imported_obj.Shape
+    unfold_shape = unfold_result[0] if isinstance(unfold_result, tuple) else unfold_result
 
     unfold_obj = doc.addObject("Part::Feature", "Unfold")
     unfold_obj.Shape = unfold_shape
     doc.recompute()
-
-    if use_flat_fallback:
-        print("FLAT PART MODE: Using original geometry (no unfold needed)")
 
     # Investigate the unfold result thoroughly
     print(f"\n--- UNFOLD RESULT INVESTIGATION ---")
