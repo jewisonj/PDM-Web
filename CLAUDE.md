@@ -173,8 +173,24 @@ Migrating a Windows/PowerShell-based PDM system to a **web-based architecture**.
 **NOT needed:**
 - Multi-organization/multi-tenancy
 - Mobile-first responsive design
-- Offline/PWA capabilities
+- Offline/PWA capabilities -- **exception:** `/shop` (Shop Companion) is an installable PWA
+  (manifest + icons) for phone-first shop-floor note-taking, but it has no service worker and
+  is not offline-capable
 - Complex role-based permissions
+
+## Shop Companion (Shop Notes)
+
+Phone-first page for shop-floor workers to file quick notes + photos, tagged to a
+project/assembly/part, without a full PDM login. Reviewed by staff on a normal MRP page.
+
+- **Worker URL:** `/shop` (shared shop PIN -> 365-day device token, installable PWA)
+- **Reviewer URL:** `/mrp/shop-notes` (staff Supabase login)
+- **PIN config:** `SHOP_PIN` in `backend/.env` (default `1010`)
+- **Key files:** `backend/app/routes/shop_notes.py`, `backend/app/services/shop_auth.py`,
+  `frontend/src/views/ShopNoteView.vue`, `frontend/src/views/MrpShopNotesView.vue`
+- **Migration required before use:** `backend/migrations/2026-09-16_shop_notes.sql`
+  (`shop_notes`, `shop_note_photos`, `shop-note-photos` bucket) -- not yet applied
+- Full reference: `Documentation/47-SHOP-COMPANION.md`
 
 ## Target Architecture
 
