@@ -55,7 +55,7 @@ function onFocus() {
 
 function onBlur() {
   // Let a suggestion tap land before closing
-  setTimeout(() => (open.value = false), 120)
+  setTimeout(() => (open.value = false), 150)
 }
 
 watch(() => props.disabled, d => { if (d) open.value = false })
@@ -93,7 +93,7 @@ watch(() => props.disabled, d => { if (d) open.value = false })
       <button v-if="text" type="button" class="input-clear" aria-label="Clear" @mousedown.prevent @click="clear">✕</button>
 
       <ul v-if="open && suggestions.length" class="menu">
-        <li v-for="it in suggestions" :key="it.id" @mousedown.prevent="pick(it)" @touchend.prevent="pick(it)">
+        <li v-for="it in suggestions" :key="it.id" @mousedown.prevent="pick(it)">
           <strong>{{ it.item_number }}</strong>
           <span class="menu-name">{{ it.name }}</span>
         </li>
