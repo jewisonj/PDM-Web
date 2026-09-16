@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # AI Assistant (Claude)
     anthropic_api_key: str = ""
 
+    # Shop Companion (shop-floor notes app) - shared PIN for phone login
+    shop_pin: str = "1010"
+
     # CORS - allow localhost and Tailnet (100.x.x.x) access
     cors_origins: list[str] = [
         "http://localhost:5174",

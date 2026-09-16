@@ -28,6 +28,7 @@ from .routes import (
     admin_suppliers_router,
     annotations_router,
     share_router,
+    shop_notes_router,
 )
 
 settings = get_settings()
@@ -70,6 +71,7 @@ app.include_router(supplier_router, prefix="/api")
 app.include_router(admin_suppliers_router, prefix="/api")
 app.include_router(annotations_router, prefix="/api")
 app.include_router(share_router, prefix="/api")
+app.include_router(shop_notes_router, prefix="/api")
 
 # Reload trigger v11 - image hash logging
 

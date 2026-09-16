@@ -1,9 +1,9 @@
 # PDM-Web Documentation - Table of Contents
 
-**Last Updated:** 2026-08-18
+**Last Updated:** 2026-09-16
 **System:** PDM-Web (Product Data Management)
 **Stack:** Vue 3 + FastAPI + Supabase + Docker
-**Current Version:** v3.9.12
+**Current Version:** v3.10.0
 
 ---
 
@@ -55,6 +55,7 @@ New to PDM-Web? Read these in order:
 | 43 | `43-DESIGN-BOOK-IMAGE-MANAGEMENT.md` | Design Book image management system: image hash detection for auto re-rendering, FastAPI route ordering fix, upload form state preservation, image library integration with Master Design Book III-00 section. |
 | 44 | `44-SUPPLIER-PORTAL.md` | Supplier Portal: external vendor access to approved files, separate JWT auth, file type restrictions, two-way comments, admin management, item access control. |
 | 46 | `46-MRP-VENDOR-KITS.md` | MRP Vendor Kits Management: dedicated full-page UI for managing vendor kits/bundles, kit item tracking with quantities and unit prices, kit activation toggle, cost comparison, requires `kit_items` table migration. |
+| 47 | `47-SHOP-COMPANION.md` | Shop Companion (Shop Notes): phone-first `/shop` PWA for shop-floor workers to file quick notes + photos tagged to project/assembly/part; `/mrp/shop-notes` reviewer page; shared-PIN auth exchanged for a long-lived device JWT; requires `shop_notes`/`shop_note_photos` migration (not yet applied). |
 
 ### Section 5: Frontend Application
 
@@ -152,6 +153,7 @@ New to PDM-Web? Read these in order:
 9. `39-KIT-SOURCING-STEP-EXPORT.md` -- Exporting STEP files and BOMs for kit orders
 10. `40-QUOTE-BUNDLE-PREPARATION.md` -- Preparing STEP file quote bundles for external fabricators
 11. `33-AI-ASSISTANT.md` -- AI-powered chat for part lookup, BOM expansion, file downloads
+12. `47-SHOP-COMPANION.md` -- Shop Companion: shop-floor phone notes + photos, reviewer triage page
 
 ### Troubleshooting
 1. `19-TROUBLESHOOTING-DECISION-TREE.md` -- diagnosis
@@ -185,7 +187,7 @@ docker-compose up -d freecad-worker
 
 ---
 
-**Total Documentation Files:** 41
+**Total Documentation Files:** 42
 **Status:** Current
 
 ---

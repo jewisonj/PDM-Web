@@ -7,9 +7,126 @@
 
 ## Current Version
 
-### v3.9.12 (2026-08-18) -- Simplified Print Packet Stamp
+### v3.10.0 (2026-09-16) -- Shop Companion (Shop Notes)
 
 **Status:** Current Production Release
+
+**Summary:** Added a phone-first "Shop Companion" at `/shop` so shop-floor workers can file a
+quick note with photos, tagged to a project/assembly/part, without a full PDM login. A shared
+shop PIN exchanges for a 365-day device token stored on the phone. Engineering triages
+incoming notes on a new reviewer page at `/mrp/shop-notes`, reachable from a new "Shop Notes"
+nav button (with a new-note count badge) on the MRP dashboard.
+
+**Requires action before use:** the migration
+`backend/migrations/2026-09-16_shop_notes.sql` (tables `shop_notes`, `shop_note_photos`, and
+the private `shop-note-photos` storage bucket) has **not been applied to Supabase yet** and
+must be run manually before this feature works in any environment.
+
+#### Features Added
+
+**1. Worker Flow (`/shop`)**
+- One-screen, phone-first form: PIN once -> name once (remembered on device) -> project select
+  (remembered on device) -> assembly/part autocomplete -> note -> photos -> Send
+- Assembly/part picker (`ShopItemPicker.vue`) splits the project BOM into assemblies (items
+  with children) and parts (every project item); picking a part auto-fills its parent
+  assembly via `parent_ids`
+- Free text is kept as `assembly_text`/`part_text` when nothing in the BOM matches, so the
+  reviewer can match it up later
+- Photos are downscaled client-side to a 1600px JPEG (`resizeImage()` in
+  `frontend/src/utils/shopNotes.ts`) before upload; camera or gallery; up to 10 photos/note,
+  12 MB/photo
+- Dictation relies on the phone keyboard's own microphone/dictation -- no Deepgram/AI
+  transcription involved
+- `/shop` is an installable PWA (manifest + icons injected only on that route so "Add to Home
+  Screen" opens `/shop`), but has **no service worker** -- not offline-capable
+
+**2. Reviewer Flow (`/mrp/shop-notes`)**
+- Filter by status (new/reviewed/resolved/all) and project (URL-reflected)
+- Edit part/assembly/project links or their free-text fallback, edit note body, add reviewer
+  notes
+- Mark reviewed/resolved/reopen, delete (cleans up storage objects best-effort)
+- Photo lightbox served through 1-hour signed URLs (private bucket, no public photo URLs)
+- MRP dashboard "Shop Notes" nav button shows a live badge with the `new`-status count
+
+**3. Auth Model**
+- Workers: shared PIN (`Settings.shop_pin`, env `SHOP_PIN`, default `1010`) exchanged for a
+  custom HS256 "shop" JWT valid 365 days, verified with constant-time comparison
+- Reviewers: existing Supabase staff session token
+- Worker-facing endpoints accept either token type; reviewer-only endpoints
+  (summary/list/patch/delete) require a staff Supabase token
+
+#### Database Schema
+
+**Migration (not yet applied):** `backend/migrations/2026-09-16_shop_notes.sql`
+- New table `shop_notes` (project/assembly/part links + free-text fallbacks, `note`,
+  `author_name`, `status` check `new`/`reviewed`/`resolved`, `reviewer_notes`, `reviewed_at`,
+  timestamps, `updated_at` trigger)
+- New table `shop_note_photos` (`note_id`, `file_path` as `"<bucket>/<path>"`, `file_size`,
+  `mime_type`, `sort_order`)
+- New private storage bucket `shop-note-photos`
+- RLS enabled on both tables with no anon/authenticated policies -- backend uses the
+  service-role client exclusively (same pattern as other backend-owned tables)
+
+#### API Endpoints
+
+**Worker-facing** (`/api/shop-notes/*`):
+- `POST /login` -- PIN -> shop JWT
+- `GET /projects` -- project picker list
+- `GET /projects/{id}/items` -- BOM split into assemblies/parts with `parent_ids`
+- `POST /` (multipart) -- create note + photos
+
+**Reviewer-facing** (staff token required):
+- `GET /summary` -- counts per status
+- `GET /` -- list with status/project filters
+- `GET /{note_id}`, `PATCH /{note_id}`, `DELETE /{note_id}`
+
+#### Files Changed
+
+**Backend:**
+- `backend/migrations/2026-09-16_shop_notes.sql` (new, unapplied)
+- `backend/app/services/shop_auth.py` (new)
+- `backend/app/routes/shop_notes.py` (new)
+- `backend/app/config.py` -- added `shop_pin` setting
+- `backend/app/main.py`, `backend/app/routes/__init__.py` -- router registration
+- `backend/tests/test_shop_notes.py` (new)
+
+**Frontend:**
+- `frontend/src/views/ShopNoteView.vue` (new) -- `/shop`
+- `frontend/src/views/MrpShopNotesView.vue` (new) -- `/mrp/shop-notes`
+- `frontend/src/components/ShopItemPicker.vue` (new)
+- `frontend/src/services/shopNotesApi.ts` (new)
+- `frontend/src/utils/shopNotes.ts` (new) + `shopNotes.test.ts` (new)
+- `frontend/src/router/index.ts` -- added `/shop` and `/mrp/shop-notes` routes
+- `frontend/src/views/MrpDashboardView.vue` -- "Shop Notes" nav button + badge
+- `frontend/public/shop.webmanifest`, `shop-icon-192.png`, `shop-icon-512.png`,
+  `shop-icon-512-maskable.png` (new)
+
+#### Configuration
+
+- `backend/.env`: `SHOP_PIN=<pin>` (optional, defaults to `1010`); restart the backend after
+  changing it
+
+#### Known Limitations
+
+- No offline queue -- a failed send on a phone with no signal is not retried automatically
+- No notifications -- reviewers must check `/mrp/shop-notes` manually (dashboard badge is the
+  only signal)
+- Shared PIN, no per-worker identity or audit trail (`author_name` is free-typed, unverified)
+- Rotating `SUPABASE_SERVICE_ROLE_KEY` invalidates all issued shop device tokens (derives its
+  signing secret from it)
+- No service worker / true offline PWA support on `/shop`
+
+#### Documentation
+
+- `Documentation/47-SHOP-COMPANION.md` (new) -- complete feature reference
+- `Documentation/00-TABLE-OF-CONTENTS.md` -- added doc 47 entry
+- `Documentation/24-VERSION-HISTORY.md` -- this entry
+
+---
+
+### v3.9.12 (2026-08-18) -- Simplified Print Packet Stamp
+
+**Status:** Released
 
 **Summary:** Simplified the print packet routing stamp overlay to show only essential shop floor information - quantity and workstation checkboxes. Removed project code, part number, and date fields to create a smaller, cleaner stamp that takes up less drawing space.
 

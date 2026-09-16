@@ -155,6 +155,20 @@ const router = createRouter({
       component: () => import('../views/SharedLinksView.vue'),
       meta: { requiresAuth: true }
     },
+    {
+      path: '/mrp/shop-notes',
+      name: 'mrp-shop-notes',
+      component: () => import('../views/MrpShopNotesView.vue'),
+      meta: { requiresAuth: true }
+    },
+
+    // === Shop Companion (phone app, PIN login - no Supabase auth) ===
+    {
+      path: '/shop',
+      name: 'shop-companion',
+      component: () => import('../views/ShopNoteView.vue'),
+      meta: { requiresAuth: false, shopRoute: true }
+    },
     // Print Lookup removed - using Part Lookup instead
     // {
     //   path: '/mrp/print-lookup',
