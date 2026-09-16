@@ -6,6 +6,7 @@ import NestConfigModal from '../components/NestConfigModal.vue'
 import KitManagementSlideout from '../components/KitManagementSlideout.vue'
 import type { NestGroup, NestJob, NestSheet } from '../types'
 import { isDocumentItem, isReferenceOnlyItem } from '../utils/buildTracker'
+import { getShopNoteSummary } from '../services/shopNotesApi'
 
 const router = useRouter()
 
@@ -1021,6 +1022,10 @@ function goToDesignBook() {
   router.push('/mrp/design-books')
 }
 
+function goToShopNotes() {
+  router.push('/mrp/shop-notes')
+}
+
 // === Nesting Functions ===
 // Note: openNestModal is used in template via @click
 
@@ -1192,8 +1197,20 @@ watch(selectedProject, async (newVal) => {
   }
 })
 
+const newShopNotes = ref(0)
+
+async function loadShopNoteCount() {
+  try {
+    const summary = await getShopNoteSummary()
+    newShopNotes.value = summary.new || 0
+  } catch {
+    newShopNotes.value = 0 // badge is best-effort
+  }
+}
+
 onMounted(() => {
   loadProjects()
+  loadShopNoteCount()
 })
 
 onUnmounted(() => {
@@ -1246,6 +1263,10 @@ defineExpose({ openNestModal })
         <button class="nav-btn assistant" @click="goToAssistant">
           <span class="nav-dot assistant"></span>
           Ask PDM
+        </button>
+        <button class="nav-btn shop-notes" @click="goToShopNotes">
+          <span class="nav-dot shop-notes"></span>
+          Shop Notes<span v-if="newShopNotes > 0" class="nav-badge">{{ newShopNotes }}</span>
         </button>
         <button class="refresh-btn" @click="refreshDashboard" :disabled="loading">
           <i :class="loading ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"></i>
@@ -1983,6 +2004,17 @@ defineExpose({ openNestModal })
 .nav-dot.cost-report { background: #f472b6; }
 .nav-dot.assistant { background: #38bdf8; }
 .nav-dot.design-book { background: #14b8a6; }
+.nav-dot.shop-notes { background: #f43f5e; }
+
+.nav-badge {
+  margin-left: 4px;
+  background: #f43f5e;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
 
 .refresh-btn {
   display: flex;
