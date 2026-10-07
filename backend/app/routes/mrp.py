@@ -609,8 +609,8 @@ async def download_project_dxfs(project_id: UUID):
     if not parts_result.data:
         raise HTTPException(status_code=404, detail="No parts found in project")
 
-    # Include every project part that has a DXF, regardless of needs_dxf.
-    # needs_dxf only controls FreeCAD flat-pattern generation; plate parts
+    # Include every project part that has a DXF, regardless of auto_flatten.
+    # auto_flatten only controls FreeCAD flat-pattern generation; plate parts
     # with DXFs exported straight from CAD never carry it.
     item_ids = []
     item_info = {}  # item_id (str) -> {item_number, thickness, quantity}

@@ -424,7 +424,7 @@ async def generate_dxf(item_id: UUID):
     """
     Request DXF/SVG generation for an item.
 
-    Sets needs_dxf=true and queues generation tasks if a STEP file exists.
+    Sets auto_flatten=true (FreeCAD flat pattern from STEP) and queues generation tasks if a STEP file exists.
     """
     supabase = get_supabase_admin()
 
@@ -436,8 +436,8 @@ async def generate_dxf(item_id: UUID):
     item = item_result.data
     item_number = item["item_number"]
 
-    # Set needs_dxf flag
-    supabase.table("items").update({"needs_dxf": True}).eq("id", str(item_id)).execute()
+    # Mark item for FreeCAD flat-pattern generation
+    supabase.table("items").update({"auto_flatten": True}).eq("id", str(item_id)).execute()
 
     # Find most recent STEP file
     step_result = supabase.table("files") \
@@ -450,8 +450,8 @@ async def generate_dxf(item_id: UUID):
 
     if not step_result.data:
         return {
-            "message": f"needs_dxf set for {item_number}, but no STEP file found",
-            "needs_dxf": True,
+            "message": f"auto_flatten set for {item_number}, but no STEP file found",
+            "auto_flatten": True,
             "queued": False
         }
 
@@ -467,7 +467,7 @@ async def generate_dxf(item_id: UUID):
     if dxf_exists.data:
         return {
             "message": f"DXF already exists for {item_number}",
-            "needs_dxf": True,
+            "auto_flatten": True,
             "queued": False,
             "dxf_exists": True
         }
@@ -489,7 +489,7 @@ async def generate_dxf(item_id: UUID):
 
     return {
         "message": f"Queued DXF/SVG generation for {item_number}",
-        "needs_dxf": True,
+        "auto_flatten": True,
         "queued": True,
         "tasks": queued_tasks
     }

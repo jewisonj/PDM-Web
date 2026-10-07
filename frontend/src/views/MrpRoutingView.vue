@@ -1651,7 +1651,7 @@ onMounted(() => {
                 class="file-tile generate-dxf"
                 @click="generateDxf"
                 :disabled="generatingDxf"
-                title="Generate DXF flat pattern"
+                title="Generate flat pattern from STEP (FreeCAD) - for sheet metal parts"
               >
                 <i :class="generatingDxf ? 'pi pi-spin pi-spinner' : 'pi pi-plus'"></i>
                 DXF
