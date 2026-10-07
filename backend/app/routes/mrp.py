@@ -602,18 +602,20 @@ async def download_project_dxfs(project_id: UUID):
 
     # Get all project parts with item details (including thickness and quantity)
     parts_result = supabase.table("mrp_project_parts") \
-        .select("item_id, quantity, items(item_number, needs_dxf, thickness)") \
+        .select("item_id, quantity, items(item_number, thickness)") \
         .eq("project_id", str(project_id)) \
         .execute()
 
     if not parts_result.data:
         raise HTTPException(status_code=404, detail="No parts found in project")
 
-    # Filter to only parts with needs_dxf=true (excluding zzz reference items)
+    # Include every project part that has a DXF, regardless of needs_dxf.
+    # needs_dxf only controls FreeCAD flat-pattern generation; plate parts
+    # with DXFs exported straight from CAD never carry it.
     item_ids = []
     item_info = {}  # item_id (str) -> {item_number, thickness, quantity}
     for p in parts_result.data:
-        if p.get("items") and p["items"].get("needs_dxf"):
+        if p.get("items"):
             item_number = p["items"].get("item_number", "")
             # Skip zzz-prefix items (reference-only parts, not for manufacturing)
             if item_number.lower().startswith("zzz"):
@@ -626,10 +628,10 @@ async def download_project_dxfs(project_id: UUID):
                 "quantity": p.get("quantity", 1)
             }
 
-    logger.info(f"DXF download: {len(item_ids)} items with needs_dxf, item_info keys: {list(item_info.keys())[:3]}")
+    logger.info(f"DXF download: checking {len(item_ids)} project items for DXFs")
 
     if not item_ids:
-        raise HTTPException(status_code=404, detail="No sheet metal parts (needs_dxf) found in project")
+        raise HTTPException(status_code=404, detail="No parts found in project")
 
     # Get DXF files for these items
     files_result = supabase.table("files") \
