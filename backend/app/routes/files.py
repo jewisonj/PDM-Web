@@ -642,11 +642,10 @@ async def upload_file(
 
     file_record = result.data[0]
 
-    # Auto-queue DXF generation for STEP files when item has needs_dxf flag
+    # Auto-queue FreeCAD flat-pattern generation for STEP files when item has auto_flatten set
     if file_type == "STEP":
-        # Check if item has needs_dxf flag set
-        item_check = supabase.table("items").select("needs_dxf").eq("id", item_id).single().execute()
-        if item_check.data and item_check.data.get("needs_dxf", False):
+        item_check = supabase.table("items").select("auto_flatten").eq("id", item_id).single().execute()
+        if item_check.data and item_check.data.get("auto_flatten", False):
             print(f"Auto-queuing DXF generation for {clean_item_number}", flush=True)
             supabase.table("work_queue").insert({
                 "item_id": item_id,

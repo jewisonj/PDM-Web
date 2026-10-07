@@ -99,7 +99,7 @@ curl -s "http://localhost:8001/api/bom/csa00020/tree"
       "quantity": 2,
       "material": "6061-T6 ALUMINUM",
       "thickness": null,
-      "needs_dxf": false,
+      "auto_flatten": false,
       "is_supplier_part": false,
       "files": [
         {"id": "file-uuid", "file_type": "STEP", "file_path": "..."}
@@ -116,8 +116,8 @@ curl -s "http://localhost:8001/api/bom/csa00020/tree"
 
 | Category | Criteria |
 |----------|----------|
-| **Tubes** | Description contains "TUBE", "POST", "RAIL", "PIPE" AND `needs_dxf=false` AND `thickness=null` |
-| **Sheetmetal** | `needs_dxf=true` OR `thickness` is not null |
+| **Tubes** | Description contains "TUBE", "POST", "RAIL", "PIPE" AND `auto_flatten=false` AND `thickness=null` |
+| **Sheetmetal** | `auto_flatten=true` OR `thickness` is not null |
 | **Excluded** | `is_supplier_part=true` (MMC, SPN prefixes) |
 
 **Manual Override:**
@@ -373,7 +373,7 @@ def categorize_bom(bom_tree, exclude_parts=None):
         # Categorize
         desc = node.get('description', '').upper()
         is_tube = any(kw in desc for kw in ['TUBE', 'POST', 'RAIL', 'PIPE'])
-        is_sheet = node.get('needs_dxf') or node.get('thickness') is not None
+        is_sheet = node.get('auto_flatten') or node.get('thickness') is not None
 
         part = {
             'number': node['item_number'],

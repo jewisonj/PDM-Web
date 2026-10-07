@@ -38,13 +38,14 @@ async def get_nest_groups(project_id: UUID):
     Get parts grouped by material + thickness for nesting.
 
     Returns groups with part counts, total pieces, and DXF availability.
-    Only includes parts that have needs_dxf=true (sheet metal parts flagged for DXF).
+    Includes every non-supplier part that has a DXF or a thickness (cut parts).
+    Parts with a thickness but no DXF show up with has_dxf=false.
     """
     supabase = get_supabase_admin()
 
-    # Get all project parts with item details (only items with needs_dxf=true)
+    # Get all project parts with item details
     parts_result = supabase.table("mrp_project_parts") \
-        .select("quantity, item_id, items(id, item_number, name, material, thickness, is_supplier_part, needs_dxf)") \
+        .select("quantity, item_id, items(id, item_number, name, material, thickness, is_supplier_part)") \
         .eq("project_id", str(project_id)) \
         .execute()
 
@@ -70,12 +71,12 @@ async def get_nest_groups(project_id: UUID):
         if not item:
             continue
 
-        # Only include parts flagged for DXF (sheet metal parts)
-        if not item.get("needs_dxf"):
-            continue
-
         # Skip supplier parts
         if item.get("is_supplier_part"):
+            continue
+
+        # Only include cut parts: has a DXF, or has a thickness (DXF still missing)
+        if item["id"] not in dxf_lookup and item.get("thickness") is None:
             continue
 
         material = item.get("material") or "Unknown"
