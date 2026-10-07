@@ -273,6 +273,12 @@ Still at root:
 - Lowercase normalized
 - Prefixes: `mmc` (McMaster), `spn` (supplier), `zzz` (reference)
 
+## ⚠️ User Environment: Windows + PowerShell ONLY
+
+The user (Jack) works on Windows and has never used a Linux machine. **Always give
+commands as PowerShell** (`cd J:\PDM-Web`, `.\deploy.ps1`, backslash paths). Never
+give bash/Linux syntax or assume a Unix shell.
+
 ## Development Commands
 
 ```bash
